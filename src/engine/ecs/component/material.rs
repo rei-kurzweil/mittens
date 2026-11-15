@@ -1,10 +1,17 @@
 use super::Component;
-use super::ShadingModel;
 use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::materials::{
     MaterialBaseKind, MaterialInputField, MaterialParameterSchema, OpaqueBucket,
 };
 use std::collections::BTreeMap;
+
+/// Built-in definition programs selectable through `MaterialDefinition.anime()`
+/// and `MaterialDefinition.toon()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadingModel {
+    Anime,
+    Toon,
+}
 
 #[derive(Debug, Default)]
 pub struct MaterialBaseComponent(pub MaterialBaseKind);
@@ -64,11 +71,27 @@ impl MaterialDefinitionComponent {
     pub fn default_values(&self) -> Vec<f32> {
         let schema = self.parameter_schema();
         match self.builtin {
-            Some(ShadingModel::Anime) => super::ShadingComponent::new()
-                .material_values(&schema)
-                .to_vec(),
+            Some(ShadingModel::Anime) => std::sync::Arc::<[f32]>::from(
+                crate::engine::graphics::visual_world::AnimeShadingParams::default(),
+            )
+            .to_vec(),
             _ => vec![0.0; schema.scalar_count],
         }
+    }
+}
+
+#[cfg(test)]
+impl MaterialComponent {
+    /// Test fixture: a Material instance of a fresh built-in definition.
+    pub(crate) fn spawn_builtin(
+        world: &mut crate::engine::ecs::World,
+        model: ShadingModel,
+    ) -> ComponentId {
+        let definition = world.add_component(MaterialDefinitionComponent::builtin(model));
+        world.add_component(Self {
+            definition,
+            values: Default::default(),
+        })
     }
 }
 

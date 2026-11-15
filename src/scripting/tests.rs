@@ -10152,30 +10152,6 @@ fn roundtrip_light_quantization() {
 }
 
 #[test]
-fn roundtrip_anime_shading() {
-    use crate::engine::ecs::component::AnimeShadingComponent;
-    let original = AnimeShadingComponent::new()
-        .with_shade_color([0.61, 0.42, 0.53])
-        .with_shade_strength(0.44)
-        .with_shade_threshold(0.22)
-        .with_lit_threshold(0.66)
-        .with_rim_color([0.9, 0.8, 1.0])
-        .with_rim_strength(0.2)
-        .with_rim_power(3.5);
-    let (world, id) = roundtrip_component(original);
-    let got = world
-        .get_component_by_id_as::<AnimeShadingComponent>(id)
-        .unwrap();
-    assert_eq!(got.shade_color, [0.61, 0.42, 0.53]);
-    assert!((got.shade_strength - 0.44).abs() < 1e-6);
-    assert!((got.shade_threshold - 0.22).abs() < 1e-6);
-    assert!((got.lit_threshold - 0.66).abs() < 1e-6);
-    assert_eq!(got.rim_color, [0.9, 0.8, 1.0]);
-    assert!((got.rim_strength - 0.2).abs() < 1e-6);
-    assert!((got.rim_power - 3.5).abs() < 1e-6);
-}
-
-#[test]
 fn roundtrip_normal_visualisation() {
     use crate::engine::ecs::component::NormalVisualisationComponent;
     let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
@@ -13023,7 +12999,11 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
             .unwrap()
             .values
             .insert("shade_strength".into(), vec![value]);
-        s.register_anime_shading(&mut w, &mut v, source);
+        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+            &mut w, &mut v, source,
+        )
+        .unwrap();
+        s.renderable.refresh_material_topology(&mut w, &mut v);
         assert_eq!(v.materials.source_instance(source), Some(shared_id));
         assert_eq!(v.materials.instance_count(), material_count);
         assert_eq!(

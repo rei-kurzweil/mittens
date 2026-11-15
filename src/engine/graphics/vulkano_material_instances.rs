@@ -168,7 +168,8 @@ impl VulkanoState {
 #[cfg(test)]
 mod material_instance_gpu_tests {
     use super::*;
-    use crate::engine::ecs::{World, component::ShadingComponent};
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
     use crate::engine::graphics::{materials::MaterialRegistry, visual_world::AnimeShadingParams};
 
     #[test]
@@ -182,7 +183,7 @@ mod material_instance_gpu_tests {
             MsaaMode::Off,
         )?;
         let mut world = World::default();
-        let source = world.add_component(ShadingComponent::new());
+        let source = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         let mut visuals = VisualWorld::new();
         let mut materials = MaterialRegistry::default();
         let definition = materials.anime_definition;

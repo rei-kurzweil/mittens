@@ -841,9 +841,6 @@ pub enum IntentValue {
     RegisterLightQuantization {
         component_id: ComponentId,
     },
-    RegisterAnimeShading {
-        component_id: ComponentId,
-    },
     RegisterToonOutline {
         component_id: ComponentId,
     },
@@ -1171,7 +1168,6 @@ impl IntentValue {
             IntentValue::RegisterAmbientLight { .. } => "register_ambient_light",
             IntentValue::RegisterEmissive { .. } => "register_emissive",
             IntentValue::RegisterLightQuantization { .. } => "register_light_quantization",
-            IntentValue::RegisterAnimeShading { .. } => "register_anime_shading",
             IntentValue::RegisterToonOutline { .. } => "register_toon_outline",
 
             IntentValue::RegisterTexture { .. } => "register_texture",

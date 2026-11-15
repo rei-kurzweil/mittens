@@ -1857,9 +1857,6 @@ impl SystemWorld {
             IntentValue::RegisterLightQuantization { component } => {
                 self.register_light_quantization(world, visuals, *component);
             }
-            IntentValue::RegisterAnimeShading { component } => {
-                self.register_anime_shading(world, visuals, *component);
-            }
             IntentValue::RegisterToonOutline { component } => {
                 self.register_toon_outline(world, visuals, *component);
             }
@@ -2503,21 +2500,6 @@ impl SystemWorld {
     ) {
         self.renderable
             .register_light_quantization(world, visuals, component);
-    }
-
-    /// Register an AnimeShadingComponent and apply it to its ancestor RenderableComponent.
-    pub fn register_anime_shading(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        if let Err(error) =
-            super::material_system::MaterialSystem::publish_source(world, visuals, component)
-        {
-            eprintln!("[Material] {component:?}: {error}");
-        }
-        self.renderable.refresh_material_topology(world, visuals);
     }
 
     /// Register a ToonOutlineComponent and apply it to its target renderables.

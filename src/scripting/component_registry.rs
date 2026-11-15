@@ -20,7 +20,7 @@ use crate::engine::ecs::component::style::VerticalAlign;
 /// recurses into children.
 use crate::engine::ecs::component::{
     AlignItems, AmbientLightComponent, AmplitudeComponent, AnimationComponent, AnimationState,
-    AnimeShadingComponent, ArmTwoBoneIkConfig, AudioBandPassFilterComponent, AudioClipComponent,
+    ArmTwoBoneIkConfig, AudioBandPassFilterComponent, AudioClipComponent,
     AudioGainComponent, AudioInputComponent, AudioLimiterComponent, AudioOscillator,
     AudioOscillatorComponent, AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent,
     AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, BloomComponent,
@@ -109,8 +109,6 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "AmbientLight",
     "Amplitude",
     "VolumeNormalization",
-    "AnimeShading",
-    "Shading",
     "ToonOutline",
     "Animation",
     "AssetPayload",
@@ -442,13 +440,6 @@ pub fn spawn_tree_uninitialized(
         }
     }
 
-    if world
-        .get_component_by_id_as::<crate::engine::ecs::component::ShadingComponent>(id)
-        .is_some_and(|shading| shading.source_component().is_none())
-    {
-        world.mark_material_changed(id);
-    }
-
     Ok(id)
 }
 
@@ -772,7 +763,7 @@ fn ensure_subtree_has_no_opaque_keyframe_callback(
     }
     if world.parents_of(root).nth(1).is_some() {
         return Err(format!(
-            "cannot serialize shared Shading {root:?}: graph-preserving save/clone is not supported by this first sharing slice"
+            "cannot serialize shared component {root:?}: graph-preserving save/clone is not supported by this first sharing slice"
         ));
     }
     if world
@@ -2339,21 +2330,6 @@ fn create_component(
             Some("steps") => add!(LightQuantizationComponent::steps(arg_f32(args, 0)?)),
             _ => add!(LightQuantizationComponent::new()),
         },
-        "Shading" => {
-            let component = match ctor {
-                None | Some("anime") => AnimeShadingComponent::new(),
-                Some("toon") => AnimeShadingComponent::toon(),
-                Some(other) => return Err(format!("Shading: unknown constructor '{other}'")),
-            };
-            Ok(world.add_component(component))
-        }
-        "AnimeShading" => {
-            let id = world.add_component(AnimeShadingComponent::new());
-            if let Some(method) = ctor {
-                apply_call(world, id, method, args)?;
-            }
-            Ok(id)
-        }
         "ToonOutline" => {
             let id = world.add_component(ToonOutlineComponent::new());
             if let Some(method) = ctor {
@@ -2919,22 +2895,6 @@ fn apply_call(
         *world
             .get_component_by_id_as_mut::<SliderComponent>(id)
             .unwrap() = updated;
-        return Ok(());
-    }
-    if let Some(component) = world.get_component_by_id_as_mut::<AnimeShadingComponent>(id) {
-        if component.model != crate::engine::ecs::component::ShadingModel::Anime {
-            return Err(format!("Shading.{method}: requires the Anime model"));
-        }
-        *component = match method {
-            "shade_color" => component.with_shade_color(arg_f32_arr::<3>(args, 0)?),
-            "shade_strength" => component.with_shade_strength(arg_f32(args, 0)?),
-            "shade_threshold" => component.with_shade_threshold(arg_f32(args, 0)?),
-            "lit_threshold" => component.with_lit_threshold(arg_f32(args, 0)?),
-            "rim_color" => component.with_rim_color(arg_f32_arr::<3>(args, 0)?),
-            "rim_strength" => component.with_rim_strength(arg_f32(args, 0)?),
-            "rim_power" => component.with_rim_power(arg_f32(args, 0)?),
-            _ => return Err(format!("AnimeShading: unknown builder '{method}'")),
-        };
         return Ok(());
     }
     if let Some(component) = world.get_component_by_id_as::<ToonOutlineComponent>(id) {

@@ -169,7 +169,8 @@ fn headless_scene_draws_stereo_without_surface_extensions() -> Result<(), Box<dy
 #[test]
 #[ignore = "requires Vulkan; renders independent mutable material instances into both eye layers"]
 fn material_instances_render_independent_revisions_in_both_eyes() -> Result<(), Box<dyn std::error::Error>> {
-    use crate::engine::ecs::{World, component::ShadingComponent};
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
     use crate::engine::graphics::visual_world::AnimeShadingParams;
     let context = RendererContext::new(None, None, None)?;
     let format = Format::B8G8R8A8_UNORM;
@@ -185,8 +186,8 @@ fn material_instances_render_independent_revisions_in_both_eyes() -> Result<(), 
         ..ImageViewCreateInfo::from_image(&output)
     })).collect::<Result<Vec<_>, _>>()?;
     let mut world = World::default();
-    let a = world.add_component(ShadingComponent::new());
-    let b = world.add_component(ShadingComponent::new());
+    let a = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
+    let b = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
     let mut visuals = VisualWorld::new();
     let identity = Transform::default();
     visuals.set_xr_camera(vec![CameraData { view: identity.model, proj: identity.model, transform: identity }; 2]);

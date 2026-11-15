@@ -1039,7 +1039,6 @@ mod tests {
 #[cfg(test)]
 mod material_input_tests {
     use super::*;
-    use crate::engine::ecs::component::ShadingComponent;
     use crate::engine::ecs::system::material_system::MaterialSystem;
     use crate::engine::ecs::{CommandQueue, RxWorld};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
@@ -1131,7 +1130,9 @@ shared.set_input("shade_color", readback)
             schema.read(&a_record.values, "rim_strength").unwrap(),
             [0.25]
         );
-        let expected = ShadingComponent::new().material_values(schema);
+        let expected = std::sync::Arc::<[f32]>::from(
+            crate::engine::graphics::visual_world::AnimeShadingParams::default(),
+        );
         assert_eq!(b_record.values, expected);
         let before = a_record.revision;
         let args = [

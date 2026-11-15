@@ -388,32 +388,31 @@ UV {}
 
 ## Lighting
 
-### `ShadingComponent`
-<!-- catalog:component source="ShadingComponent" mms="direct" names="Shading,AnimeShading" -->
+### Anime and Toon materials
 
-Selects Anime or Toon shading for descendant meshes, with immediate local shading
-children overriding inherited settings. `Shading {}` and `Shading.anime()` use
-generic Anime defaults; `Shading.toon()` explicitly selects Toon. The wider
-default-material migration and other built-in constructors are still pending.
-`AnimeShading` is a temporary compatibility constructor for the same component.
-Sources: [Rust implementation](../../../src/engine/ecs/component/anime_shading.rs)
-and [live panel task](../../task/anime-shading-panel-and-live-shader-inputs.md).
+Built-in Anime and Toon shading are material definitions, applied with a
+`Material` that wraps or sits beside the meshes it shades. The nearest
+`Material` wins, so a local one overrides an inherited one.
+`MaterialDefinition.anime()` accepts `shade_color`, `shade_strength`,
+`shade_threshold`, `lit_threshold`, `rim_color`, `rim_strength`, and
+`rim_power` inputs; unset inputs use the definition defaults.
+`MaterialDefinition.toon()` takes no inputs. A retained material reads and
+edits inputs live with `get_input(name)` and `set_input(name, value)`.
 
 ```mms parse-only
-Shading.anime().shade_strength(0.5).rim_strength(0.38) {
+Material(MaterialDefinition.anime()).inputs({ shade_strength = 0.5 rim_strength = 0.38 }) {
     R.cube() {}
-    R.sphere() { Shading.toon() }
+    R.sphere() { Material(MaterialDefinition.toon()) }
 }
 ```
 
-Anime builders accept `shade_color`, `shade_strength`, `shade_threshold`,
-`lit_threshold`, `rim_color`, `rim_strength`, and `rim_power`. A retained Anime
-reference supports getter/setter pairs for `shade_strength`, `shade_threshold`,
-`lit_threshold`, `rim_strength`, and `rim_power` (for example,
-`set_shade_strength(value)` and `get_shade_strength()`). Setters use builder
-normalization and update source-linked GLTF primitives; getters return effective
-state immediately. These live methods reject a Toon target. Live color inputs
-remain planned.
+The former `Shading` and `AnimeShading` components have been removed. Replace
+`Shading.anime().shade_strength(0.5)` with
+`Material(MaterialDefinition.anime()).inputs({ shade_strength = 0.5 })`, and
+`get_`/`set_shade_strength` with `get_input`/`set_input("shade_strength", ...)`.
+`set_input` does not clamp or reorder thresholds; see
+[anime_shading_controls.mms](../../../assets/components/ui/anime_shading_controls.mms)
+for the ranges the old setters enforced.
 
 ### `ToonOutlineComponent`
 <!-- catalog:component source="ToonOutlineComponent" mms="direct" names="ToonOutline" -->

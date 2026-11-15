@@ -289,7 +289,7 @@ scope
 
 #### `AttachmentChanged`
 <!-- catalog:signal source="AttachmentChanged" kind="event" mms="observable-payload" -->
-**Event.** A live attachment to a shared leaf Shading declaration was added or
+**Event.** A live attachment to a shared leaf Material declaration was added or
 removed. Payload: `parent`, `child`, and `attached`. It is scoped to the source
 declaration; multiple parents do not produce a singular `ParentChanged` event.
 Observe it directly on the source. Low-level World assembly does not emit
@@ -853,7 +853,7 @@ and emits the corresponding topology event.
 #### `DetachAll`
 <!-- catalog:signal source="DetachAll" kind="intent" mms="action" -->
 **Intent.** `child.detach_all()` removes every incoming attachment without
-destroying the child or its outgoing attachments. Each removed shared Shading
+destroying the child or its outgoing attachments. Each removed shared Material
 edge emits `AttachmentChanged`. Structural children retain their ordinary
 single-parent detach behavior.
 

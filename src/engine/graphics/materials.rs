@@ -601,13 +601,14 @@ impl MaterialRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::{World, component::ShadingComponent};
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
     use crate::engine::graphics::visual_world::AnimeShadingParams;
 
     #[test]
     fn resolved_material_capabilities_override_legacy_program_feature_guesses() {
         let mut world = World::default();
-        let source = world.add_component(ShadingComponent::new());
+        let source = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         let mut materials = MaterialRegistry::default();
         let definition = materials.register_custom_definition(
             source,
@@ -655,7 +656,7 @@ mod tests {
     #[test]
     fn builtin_material_capabilities_preserve_geometry_and_emission_activation() {
         let mut world = World::default();
-        let source = world.add_component(ShadingComponent::new());
+        let source = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         let mut materials = MaterialRegistry::default();
         let instance =
             materials.upsert_source(source, materials.toon_definition, Vec::<f32>::new());
@@ -691,27 +692,38 @@ mod tests {
             .into_iter()
             .map(|(name, ty)| (name.to_owned(), ty)),
         );
-        let shading = ShadingComponent::new()
-            .with_rim_strength(0.4)
-            .with_shade_color([0.2, 0.3, 0.4])
-            .with_shade_strength(0.8);
-        let values = shading.material_values(&schema);
-        assert_eq!(values[0], shading.rim_power);
+        let mut values = vec![0.0; schema.scalar_count];
+        for (name, value) in [
+            ("shade_color", [0.2, 0.3, 0.4].as_slice()),
+            ("shade_strength", &[0.8]),
+            ("rim_color", &[1.0, 0.85, 0.92]),
+            ("shade_threshold", &[0.35]),
+            ("lit_threshold", &[0.55]),
+            ("rim_strength", &[0.4]),
+            ("rim_power", &[4.0]),
+        ] {
+            let field = schema.field(name).unwrap();
+            values[field.slot..field.slot + value.len()].copy_from_slice(value);
+        }
+        assert_eq!(values[0], 4.0);
         assert_eq!(
             schema.read(&values, "shade_color"),
             Some([0.2, 0.3, 0.4].as_slice())
         );
+        let mut expected = AnimeShadingParams::default();
+        expected.shade_color_strength = [0.2, 0.3, 0.4, 0.8];
+        expected.controls[2] = 0.4;
         assert_eq!(
             AnimeShadingParams::from_material(&schema, &values),
-            shading.gpu_params()
+            expected
         );
     }
 
     #[test]
     fn material_instances_retain_identity_through_ten_thousand_edits_and_reject_reuse() {
         let mut world = World::default();
-        let a = world.add_component(ShadingComponent::new());
-        let b = world.add_component(ShadingComponent::new());
+        let a = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
+        let b = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         let mut materials = MaterialRegistry::default();
         let definition = materials.anime_definition;
         let mut params = AnimeShadingParams::default();

@@ -109,7 +109,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAmbientLight { component_id }
             | IntentValue::RegisterEmissive { component_id }
             | IntentValue::RegisterLightQuantization { component_id }
-            | IntentValue::RegisterAnimeShading { component_id }
             | IntentValue::RegisterToonOutline { component_id }
             | IntentValue::RegisterTexture { component_id }
             | IntentValue::RegisterTextureFiltering { component_id }
@@ -269,7 +268,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAmbientLight { component_id }
             | IntentValue::RegisterEmissive { component_id }
             | IntentValue::RegisterLightQuantization { component_id }
-            | IntentValue::RegisterAnimeShading { component_id }
             | IntentValue::RegisterToonOutline { component_id }
             | IntentValue::RegisterTexture { component_id }
             | IntentValue::RegisterTextureFiltering { component_id }

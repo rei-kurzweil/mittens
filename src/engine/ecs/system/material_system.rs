@@ -1,12 +1,9 @@
-//! Common material registration, source resolution and retirement. Authored
-//! Shading components are compatibility adapters over the same retained records.
+//! Common material registration, source resolution and retirement.
 //! Shader preparation never executes script code.
 use crate::engine::ecs::component::material::{
     MaterialBaseComponent, MaterialComponent, MaterialDefinitionComponent,
 };
-use crate::engine::ecs::component::{
-    ShadingComponent, ShadingModel, UnlitComponent, resolve_transmissive_model,
-};
+use crate::engine::ecs::component::{ShadingModel, UnlitComponent, resolve_transmissive_model};
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{
     MaterialHandle, VisualWorld,
@@ -94,7 +91,6 @@ impl MaterialSystem {
     }
 
     /// Select the nearest complete material declaration for every consumer.
-    /// Authored local declarations precede generated Shading projections.
     pub(crate) fn resolve_source(world: &World, consumer: ComponentId) -> Option<ComponentId> {
         match Self::resolve_surface(world, consumer) {
             Some(SurfaceSource::Material(source)) => Some(source),
@@ -110,9 +106,6 @@ impl MaterialSystem {
                 .is_some()
             {
                 return Some(SurfaceSource::Material(node));
-            }
-            if let Some(source) = Self::shading_source(world, node) {
-                return Some(SurfaceSource::Material(source));
             }
             if world.children_of(node).iter().any(|&child| {
                 world
@@ -135,20 +128,6 @@ impl MaterialSystem {
             }) {
                 return Some(SurfaceSource::Material(source));
             }
-            let shading = world
-                .children_of(node)
-                .iter()
-                .filter_map(|&child| {
-                    let shading = world.get_component_by_id_as::<ShadingComponent>(child)?;
-                    Some((
-                        shading.source_component().is_some(),
-                        Self::shading_source(world, child)?,
-                    ))
-                })
-                .min_by_key(|(projected, _)| *projected);
-            if let Some((false, source)) = shading {
-                return Some(SurfaceSource::Material(source));
-            }
             if let Some(source) = world
                 .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(node)
                 .and_then(|renderable| renderable.material_scope)
@@ -156,32 +135,9 @@ impl MaterialSystem {
             {
                 return Some(source);
             }
-            if let Some((_, source)) = shading {
-                return Some(SurfaceSource::Material(source));
-            }
             current = world.parent_of(node);
         }
         None
-    }
-
-    fn shading_source(world: &World, declaration: ComponentId) -> Option<ComponentId> {
-        let shading = world.get_component_by_id_as::<ShadingComponent>(declaration)?;
-        let source = shading.source_component().unwrap_or(declaration);
-        world
-            .get_component_by_id_as::<ShadingComponent>(source)
-            .map(|_| source)
-    }
-
-    /// GLTF's existing projection authoring adapter. Resolution itself is common.
-    pub(crate) fn resolve_shading(
-        world: &World,
-        consumer: ComponentId,
-    ) -> Option<(ComponentId, ShadingComponent)> {
-        let source = Self::resolve_source(world, consumer)?;
-        Some((
-            source,
-            *world.get_component_by_id_as::<ShadingComponent>(source)?,
-        ))
     }
 
     pub(crate) fn ensure_source(
@@ -189,53 +145,36 @@ impl MaterialSystem {
         visuals: &mut VisualWorld,
         source: ComponentId,
     ) -> Result<MaterialInstanceId, String> {
-        let (source, definition, values) = if let Some(material) =
-            world.get_component_by_id_as::<MaterialComponent>(source)
-        {
-            let definition = Self::definition(world, visuals, material.definition)?;
-            let record = visuals
-                .materials
-                .definition(definition)
-                .ok_or("missing registered definition")?;
-            for name in material.values.keys() {
-                if record.parameter_schema.field(name).is_none() {
-                    return Err(format!("unknown material field '{name}'"));
-                }
+        let material = world
+            .get_component_by_id_as::<MaterialComponent>(source)
+            .ok_or("missing material source")?;
+        let definition = Self::definition(world, visuals, material.definition)?;
+        let record = visuals
+            .materials
+            .definition(definition)
+            .ok_or("missing registered definition")?;
+        for name in material.values.keys() {
+            if record.parameter_schema.field(name).is_none() {
+                return Err(format!("unknown material field '{name}'"));
             }
-            let mut values = record.defaults.to_vec();
-            for field in &record.parameter_schema.fields {
-                if let Some(value) = material.values.get(&field.name) {
-                    if value.len() != field.ty.width()
-                        || value.iter().any(|value| !value.is_finite())
-                    {
-                        return Err(format!(
-                            "material field '{}' requires {:?}",
-                            field.name, field.ty
-                        ));
-                    }
-                    values[field.slot..field.slot + value.len()].copy_from_slice(value);
+        }
+        let mut values = record.defaults.to_vec();
+        for field in &record.parameter_schema.fields {
+            if let Some(value) = material.values.get(&field.name) {
+                if value.len() != field.ty.width()
+                    || value.iter().any(|value| !value.is_finite())
+                {
+                    return Err(format!(
+                        "material field '{}' requires {:?}",
+                        field.name, field.ty
+                    ));
                 }
+                values[field.slot..field.slot + value.len()].copy_from_slice(value);
             }
-            (source, definition, std::sync::Arc::<[f32]>::from(values))
-        } else {
-            let source = Self::shading_source(world, source).ok_or("missing material source")?;
-            let shading = world
-                .get_component_by_id_as::<ShadingComponent>(source)
-                .unwrap();
-            let definition = match shading.model {
-                ShadingModel::Anime => visuals.materials.anime_definition,
-                ShadingModel::Toon => visuals.materials.toon_definition,
-            };
-            let values = shading.material_values(
-                &visuals
-                    .materials
-                    .definition(definition)
-                    .unwrap()
-                    .parameter_schema,
-            );
-            (source, definition, values)
-        };
-        Ok(visuals.materials.upsert_source(source, definition, values))
+        }
+        Ok(visuals
+            .materials
+            .upsert_source(source, definition, std::sync::Arc::<[f32]>::from(values)))
     }
 
     pub(crate) fn resolve_instance(
@@ -266,25 +205,14 @@ impl MaterialSystem {
     pub(crate) fn publish_source(
         world: &mut World,
         visuals: &mut VisualWorld,
-        component: ComponentId,
+        source: ComponentId,
     ) -> Result<(), String> {
-        let source = Self::shading_source(world, component).unwrap_or(component);
         let previous = visuals
             .materials
             .source_instance(source)
             .and_then(|id| visuals.materials.instance(id))
             .map(|record| record.definition);
         let instance = Self::ensure_source(world, visuals, source)?;
-        if component != source {
-            let value = *world
-                .get_component_by_id_as::<ShadingComponent>(source)
-                .ok_or("missing Shading source")?;
-            if let Some(projection) =
-                world.get_component_by_id_as_mut::<ShadingComponent>(component)
-            {
-                *projection = value.projected_from(source);
-            }
-        }
         if previous
             != visuals
                 .materials
@@ -292,7 +220,6 @@ impl MaterialSystem {
                 .map(|record| record.definition)
         {
             world.mark_material_scope_changed(source);
-            world.mark_material_scope_changed(component);
             let consumers: Vec<_> = visuals.material_consumer_components(instance).collect();
             for consumer in consumers {
                 world.mark_material_scope_changed(consumer);
@@ -351,10 +278,14 @@ mod tests {
     use crate::engine::graphics::RenderAssets;
     use crate::scripting::runner::RuntimeSpecSession;
 
+    fn builtin_material(world: &mut World, model: ShadingModel) -> ComponentId {
+        MaterialComponent::spawn_builtin(world, model)
+    }
+
     #[test]
     fn material_program_contract_selects_distinct_custom_geometry_programs() {
         let mut world = World::default();
-        let source = world.add_component(ShadingComponent::new());
+        let source = builtin_material(&mut world, ShadingModel::Anime);
         let mut visuals = VisualWorld::default();
         let definition = visuals.materials.register_custom_definition(
             source,
@@ -391,7 +322,7 @@ mod tests {
     fn one_resolver_preserves_local_material_overrides_and_legacy_boundaries() {
         use crate::engine::ecs::component::{RenderableComponent, TransformComponent};
         let mut world = World::default();
-        let outer = world.add_component(ShadingComponent::new());
+        let outer = builtin_material(&mut world, ShadingModel::Anime);
         let branch = world.add_component(TransformComponent::new());
         let cube = world.add_component(RenderableComponent::cube());
         world.add_child(outer, branch).unwrap();
@@ -406,13 +337,13 @@ mod tests {
             MaterialSystem::resolve_source(&world, cube),
             Some(local_material)
         );
-        let local_shading = world.add_component(ShadingComponent::toon());
-        world.add_child(cube, local_shading).unwrap();
+        let cube_material = builtin_material(&mut world, ShadingModel::Toon);
+        world.add_child(cube, cube_material).unwrap();
         assert_eq!(
             MaterialSystem::resolve_source(&world, cube),
-            Some(local_shading)
+            Some(cube_material)
         );
-        world.detach_child(cube, local_shading);
+        world.detach_child(cube, cube_material);
         assert_eq!(
             MaterialSystem::resolve_source(&world, cube),
             Some(local_material)
@@ -434,16 +365,17 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut system = MaterialSystem;
-        let source = world.add_component(ShadingComponent::new());
+        let source = builtin_material(&mut world, ShadingModel::Anime);
         world.mark_material_changed(source);
         system.tick(&mut world, &mut visuals);
         let binding = visuals.materials.source_instance(source).unwrap();
         let revision = visuals.materials.instance(binding).unwrap().revision;
         world.take_shading_topology_changes();
         world
-            .get_component_by_id_as_mut::<ShadingComponent>(source)
+            .get_component_by_id_as_mut::<MaterialComponent>(source)
             .unwrap()
-            .rim_strength = 0.4;
+            .values
+            .insert("rim_strength".into(), vec![0.4]);
         world.mark_material_changed(source);
         system.tick(&mut world, &mut visuals);
         assert_eq!(visuals.materials.source_instance(source), Some(binding));
@@ -454,7 +386,7 @@ mod tests {
         assert!(world.take_shading_topology_changes().is_empty());
         let definition = visuals
             .materials
-            .definition(visuals.materials.anime_definition)
+            .definition(visuals.materials.instance(binding).unwrap().definition)
             .unwrap();
         assert_eq!(
             definition.parameter_schema.read(

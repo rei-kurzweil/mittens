@@ -1,5 +1,5 @@
 use crate::engine::ecs::component::{
-    AnimeShadingComponent, ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
+    ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
     MorphTargetBindingComponent, RenderableComponent, SerializeComponent, TextureComponent,
     ToonOutlineComponent, TransformComponent,
 };
@@ -322,10 +322,6 @@ impl GLTFSystem {
                 })
                 .unwrap_or(false);
 
-            let anime_shading =
-                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
-                    world, cid,
-                );
             let toon_outline =
                 crate::engine::ecs::system::RenderableSystem::resolve_toon_outline(world, cid);
 
@@ -408,7 +404,6 @@ impl GLTFSystem {
                     &mut pending_skin_bindings,
                     &mut pending_morph_bindings,
                     serialize_spawned_nodes,
-                    anime_shading,
                     toon_outline.as_ref(),
                 );
                 if let Some(root) = root {
@@ -1056,7 +1051,6 @@ impl GLTFSystem {
         pending_skin_bindings: &mut Vec<(ComponentId, ComponentId, usize)>,
         pending_morph_bindings: &mut Vec<(ComponentId, ComponentId, MorphTargetBindingComponent)>,
         serialize_spawned_nodes: bool,
-        anime_shading: Option<(ComponentId, AnimeShadingComponent)>,
         toon_outline: Option<&(ComponentId, ToonOutlineComponent)>,
     ) -> Option<ComponentId> {
         let node_display_name = node
@@ -1129,12 +1123,6 @@ impl GLTFSystem {
 
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
-                if let Some((source_component, modifier)) = anime_shading {
-                    let projection = world.add_component(modifier.projected_from(source_component));
-                    let serialize_off = world.add_component(SerializeComponent::off());
-                    let _ = world.add_child(renderable, projection);
-                    let _ = world.add_child(projection, serialize_off);
-                }
                 if let Some((source_component, modifier)) = toon_outline {
                     let projection = world.add_component(
                         modifier
@@ -1252,7 +1240,6 @@ impl GLTFSystem {
                 pending_skin_bindings,
                 pending_morph_bindings,
                 serialize_spawned_nodes,
-                anime_shading,
                 toon_outline,
             );
         }
@@ -1493,15 +1480,30 @@ mod tests {
             }
         }
 
+        use crate::engine::ecs::component::ShadingModel;
+        use crate::engine::ecs::component::material::{
+            MaterialComponent, MaterialDefinitionComponent,
+        };
+        use crate::engine::ecs::system::material_system::MaterialSystem;
+        use crate::engine::graphics::visual_world::AnimeShadingParams;
+
         let mut world = World::default();
         let anchor = world.add_component(TransformComponent::new());
         let gltf = world.add_component(GLTFComponent::new("assets/models/bisket.glb"));
-        let modifier_value = AnimeShadingComponent::new()
-            .with_shade_strength(0.47)
-            .with_shade_threshold(0.21)
-            .with_lit_threshold(0.63);
-        let expected_params = modifier_value.gpu_params();
-        let modifier = world.add_component(modifier_value);
+        let anime = world.add_component(MaterialDefinitionComponent::builtin(ShadingModel::Anime));
+        let modifier = world.add_component(MaterialComponent {
+            definition: anime,
+            values: [
+                ("shade_strength".into(), vec![0.47]),
+                ("shade_threshold".into(), vec![0.21]),
+                ("lit_threshold".into(), vec![0.63]),
+            ]
+            .into_iter()
+            .collect(),
+        });
+        let mut expected_params = AnimeShadingParams::default();
+        expected_params.shade_color_strength[3] = 0.47;
+        expected_params.controls[..2].copy_from_slice(&[0.21, 0.63]);
         let outline_value = ToonOutlineComponent::new()
             .with_width(0.018)
             .with_color([0.04, 0.02, 0.08, 1.0])
@@ -1523,7 +1525,9 @@ mod tests {
         let expected_outline = outline_value.gpu_params();
         let outline = world.add_component(outline_value.clone());
         world.add_child(anchor, gltf).unwrap();
-        world.add_child(gltf, modifier).unwrap();
+        // The outer material sits above the GLTF so a GLTF-level Material can
+        // override it below.
+        world.add_child(anchor, modifier).unwrap();
         world.add_child(gltf, outline).unwrap();
 
         let mut system = GLTFSystem::new();
@@ -1603,13 +1607,11 @@ mod tests {
             "Hair should own at least one renderable"
         );
         for renderable in &renderables {
-            let projection = world
-                .children_of(*renderable)
-                .iter()
-                .find_map(|&child| world.get_component_by_id_as::<AnimeShadingComponent>(child))
-                .expect("imported renderable should have an anime material projection");
-            assert_eq!(projection.source_component(), Some(modifier));
-            assert_eq!(projection.gpu_params(), expected_params);
+            // Materials resolve through the GLTF scope rather than projections.
+            assert_eq!(
+                MaterialSystem::resolve_source(&world, *renderable),
+                Some(modifier)
+            );
             let outline_projection = world
                 .children_of(*renderable)
                 .iter()
@@ -1627,15 +1629,6 @@ mod tests {
                         &mut visuals,
                         *component_id,
                     );
-                }
-                IntentValue::RegisterAnimeShading { component_id } => {
-                    crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
-                        &mut world,
-                        &mut visuals,
-                        *component_id,
-                    )
-                    .unwrap();
-                    renderable_system.refresh_material_topology(&mut world, &mut visuals);
                 }
                 IntentValue::RegisterToonOutline { component_id } => {
                     renderable_system.register_toon_outline(
@@ -1686,12 +1679,14 @@ mod tests {
             );
         }
 
-        let updated_modifier = modifier_value.with_rim_strength(0.71);
-        let updated_params = updated_modifier.gpu_params();
-        *world
-            .get_component_by_id_as_mut::<AnimeShadingComponent>(modifier)
-            .unwrap() = updated_modifier;
-        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+        let mut updated_params = expected_params;
+        updated_params.controls[2] = 0.71;
+        world
+            .get_component_by_id_as_mut::<MaterialComponent>(modifier)
+            .unwrap()
+            .values
+            .insert("rim_strength".into(), vec![0.71]);
+        MaterialSystem::publish_source(
             &mut world,
             &mut visuals,
             modifier,
@@ -1728,21 +1723,6 @@ mod tests {
             );
         }
         for renderable in renderables {
-            let anime_projection = world
-                .children_of(renderable)
-                .iter()
-                .find_map(|&child| world.get_component_by_id_as::<AnimeShadingComponent>(child))
-                .unwrap();
-            assert_eq!(anime_projection.source_component(), Some(modifier));
-            assert_eq!(
-                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
-                    &world, renderable
-                )
-                .unwrap()
-                .1
-                .gpu_params(),
-                updated_params
-            );
             let handle = world
                 .get_component_by_id_as::<RenderableComponent>(renderable)
                 .unwrap()
@@ -1761,11 +1741,13 @@ mod tests {
         }
         // Definition edits preserve logical identity and invalidate generated draws.
         let source_instance = visuals.materials.source_instance(modifier).unwrap();
-        world
-            .get_component_by_id_as_mut::<AnimeShadingComponent>(modifier)
-            .unwrap()
-            .model = crate::engine::ecs::component::ShadingModel::Toon;
-        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+        let toon = world.add_component(MaterialDefinitionComponent::builtin(ShadingModel::Toon));
+        let source_material = world
+            .get_component_by_id_as_mut::<MaterialComponent>(modifier)
+            .unwrap();
+        source_material.definition = toon;
+        source_material.values.clear();
+        MaterialSystem::publish_source(
             &mut world,
             &mut visuals,
             modifier,
@@ -1776,13 +1758,14 @@ mod tests {
             visuals.materials.source_instance(modifier),
             Some(source_instance)
         );
+        let toon_definition = visuals
+            .materials
+            .instance(source_instance)
+            .unwrap()
+            .definition;
         assert_eq!(
-            visuals
-                .materials
-                .instance(source_instance)
-                .unwrap()
-                .definition,
-            visuals.materials.toon_definition
+            visuals.materials.definition(toon_definition).unwrap().name,
+            "Toon"
         );
         for instance in visuals.instances() {
             assert_eq!(instance.material_instance, Some(source_instance));
@@ -1791,20 +1774,14 @@ mod tests {
                 MaterialHandle::TOON_MESH | MaterialHandle::SKINNED_TOON_MESH
             ));
         }
-        // Explicit Material definitions override legacy projections without
-        // replacing imported textures/colors or splitting shared identity.
-        use crate::engine::ecs::component::material::{
-            MaterialComponent, MaterialDefinitionComponent,
-        };
-        use crate::engine::ecs::system::material_system::MaterialSystem;
+        // A nearer GLTF Material overrides the outer one without replacing
+        // imported textures/colors or splitting shared identity.
         let imported: Vec<_> = visuals
             .instances()
             .iter()
             .map(|instance| (instance.component, instance.texture, instance.color))
             .collect();
-        let definition = world.add_component(MaterialDefinitionComponent::builtin(
-            crate::engine::ecs::component::ShadingModel::Anime,
-        ));
+        let definition = anime;
         let material = world.add_component(MaterialComponent {
             definition,
             values: [

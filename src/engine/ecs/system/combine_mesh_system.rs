@@ -656,10 +656,10 @@ mod tests {
 
     #[test]
     fn sibling_batches_keep_their_ancestor_material_in_place() {
-        use crate::engine::ecs::component::ShadingComponent;
+        use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
         let mut world = World::default();
         let scene = world.add_component(TransformComponent::new());
-        let material = world.add_component(ShadingComponent::new());
+        let material = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         world.add_child(scene, material).unwrap();
         let mut batches = Vec::new();
         for _ in 0..3 {
@@ -840,13 +840,16 @@ mod tests {
 
     #[test]
     fn combined_builtin_material_keeps_shared_identity_after_collapse_and_model_changes() {
-        use crate::engine::ecs::component::{ShadingComponent, ShadingModel};
+        use crate::engine::ecs::component::ShadingModel;
+        use crate::engine::ecs::component::material::{
+            MaterialComponent, MaterialDefinitionComponent,
+        };
         use crate::engine::ecs::system::material_system::MaterialSystem;
         let mut world = World::default();
         let scene = world.add_component(TransformComponent::new());
         let combine = world.add_component(CombineMeshComponent::default());
         let cube = world.add_component(RenderableComponent::cube());
-        let material = world.add_component(ShadingComponent::new());
+        let material = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         world.add_child(scene, combine).unwrap();
         world.add_child(combine, cube).unwrap();
         world.add_child(cube, material).unwrap();
@@ -886,9 +889,10 @@ mod tests {
         }
         assert!(system.sources_for_root(&world, combine).is_empty());
         world
-            .get_component_by_id_as_mut::<ShadingComponent>(material)
+            .get_component_by_id_as_mut::<MaterialComponent>(material)
             .unwrap()
-            .shade_strength = 0.9;
+            .values
+            .insert("shade_strength".into(), vec![0.9]);
         MaterialSystem::publish_source(&mut world, &mut visuals, material).unwrap();
         assert_eq!(
             visuals
@@ -898,10 +902,12 @@ mod tests {
                 .shade_color_strength[3],
             0.9
         );
-        world
-            .get_component_by_id_as_mut::<ShadingComponent>(material)
-            .unwrap()
-            .model = ShadingModel::Toon;
+        let toon = world.add_component(MaterialDefinitionComponent::builtin(ShadingModel::Toon));
+        let authored = world
+            .get_component_by_id_as_mut::<MaterialComponent>(material)
+            .unwrap();
+        authored.definition = toon;
+        authored.values.clear();
         MaterialSystem::publish_source(&mut world, &mut visuals, material).unwrap();
         system.reconcile_and_build(
             &mut world,

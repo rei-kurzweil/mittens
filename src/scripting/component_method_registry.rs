@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
     AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
     BoneRestPoseComponent, EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel, SliderComponent,
+    InputXRGamepadComponent, RayCastComponent, SliderComponent,
     TextComponent, ToggleComponent, TransformComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
 };
@@ -48,20 +48,6 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             && matches!(method, "apply" | "overlay" | "apply_blended"))
         || (matches!(component_type, "EM" | "Emissive" | "emissive")
             && matches!(method, "set_intensity" | "on" | "off"))
-        || (matches!(component_type, "Shading" | "shading")
-            && matches!(
-                method,
-                "get_shade_strength"
-                    | "set_shade_strength"
-                    | "get_shade_threshold"
-                    | "set_shade_threshold"
-                    | "get_lit_threshold"
-                    | "set_lit_threshold"
-                    | "get_rim_strength"
-                    | "set_rim_strength"
-                    | "get_rim_power"
-                    | "set_rim_power"
-            ))
         || (matches!(component_type, "Toggle" | "toggle") && method == "sync_value")
         || (matches!(component_type, "Slider" | "slider")
             && matches!(
@@ -503,59 +489,6 @@ pub(crate) fn invoke_component_method(
             // Keep the component and its canonical axis/button events live;
             // only transfer authority away from the built-in locomotion map.
             input.locomotion = method == "enable";
-            Ok(Value::Null)
-        }
-        (
-            "Shading" | "shading",
-            method @ ("get_shade_strength"
-            | "set_shade_strength"
-            | "get_shade_threshold"
-            | "set_shade_threshold"
-            | "get_lit_threshold"
-            | "set_lit_threshold"
-            | "get_rim_strength"
-            | "set_rim_strength"
-            | "get_rim_power"
-            | "set_rim_power"),
-        ) => {
-            // Runtime GLTF projections consume their authored source instance;
-            // live reads/edits address that same retained source, not a stale copy.
-            let id = world
-                .get_component_by_id_as::<ShadingComponent>(id)
-                .and_then(|shading| shading.source_component())
-                .unwrap_or(id);
-            let shading = world
-                .get_component_by_id_as_mut::<ShadingComponent>(id)
-                .ok_or_else(|| format!("{method}(): not a ShadingComponent"))?;
-            if shading.model != ShadingModel::Anime {
-                return Err(format!("{method}(): requires the Anime shading model"));
-            }
-            if method.starts_with("get_") {
-                if !args.is_empty() {
-                    return Err(format!("{method}(): expected no arguments"));
-                }
-                let value = match method {
-                    "get_shade_strength" => shading.shade_strength,
-                    "get_shade_threshold" => shading.shade_threshold,
-                    "get_lit_threshold" => shading.lit_threshold,
-                    "get_rim_strength" => shading.rim_strength,
-                    "get_rim_power" => shading.rim_power,
-                    _ => unreachable!(),
-                };
-                return Ok(Value::Number(value as f64));
-            }
-            let [Value::Number(value)] = args else {
-                return Err(format!("{method}(): expected one number"));
-            };
-            *shading = match method {
-                "set_shade_strength" => shading.with_shade_strength(*value as f32),
-                "set_shade_threshold" => shading.with_shade_threshold(*value as f32),
-                "set_lit_threshold" => shading.with_lit_threshold(*value as f32),
-                "set_rim_strength" => shading.with_rim_strength(*value as f32),
-                "set_rim_power" => shading.with_rim_power(*value as f32),
-                _ => unreachable!(),
-            };
-            emit_intent(IntentValue::RegisterAnimeShading { component_id: id });
             Ok(Value::Null)
         }
         ("Text" | "TXT" | "text", "set_text") => {
@@ -1347,103 +1280,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn anime_shading_live_api_normalizes_reads_back_and_rejects_wrong_models() {
-        let mut world = World::default();
-        let anime = world.add_component(ShadingComponent::new());
-        let toon = world.add_component(ShadingComponent::toon());
-        for (value, expected) in [
-            (2.0, 1.0),
-            (-1.0, 0.0),
-            (f64::NAN, ShadingComponent::DEFAULT_SHADE_STRENGTH as f64),
-        ] {
-            let mut intents = Vec::new();
-            invoke_component_method(
-                &mut world,
-                anime,
-                "Shading",
-                "set_shade_strength",
-                &[Value::Number(value)],
-                |intent| intents.push(intent),
-            )
-            .unwrap();
-            // Effective readback precedes deferred render-system processing.
-            assert_eq!(
-                invoke_component_method(
-                    &mut world,
-                    anime,
-                    "Shading",
-                    "get_shade_strength",
-                    &[],
-                    |_| {}
-                )
-                .unwrap(),
-                Value::Number(expected)
-            );
-            assert!(
-                matches!(intents.as_slice(), [IntentValue::RegisterAnimeShading { component_id }] if *component_id == anime)
-            );
-        }
-        for (setter, getter, value, expected) in [
-            ("set_shade_threshold", "get_shade_threshold", 0.8, 0.8),
-            ("set_lit_threshold", "get_lit_threshold", 0.4, 0.4),
-            ("set_rim_strength", "get_rim_strength", 2.0, 1.0),
-            ("set_rim_power", "get_rim_power", 200.0, 128.0),
-        ] {
-            let mut intents = Vec::new();
-            invoke_component_method(
-                &mut world,
-                anime,
-                "Shading",
-                setter,
-                &[Value::Number(value)],
-                |intent| intents.push(intent),
-            )
-            .unwrap();
-            let Value::Number(effective) =
-                invoke_component_method(&mut world, anime, "Shading", getter, &[], |_| {}).unwrap()
-            else {
-                panic!("{getter}() should return a number")
-            };
-            assert!((effective - expected).abs() < 1e-6);
-            assert!(matches!(
-                intents.as_slice(),
-                [IntentValue::RegisterAnimeShading { component_id }] if *component_id == anime
-            ));
-        }
-        assert_eq!(
-            world
-                .get_component_by_id_as::<ShadingComponent>(anime)
-                .unwrap()
-                .shade_threshold,
-            0.4,
-            "lowering lit threshold also lowers shade threshold"
-        );
-        for method in [
-            "get_shade_strength",
-            "set_shade_strength",
-            "get_shade_threshold",
-            "set_shade_threshold",
-            "get_lit_threshold",
-            "set_lit_threshold",
-            "get_rim_strength",
-            "set_rim_strength",
-            "get_rim_power",
-            "set_rim_power",
-        ] {
-            let error = invoke_component_method(
-                &mut world,
-                toon,
-                "Shading",
-                method,
-                &[Value::Number(0.5)],
-                |_| panic!("invalid target emitted an intent"),
-            )
-            .unwrap_err();
-            assert!(error.contains("requires the Anime"));
-        }
-    }
-
     fn object(id: ComponentId, ty: &str) -> Value {
         Value::ComponentObject {
             id,
@@ -1750,40 +1586,4 @@ mod tests {
             invoke_component_method(&mut world, child, "Color", "detach", &[], |_| {}).is_err()
         );
     }
-}
-#[test]
-fn projected_shading_methods_address_the_authored_material_source() {
-    let mut world = World::default();
-    let source = world.add_component(ShadingComponent::new().with_shade_strength(0.25));
-    let projection = world.add_component(ShadingComponent::new().projected_from(source));
-    let value = invoke_component_method(
-        &mut world,
-        projection,
-        "Shading",
-        "get_shade_strength",
-        &[],
-        |_| {},
-    )
-    .unwrap();
-    assert_eq!(value, Value::Number(0.25));
-    let mut intents = Vec::new();
-    invoke_component_method(
-        &mut world,
-        projection,
-        "Shading",
-        "set_shade_strength",
-        &[Value::Number(0.8)],
-        |intent| intents.push(intent),
-    )
-    .unwrap();
-    assert_eq!(
-        world
-            .get_component_by_id_as::<ShadingComponent>(source)
-            .unwrap()
-            .shade_strength,
-        0.8
-    );
-    assert!(
-        matches!(intents.as_slice(), [IntentValue::RegisterAnimeShading { component_id }] if *component_id == source)
-    );
 }

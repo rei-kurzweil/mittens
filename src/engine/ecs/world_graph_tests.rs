@@ -1,18 +1,27 @@
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::material::MaterialComponent;
     use crate::engine::ecs::component::{
         ComponentRef, QueryRootMode, parse_scoped_query, resolve_component_ref,
     };
+    use crate::engine::ecs::{ComponentId, World};
+
+    /// A shareable material declaration; graph rules do not need its definition.
+    fn material(w: &mut World) -> ComponentId {
+        w.add_component(MaterialComponent {
+            definition: ComponentId::default(),
+            values: Default::default(),
+        })
+    }
 
     #[test]
-    fn shared_shading_edges_keep_identity_and_independent_revisions() {
-        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+    fn shared_material_edges_keep_identity_and_independent_revisions() {
+        use crate::engine::ecs::component::TransformComponent;
         let mut w = World::default();
         let a = w.add_component(TransformComponent::new());
         let b = w.add_component(TransformComponent::new());
         let c = w.add_component(TransformComponent::new());
-        let source = w.add_component(ShadingComponent::new());
+        let source = material(&mut w);
         w.add_child(a, source).unwrap();
         let original = w.attachment_between(a, source).unwrap();
         w.add_child(b, source).unwrap();
@@ -66,12 +75,12 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_parent_preserves_shared_shading_but_explicit_destruction_unlinks_all() {
-        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+    fn deleting_a_parent_preserves_shared_material_but_explicit_destruction_unlinks_all() {
+        use crate::engine::ecs::component::TransformComponent;
         let mut w = World::default();
         let a = w.add_component(TransformComponent::new());
         let b = w.add_component(TransformComponent::new());
-        let source = w.add_component(ShadingComponent::new());
+        let source = material(&mut w);
         w.add_child(a, source).unwrap();
         w.add_child(b, source).unwrap();
         let survivor = w.attachment_between(b, source).unwrap();
@@ -87,38 +96,33 @@ mod tests {
     }
 
     #[test]
-    fn shared_shading_diamond_initializes_once_and_dies_with_its_last_owners() {
-        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
-        use crate::engine::ecs::{CommandQueue, IntentValue};
+    fn shared_material_diamond_initializes_once_and_dies_with_its_last_owners() {
+        use crate::engine::ecs::CommandQueue;
+        use crate::engine::ecs::component::TransformComponent;
         let mut w = World::default();
         let root = w.add_component(TransformComponent::new());
         let a = w.add_component(TransformComponent::new());
         let b = w.add_component(TransformComponent::new());
-        let source = w.add_component(ShadingComponent::new());
+        let source = material(&mut w);
         w.add_child(root, a).unwrap();
         w.add_child(root, b).unwrap();
         w.add_child(a, source).unwrap();
         w.add_child(b, source).unwrap();
         let mut queue = CommandQueue::new();
         w.init_component_tree(root, &mut queue);
-        let mut rx = crate::engine::ecs::RxWorld::default();
-        queue.drain_into_rx(&mut rx);
-        let count = rx.drain_ready_intents().iter().filter(|env| {
-            matches!(env.intent.as_ref().map(|i| &i.value), Some(IntentValue::RegisterAnimeShading { component_id }) if *component_id == source)
-        }).count();
-        assert_eq!(count, 1);
-        assert_eq!(w.find_all_components(root, "Shading"), vec![source]);
+        assert!(w.is_initialized(source));
+        assert_eq!(w.find_all_components(root, "Material"), vec![source]);
         w.remove_component_subtree(root).unwrap();
         assert_eq!(w.component_count(), 0);
     }
 
     #[test]
-    fn shading_wrappers_cannot_be_shared_but_structural_reparenting_is_preserved() {
-        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+    fn material_wrappers_cannot_be_shared_but_structural_reparenting_is_preserved() {
+        use crate::engine::ecs::component::TransformComponent;
         let mut w = World::default();
         let a = w.add_component(TransformComponent::new());
         let b = w.add_component(TransformComponent::new());
-        let wrapper = w.add_component(ShadingComponent::new());
+        let wrapper = material(&mut w);
         let spatial = w.add_component(TransformComponent::new());
         w.add_child(wrapper, spatial).unwrap();
         w.add_child(a, wrapper).unwrap();

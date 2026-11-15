@@ -283,7 +283,7 @@ fn handle_intent_signal(
                     return;
                 }
 
-                if !world.is_shading_declaration(*child) {
+                if !world.is_material_declaration(*child) {
                     emit.push_event(
                         *child,
                         EventSignal::ParentChanged {
@@ -1157,13 +1157,13 @@ mod tests {
 
     #[test]
     fn removing_children_preserves_shared_declarations_and_reports_the_changed_edge() {
-        use crate::engine::ecs::component::ShadingComponent;
+        use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
         use crate::engine::ecs::{EventSignal, RxWorld};
         for remove_all in [false, true] {
             let mut world = World::default();
             let a = world.add_component(TransformComponent::new());
             let b = world.add_component(TransformComponent::new());
-            let source = world.add_component(ShadingComponent::new());
+            let source = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
             world.add_child(a, source).unwrap();
             world.add_child(b, source).unwrap();
             let survivor = world.attachment_between(b, source).unwrap();
@@ -1250,7 +1250,7 @@ fn emit_detachment_fact(
     parent: ComponentId,
     child: ComponentId,
 ) {
-    let event = if world.is_shading_declaration(child) {
+    let event = if world.is_material_declaration(child) {
         crate::engine::ecs::EventSignal::AttachmentChanged {
             parent,
             parent_type: world

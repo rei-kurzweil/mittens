@@ -383,14 +383,15 @@ impl VisualInstance {
 #[cfg(test)]
 mod material_identity_tests {
     use super::*;
-    use crate::engine::ecs::{World, component::ShadingComponent};
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{ShadingModel, material::MaterialComponent};
     use crate::engine::graphics::{MaterialHandle, MeshHandle};
 
     #[test]
     fn equal_valued_materials_keep_distinct_batches_and_shared_color_stays_per_renderable() {
         let mut world = World::default();
-        let a = world.add_component(ShadingComponent::new());
-        let b = world.add_component(ShadingComponent::new());
+        let a = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
+        let b = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Anime);
         let mut visuals = VisualWorld::new();
         let definition = visuals.materials.anime_definition;
         let id_a = visuals

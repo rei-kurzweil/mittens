@@ -1913,7 +1913,9 @@ mod tests {
     use super::{MaterialSystem, RenderableSystem};
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::AnimeShadingComponent;
+    use crate::engine::ecs::component::ShadingModel;
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::graphics::visual_world::AnimeShadingParams;
     use crate::engine::ecs::component::{
         BackgroundComponent, ColorComponent, EmissiveComponent, OpacityComponent, OverlayComponent,
         RefractionComponent, RenderableComponent, RoughTransmissionComponent, TextComponent,
@@ -2091,15 +2093,33 @@ mod tests {
         }
     }
 
+    /// A built-in Material whose `values` override the definition defaults.
+    fn builtin_material(
+        world: &mut World,
+        model: ShadingModel,
+        values: &[(&str, &[f32])],
+    ) -> crate::engine::ecs::ComponentId {
+        let material = MaterialComponent::spawn_builtin(world, model);
+        let authored = &mut world
+            .get_component_by_id_as_mut::<MaterialComponent>(material)
+            .unwrap()
+            .values;
+        for (name, value) in values {
+            authored.insert((*name).into(), value.to_vec());
+        }
+        material
+    }
+
     #[test]
-    fn anime_shading_root_wrapper_updates_many_consumers_but_preserves_local_models() {
+    fn anime_material_root_wrapper_updates_many_consumers_but_preserves_local_models() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut system = RenderableSystem::default();
         let mut assets = RenderAssets::new();
         let mut uploader = TestUploader::default();
         let mut queue = CommandQueue::new();
-        let source = world.add_component(AnimeShadingComponent::new().with_shade_strength(0.4));
+        let source =
+            builtin_material(&mut world, ShadingModel::Anime, &[("shade_strength", &[0.4])]);
         let nested = world.add_component(TransformComponent::new());
         world.add_child(source, nested).unwrap();
         let mut renderables = Vec::new();
@@ -2107,10 +2127,10 @@ mod tests {
             let renderable = world.add_component(RenderableComponent::cube());
             world.add_child(nested, renderable).unwrap();
             if index == 2 {
-                let local = world.add_component(AnimeShadingComponent::toon());
+                let local = builtin_material(&mut world, ShadingModel::Toon, &[]);
                 world.add_child(renderable, local).unwrap();
             } else if index == 3 {
-                let local = world.add_component(AnimeShadingComponent::new());
+                let local = builtin_material(&mut world, ShadingModel::Anime, &[]);
                 world.add_child(renderable, local).unwrap();
             }
             system.register_renderable_from_world(&mut world, &mut visuals, renderable);
@@ -2124,9 +2144,10 @@ mod tests {
             &mut queue,
         );
         world
-            .get_component_by_id_as_mut::<AnimeShadingComponent>(source)
+            .get_component_by_id_as_mut::<MaterialComponent>(source)
             .unwrap()
-            .shade_strength = 0.9;
+            .values
+            .insert("shade_strength".into(), vec![0.9]);
         MaterialSystem::publish_source(&mut world, &mut visuals, source).unwrap();
         system.refresh_material_topology(&mut world, &mut visuals);
         for (index, renderable) in renderables.into_iter().enumerate() {
@@ -2151,14 +2172,14 @@ mod tests {
                 if index < 2 {
                     0.9
                 } else {
-                    AnimeShadingComponent::DEFAULT_SHADE_STRENGTH
+                    AnimeShadingParams::default().shade_color_strength[3]
                 }
             );
         }
     }
 
     #[test]
-    fn inherited_anime_shading_routes_static_and_skinned_materials() {
+    fn inherited_anime_material_routes_static_and_skinned_materials() {
         for (source_material, expected_material) in [
             (MaterialHandle::TOON_MESH, MaterialHandle::ANIME_MESH),
             (
@@ -2174,15 +2195,21 @@ mod tests {
             let mut queue = CommandQueue::new();
 
             let model_root = world.add_component(TransformComponent::new());
-            let shading = AnimeShadingComponent::new()
-                .with_shade_color([0.6, 0.4, 0.5])
-                .with_shade_strength(0.45)
-                .with_shade_threshold(0.25)
-                .with_lit_threshold(0.65)
-                .with_rim_strength(0.2)
-                .with_rim_power(3.0);
-            let expected_params = shading.gpu_params();
-            let shading = world.add_component(shading);
+            let shading = builtin_material(
+                &mut world,
+                ShadingModel::Anime,
+                &[
+                    ("shade_color", &[0.6, 0.4, 0.5]),
+                    ("shade_strength", &[0.45]),
+                    ("shade_threshold", &[0.25]),
+                    ("lit_threshold", &[0.65]),
+                    ("rim_strength", &[0.2]),
+                    ("rim_power", &[3.0]),
+                ],
+            );
+            let mut expected_params = AnimeShadingParams::default();
+            expected_params.shade_color_strength = [0.6, 0.4, 0.5, 0.45];
+            expected_params.controls = [0.25, 0.65, 0.2, 3.0];
             let generated_node = world.add_component(TransformComponent::new());
             let renderable = world.add_component(RenderableComponent::new(Renderable::new(
                 CpuMeshHandle::CUBE,

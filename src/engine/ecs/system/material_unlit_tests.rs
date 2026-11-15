@@ -132,7 +132,7 @@ fn local_material_overrides_parent_unlit_scope() {
     let root = world.add_component(TransformComponent::new());
     let marker = world.add_component(UnlitComponent);
     let cube = world.add_component(RenderableComponent::cube());
-    let local = world.add_component(ShadingComponent::toon());
+    let local = MaterialComponent::spawn_builtin(&mut world, ShadingModel::Toon);
     world.add_child(root, marker).unwrap();
     world.add_child(root, cube).unwrap();
     world.add_child(cube, local).unwrap();

@@ -594,7 +594,7 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                 "child".into(),
                 Value::ComponentObject {
                     id: *child,
-                    component_type: "Shading".into(),
+                    component_type: "Material".into(),
                 },
             ),
             ("attached".into(), Value::Bool(*attached)),

@@ -4037,10 +4037,9 @@ mod vulkano_backend {
         #[test]
         fn anime_shading_ubo_preserves_live_inputs_for_static_and_skinned_draws() {
             // Window and XR eye rendering share this material UBO path.
-            let params = crate::engine::ecs::component::ShadingComponent::new()
-                .with_shade_strength(0.91)
-                .with_rim_strength(0.42)
-                .gpu_params();
+            let mut params = crate::engine::graphics::visual_world::AnimeShadingParams::default();
+            params.shade_color_strength[3] = 0.91;
+            params.controls[2] = 0.42;
             for material in [
                 crate::engine::graphics::MaterialHandle::ANIME_MESH,
                 crate::engine::graphics::MaterialHandle::SKINNED_ANIME_MESH,

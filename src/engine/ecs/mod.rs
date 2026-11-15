@@ -423,12 +423,9 @@ impl World {
         std::mem::take(&mut self.shading_topology_changes)
     }
 
-    pub(crate) fn is_shading_declaration(&self, c: ComponentId) -> bool {
-        self.get_component_by_id_as::<component::ShadingComponent>(c)
+    pub(crate) fn is_material_declaration(&self, c: ComponentId) -> bool {
+        self.get_component_by_id_as::<component::material::MaterialComponent>(c)
             .is_some()
-            || self
-                .get_component_by_id_as::<component::material::MaterialComponent>(c)
-                .is_some()
     }
 
     pub(crate) fn mark_material_changed(&mut self, component: ComponentId) {
@@ -640,7 +637,7 @@ impl World {
         if self.is_ancestor_of(child, parent) {
             return Err("cycle detected");
         }
-        let shared_declaration = self.is_shading_declaration(child);
+        let shared_declaration = self.is_material_declaration(child);
         if shared_declaration && self.parents_of(child).next().is_some() {
             if !self.children_of(child).is_empty() {
                 return Err("only leaf Shading declarations support multiple parents");
@@ -726,7 +723,7 @@ impl World {
             }
             Some(parent) => {
                 // Explicit structural movement never adds another attachment.
-                if self.is_shading_declaration(child) {
+                if self.is_material_declaration(child) {
                     let parent_node = self
                         .get_component_record(parent)
                         .ok_or("parent does not exist")?;
@@ -794,7 +791,7 @@ impl World {
         if let Some(node) = self.get_component_record_mut(parent) {
             node.children.retain(|&c| c != child);
         }
-        if self.is_shading_declaration(child)
+        if self.is_material_declaration(child)
             || self
                 .get_component_by_id_as::<component::UnlitComponent>(child)
                 .is_some()
