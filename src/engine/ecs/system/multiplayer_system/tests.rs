@@ -241,3 +241,234 @@ fn message_only_sessions_stay_alive_without_legacy_pose_replication() {
         );
     }
 }
+
+#[test]
+fn roster_admission_preserves_unicode_and_keeps_admitted_peers_alive() {
+    for (name, expect_rejection) in [
+        ("🙂".into(), false),
+        ("a".repeat(64), true),
+        ("\"".repeat(64), true),
+        ("🙂".repeat(16), true),
+    ] {
+        let start = Instant::now();
+        let mut host =
+            MultiplayerEndpoint::bind(MultiplayerRole::Host, "127.0.0.1:0", &name, start).unwrap();
+        let addr = host.local_addr().unwrap().to_string();
+        let mut clients: Vec<_> = (0..16)
+            .map(|_| {
+                MultiplayerEndpoint::bind(MultiplayerRole::Client, &addr, &name, start).unwrap()
+            })
+            .collect();
+        for client in &mut clients {
+            pump(&mut host, client, start);
+        }
+        let admitted = clients
+            .iter()
+            .filter(|c| c.local_peer_id().is_some())
+            .count();
+        assert!(admitted > 0);
+        assert_eq!(admitted < 16, expect_rejection);
+        let events = host.take_events();
+        assert_eq!(
+            events.iter().any(|e| matches!(
+                e,
+                MultiplayerEvent::Error {
+                    phase: "admission",
+                    ..
+                }
+            )),
+            expect_rejection
+        );
+        assert!(
+            events
+                .iter()
+                .filter_map(
+                    |e| if let MultiplayerEvent::PeerJoined { name: actual, .. } = e {
+                        Some(actual)
+                    } else {
+                        None
+                    }
+                )
+                .all(|actual| actual == &name)
+        );
+        for tick in 1..=10 {
+            let now = start + Duration::from_secs(tick);
+            for client in &mut clients {
+                client.publish(tick);
+                client.poll(now);
+            }
+            host.poll(now);
+            host.publish(tick);
+            for client in &mut clients {
+                client.poll(now);
+            }
+            assert_eq!(
+                clients
+                    .iter()
+                    .filter(|c| c.local_peer_id().is_some())
+                    .count(),
+                admitted
+            );
+            assert!(
+                !host
+                    .take_events()
+                    .iter()
+                    .any(|e| matches!(e, MultiplayerEvent::PeerLeft { .. }))
+            );
+        }
+    }
+}
+
+#[test]
+fn roster_budget_checks_escaping_and_worst_case_envelope() {
+    use super::protocol::roster_fits;
+    for name in ["a".repeat(64), "\"".repeat(64), "👩🏽‍💻".repeat(4)] {
+        let mut peers = vec![PeerInfo {
+            id: 1,
+            name: name.clone(),
+        }];
+        assert!(roster_fits(peers.clone()));
+        while roster_fits(peers.clone()) {
+            peers.push(PeerInfo {
+                id: peers.len() as u32 + 1,
+                name: name.clone(),
+            });
+        }
+        peers.pop();
+        let chunks = snapshot_chunks(u64::MAX, peers.clone(), Vec::new(), Vec::new());
+        assert_eq!(chunks.len(), 1);
+        assert!(
+            Packet {
+                v: VERSION,
+                session: uuid::Uuid::nil(),
+                seq: u64::MAX,
+                msg: chunks[0].clone()
+            }
+            .encode()
+            .is_ok()
+        );
+        peers.push(PeerInfo {
+            id: peers.len() as u32 + 1,
+            name,
+        });
+        assert!(!roster_fits(peers));
+    }
+}
+
+#[test]
+fn session_rate_validation_and_minimum_rate_liveness() {
+    use super::MultiplayerSystem;
+    use crate::engine::ecs::component::MultiplayerSessionComponent;
+    use crate::engine::ecs::{CommandQueue, World};
+    for (rate, expected) in [
+        (0.2, None),
+        (1., Some(1.)),
+        (200., Some(120.)),
+        (f32::NAN, Some(20.)),
+        (0., Some(20.)),
+    ] {
+        let mut world = World::default();
+        let mut config = MultiplayerSessionComponent::host("127.0.0.1:0");
+        config.tick_hz = rate;
+        let id = world.add_component(config);
+        let mut system = MultiplayerSystem::default();
+        let mut queue = CommandQueue::new();
+        system.register_session(&mut world, &mut queue, id);
+        assert_eq!(
+            system.session.as_ref().map(|s| s.send_interval_sec),
+            expected.map(|hz| 1. / hz)
+        );
+    }
+    let mut host_world = World::default();
+    let mut client_world = World::default();
+    let mut config = MultiplayerSessionComponent::host("127.0.0.1:0");
+    config.tick_hz = 1.;
+    let host_id = host_world.add_component(config);
+    let mut host = MultiplayerSystem::default();
+    let mut client = MultiplayerSystem::default();
+    let mut queue = CommandQueue::new();
+    host.register_session(&mut host_world, &mut queue, host_id);
+    let address = host
+        .session
+        .as_ref()
+        .unwrap()
+        .endpoint
+        .local_addr()
+        .unwrap();
+    let mut config = MultiplayerSessionComponent::join(address.to_string());
+    config.tick_hz = 1.;
+    let client_id = client_world.add_component(config);
+    client.register_session(&mut client_world, &mut queue, client_id);
+    let start = Instant::now();
+    for tick in 0..10 {
+        let now = start + Duration::from_secs(tick);
+        client.tick_at(&mut client_world, &mut queue, 1., now);
+        host.tick_at(&mut host_world, &mut queue, 1., now);
+        client.tick_at(&mut client_world, &mut queue, 0., now);
+        assert_eq!(
+            client_world
+                .get_component_by_id_as::<MultiplayerSessionComponent>(client_id)
+                .unwrap()
+                .peer_id,
+            2
+        );
+    }
+    // An unrelated peer departs: the client's own identity must survive.
+    let now = start + Duration::from_secs(10);
+    let mut third =
+        MultiplayerEndpoint::bind(MultiplayerRole::Client, &address.to_string(), "third", now)
+            .unwrap();
+    third.poll(now);
+    host.tick_at(&mut host_world, &mut queue, 1., now);
+    client.tick_at(&mut client_world, &mut queue, 0., now);
+    drop(third);
+    host.tick_at(&mut host_world, &mut queue, 1., now);
+    client.tick_at(&mut client_world, &mut queue, 0., now);
+    assert_eq!(
+        client_world
+            .get_component_by_id_as::<MultiplayerSessionComponent>(client_id)
+            .unwrap()
+            .peer_id,
+        2
+    );
+    // Host Bye is projected even without a special local-disconnected event.
+    host.session = None;
+    client.tick_at(&mut client_world, &mut queue, 0., now);
+    assert_eq!(
+        client_world
+            .get_component_by_id_as::<MultiplayerSessionComponent>(client_id)
+            .unwrap()
+            .peer_id,
+        0
+    );
+    host_world
+        .get_component_by_id_as_mut::<MultiplayerSessionComponent>(host_id)
+        .unwrap()
+        .addr = address.to_string();
+    host.register_session(&mut host_world, &mut queue, host_id);
+    let now = now + Duration::from_secs(1);
+    client.tick_at(&mut client_world, &mut queue, 1., now);
+    host.tick_at(&mut host_world, &mut queue, 1., now);
+    client.tick_at(&mut client_world, &mut queue, 0., now);
+    assert_eq!(
+        client_world
+            .get_component_by_id_as::<MultiplayerSessionComponent>(client_id)
+            .unwrap()
+            .peer_id,
+        2
+    );
+    // No host polls for longer than the timeout: project disconnected again.
+    client.tick_at(
+        &mut client_world,
+        &mut queue,
+        0.,
+        now + PEER_TIMEOUT + Duration::from_secs(1),
+    );
+    assert_eq!(
+        client_world
+            .get_component_by_id_as::<MultiplayerSessionComponent>(client_id)
+            .unwrap()
+            .peer_id,
+        0
+    );
+}

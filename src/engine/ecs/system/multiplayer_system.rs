@@ -73,6 +73,17 @@ impl MultiplayerSystem {
                 return;
             }
         }
+        if config.tick_hz.is_finite() && config.tick_hz > 0.0 && config.tick_hz < 1.0 {
+            emit.push_event(
+                component,
+                EventSignal::MultiplayerError {
+                    phase: "configuration".into(),
+                    message: "tick_hz must be at least 1 Hz to maintain the session heartbeat"
+                        .into(),
+                },
+            );
+            return;
+        }
         let tick_hz = if config.tick_hz.is_finite() && config.tick_hz > 0.0 {
             config.tick_hz.min(120.0)
         } else {
@@ -149,12 +160,25 @@ impl MultiplayerSystem {
 
     /// Receive session events and publish roster/heartbeat control at `tick_hz`.
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
+        self.tick_at(world, emit, dt_sec, Instant::now());
+    }
+    fn tick_at(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        dt_sec: f32,
+        now: Instant,
+    ) {
         let Some(session) = &mut self.session else {
             return;
         };
-        session.endpoint.poll(Instant::now());
+        session.endpoint.poll(now);
         let is_host = session.endpoint.is_host();
         let scope = session.component;
+        if let Some(config) = world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)
+        {
+            config.peer_id = session.endpoint.local_peer_id().unwrap_or(0);
+        }
 
         for event in session.endpoint.take_events() {
             if let MultiplayerEvent::PeerJoined { peer_id, .. } = &event {
@@ -174,13 +198,6 @@ impl MultiplayerSystem {
                 }
             }
 
-            if let MultiplayerEvent::Connected { peer_id } = &event {
-                if let Some(config) =
-                    world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)
-                {
-                    config.peer_id = *peer_id;
-                }
-            }
             emit.push_event(scope, to_signal(event, is_host));
         }
 

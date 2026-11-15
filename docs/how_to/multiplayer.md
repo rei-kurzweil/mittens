@@ -116,7 +116,14 @@ on(net, "MultiplayerConnected", fn(event) { net.send("hello", net.local_name()) 
 
 `MultiplayerSession` constructors: `host(addr?)`, `join(host_addr)`, `from_env()`
 (`MITTENS_MULTIPLAYER_ROLE` = `host`|`client`, `MITTENS_MULTIPLAYER_ADDR`, `MITTENS_MULTIPLAYER_NAME`).
-Builders: `player_name(name)`, `tick_hz(hz)` (default 20), `enabled(bool)`.
+Builders: `player_name(name)`, `tick_hz(hz)` (default 20; positive rates below
+1 Hz are rejected, rates above 120 Hz are capped), `enabled(bool)`.
+Player names accept Unicode and emojis and are truncated at a UTF-8 boundary to
+64 bytes. The host admits a join only if the complete encoded roster still fits
+one 1,200-byte control datagram, including JSON escaping. Up to 16 clients are
+allowed; long names can lower that capacity. Rejection emits a host-side
+`MultiplayerError` with phase `admission`; the rejected client remains unwelcomed.
+Truncation preserves valid UTF-8 but can split a multi-code-point emoji sequence.
 Methods: `send(name, text)`, `is_host()`, `peer_id()`, `local_name()`.
 
 Events on the session component:

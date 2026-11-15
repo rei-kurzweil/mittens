@@ -103,8 +103,15 @@ fn pointer_notifications_follow_successful_acquisition_and_actual_release() {
         [0., 0., -1.],
     );
     notifications(&mut queue);
-    world.add_child(original, target).unwrap();
+    let replacement = world.add_component(TransformComponent::new().with_position(2., 0., 0.));
+    super::reparent_preserving_world(&mut world, target, Some(replacement), &mut queue).unwrap();
+    let before = crate::engine::ecs::system::TransformSystem::world_model(&world, target);
     system.tick(&mut world, &assets, &mut queue, 1. / 60.);
+    assert_eq!(world.parent_of(target), Some(replacement));
+    assert_eq!(
+        crate::engine::ecs::system::TransformSystem::world_model(&world, target),
+        before
+    );
     let events = notifications(&mut queue);
     assert_eq!(events.len(), 1);
     assert!(matches!(

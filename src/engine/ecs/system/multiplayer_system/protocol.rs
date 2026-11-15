@@ -111,6 +111,24 @@ impl Packet {
     }
 }
 
+/// Admission uses the exact largest control envelope, including JSON escaping.
+/// A complete roster is applied atomically, never as partial peer lists.
+pub fn roster_fits(peers: Vec<PeerInfo>) -> bool {
+    Packet {
+        v: VERSION,
+        session: uuid::Uuid::nil(),
+        seq: u64::MAX,
+        msg: Message::Snapshot {
+            tick: u64::MAX,
+            peers: Some(peers),
+            players: Vec::new(),
+            entities: Vec::new(),
+        },
+    }
+    .encode()
+    .is_ok()
+}
+
 /// Split one host tick into datagram-sized snapshot chunks.
 pub fn snapshot_chunks(
     tick: u64,

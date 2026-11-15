@@ -4014,7 +4014,7 @@ fn apply_call(
                     .clone()
                     .with_eye_height_from_head_bone(arg_f32(args, 0)?)
             }
-            "eye_offset" => *avc = avc.clone().with_eye_offset(val_as_f32_array::<3>(&args[0])?)?,
+            "eye_offset" => *avc = avc.clone().with_eye_offset(arg_f32_arr::<3>(args, 0)?)?,
             "head_ik_eye_height" => *avc = avc.clone().with_head_ik_eye_height(arg_f32(args, 0)?),
             "head_motion_gaze_policy" => {
                 *avc = avc.clone().with_head_motion_gaze_policy(
@@ -4588,6 +4588,21 @@ fn apply_layout_bounds_ctor(
 mod tests {
     use super::*;
     use crate::engine::ecs::component::RayCastComponent;
+    #[test]
+    fn legacy_eye_offset_without_arguments_returns_error() {
+        let ce = MaterializedCE {
+            component_type: "AVC".into(),
+            component_property_assignment_only: false,
+            ctor_method: None,
+            ctor_args: vec![],
+            calls: vec![("eye_offset".into(), vec![])],
+            named: vec![], positionals: vec![], deferred_block: None, children: vec![],
+        };
+        let mut world = World::default();
+        let mut emit = crate::engine::ecs::RxWorld::default();
+        assert!(spawn_tree(&ce, None, &mut world, &mut emit).is_err());
+    }
+
     #[test]
     fn legacy_keyframe_spawn_is_rejected_before_world_mutation() {
         let ce = MaterializedCE {

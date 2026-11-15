@@ -54,6 +54,11 @@ incoming.bind_transform(hand, {
 })
 ```
 
+The binding call returns the subscription handle. As a standalone MMS expression
+statement, it emits/attaches that handle and activates the subscription. If you
+instead store its return value in a variable, emit/attach that variable afterward.
+This same rule applies to the `bind_morph` example below.
+
 The second argument is an ordinary options table, not an executable block.
 name labels the local subscription component; the wire channel name remains
 left-hand.pose. space is world (default) or local. The bound value supplies the

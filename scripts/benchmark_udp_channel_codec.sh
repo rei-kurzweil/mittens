@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='mittens-channel-codec-') as directory:
     (package / 'Cargo.toml').write_text(manifest)
     # Retain workspace-locked transitive versions instead of resolving newer cache entries.
     (package / 'Cargo.lock').write_text((root / 'Cargo.lock').read_text())
-    (package / 'src/lib.rs').write_text('#[path = ' + json.dumps(str(root / 'src/engine/udp/mod.rs')) + ']\npub mod udp;\n#[path = ' + json.dumps(str(root / 'src/engine/udp_channels/mod.rs')) + ']\npub mod udp_channels;\n')
+    (package / 'src/lib.rs').write_text('#[path = ' + json.dumps(str(root / 'src/engine/udp/mod.rs'), ensure_ascii=False) + ']\npub mod udp;\n#[path = ' + json.dumps(str(root / 'src/engine/udp_channels/mod.rs'), ensure_ascii=False) + ']\npub mod udp_channels;\n')
     subprocess.run(['cargo', 'test', '--offline', '--release', '--manifest-path', str(package / 'Cargo.toml'),
         '--target-dir', str(Path(metadata['target_directory']) / 'channel-codec-bench'),
         '--', '--ignored', '--exact', 'udp_channels::tests::codec_measurement', '--nocapture'], check=True)

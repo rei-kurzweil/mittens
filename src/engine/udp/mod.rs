@@ -98,6 +98,11 @@ pub struct UdpPoll {
     pub drained: bool,
 }
 impl UdpSystem {
+    /// Cloned handles share an owner; distinct default instances do not.
+    pub fn same_transport(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     pub fn bind(
         &self,
         address: impl ToSocketAddrs,

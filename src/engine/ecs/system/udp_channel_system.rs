@@ -56,12 +56,6 @@ impl UdpChannelSystem {
         self.registered.insert(id);
     }
     pub fn remove(&mut self, world: &mut World, id: ComponentId) {
-        if let Some(UdpBinding::Morph { target, slot }) = world
-            .get_component_by_id_as::<UdpChannelComponent>(id)
-            .and_then(|c| c.binding.clone())
-        {
-            clear_morph(world, target, &slot);
-        }
         self.registered.remove(&id);
         if self.sockets.remove(&id).is_some() {
             let dependents: Vec<_> = self
@@ -91,7 +85,10 @@ impl UdpChannelSystem {
                         let _ = s.remove_publication(id);
                     }
                 }
-                Channel::Subscription { socket, id, .. } => {
+                Channel::Subscription { socket, id, binding, .. } => {
+                    if let Some(UdpBinding::Morph { target, slot }) = binding {
+                        clear_morph(world, target, &slot);
+                    }
                     if let Some(s) = self.sockets.get_mut(&socket) {
                         let _ = s.remove_subscription(id);
                     }
@@ -187,6 +184,7 @@ impl UdpChannelSystem {
                     self.channels.insert(*id, channel);
                     if let Some(c) = world.get_component_by_id_as_mut::<UdpChannelComponent>(*id) {
                         c.active = true;
+                        c.error = None;
                     }
                 })
             } else {

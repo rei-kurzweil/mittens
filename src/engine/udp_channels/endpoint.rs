@@ -360,25 +360,13 @@ impl ChannelSocket {
         for id in expired.into_iter().flatten() {
             self.lose_channel(id);
         }
-        for (id, p) in &mut self.publications {
-            if p.last_ack
-                .is_some_and(|last| now.saturating_duration_since(last) >= TIMEOUT)
-            {
-                p.last_ack = None;
-                push_event(
-                    &mut self.events,
-                    &mut self.stats,
-                    ChannelEvent::PublicationLost(id),
-                );
-            }
-            if p.last_declare
-                .is_none_or(|last| now.saturating_duration_since(last) >= RETRY)
-            {
-                send(&self.socket, &mut self.stats, &p.declaration, p.to)?;
-                p.last_declare = Some(now);
-            }
-        }
-        Ok(())
+        poll_publications(
+            &mut self.publications,
+            &mut self.events,
+            &mut self.stats,
+            now,
+            |stats, bytes, to| send(&self.socket, stats, bytes, to),
+        )
     }
 
     fn receive(
@@ -667,6 +655,39 @@ fn push_event(events: &mut Vec<ChannelEvent>, stats: &mut ChannelStats, event: C
         stats.dropped_events += 1;
     }
 }
+// Generic dispatch stays monomorphized; tests can deterministically inject I/O outcomes.
+fn poll_publications(
+    publications: &mut SlotMap<PublicationId, Publication>,
+    events: &mut Vec<ChannelEvent>,
+    stats: &mut ChannelStats,
+    now: Instant,
+    mut transmit: impl FnMut(&mut ChannelStats, &[u8], SocketAddr) -> Result<bool, ChannelError>,
+) -> Result<(), ChannelError> {
+    let mut first_error = None;
+    for (id, p) in publications {
+        if p.last_ack
+            .is_some_and(|last| now.saturating_duration_since(last) >= TIMEOUT)
+        {
+            p.last_ack = None;
+            push_event(events, stats, ChannelEvent::PublicationLost(id));
+        }
+        if p.last_declare
+            .is_none_or(|last| now.saturating_duration_since(last) >= RETRY)
+        {
+            match transmit(stats, &p.declaration, p.to) {
+                Ok(true) => p.last_declare = Some(now),
+                Ok(false) => {}
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
 fn send(
     socket: &UdpEndpoint,
     stats: &mut ChannelStats,
@@ -684,5 +705,65 @@ fn send(
             Ok(false)
         }
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod publication_retry_tests {
+    use super::*;
+    #[test]
+    fn publication_errors_do_not_starve_later_retries_or_timeouts() {
+        let mut socket = ChannelSocket::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let schema = Schema::primitive(meow_meow_script::TypeTag::F32);
+        let to = "127.0.0.1:9".parse().unwrap();
+        let a = socket.publish(to, "a", schema.clone()).unwrap();
+        let b = socket.publish(to, "b", schema).unwrap();
+        let start = Instant::now();
+        socket.publications[b].last_ack = Some(start);
+        let now = start + TIMEOUT;
+        let mut visited = 0;
+        let error = poll_publications(
+            &mut socket.publications,
+            &mut socket.events,
+            &mut socket.stats,
+            now,
+            |_, bytes, _| {
+                visited += 1;
+                if protocol::decode(bytes).unwrap().channel == 1 {
+                    Err(error("injected send failure"))
+                } else {
+                    Ok(true)
+                }
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("injected"));
+        assert_eq!(visited, 2);
+        assert_eq!(socket.publications[a].last_declare, None);
+        assert_eq!(socket.publications[b].last_declare, Some(now));
+        assert!(!socket.is_publication_ready(b));
+        assert!(socket.events.contains(&ChannelEvent::PublicationLost(b)));
+        // Backpressure isn't a transmitted declaration either. The failed A
+        // remains eligible immediately; B is not retried before RETRY.
+        let previous = now - RETRY;
+        socket.publications[a].last_declare = Some(previous);
+        poll_publications(
+            &mut socket.publications,
+            &mut socket.events,
+            &mut socket.stats,
+            now,
+            |_, _, _| Ok(false),
+        )
+        .unwrap();
+        assert_eq!(socket.publications[a].last_declare, Some(previous));
+        poll_publications(
+            &mut socket.publications,
+            &mut socket.events,
+            &mut socket.stats,
+            now,
+            |_, _, _| Ok(true),
+        )
+        .unwrap();
+        assert_eq!(socket.publications[a].last_declare, Some(now));
     }
 }

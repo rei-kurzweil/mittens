@@ -279,6 +279,18 @@ right.bind_morph(avatar, "right_eye_blink")
         .all_components()
         .find(|id| receiver.world.component_label(*id) == Some("left_binding"))
         .unwrap();
+    // A failed duplicate must never clear the active owner's external factor.
+    let owner = receiver.world.get_component_by_id_as::<UdpChannelComponent>(binding).unwrap();
+    let mut duplicate = UdpChannelComponent::new(owner.socket, false, "duplicate".into());
+    duplicate.peer = owner.peer;
+    duplicate.schema = owner.schema.clone();
+    duplicate.binding = owner.binding.clone();
+    let duplicate = receiver.world.add_component(duplicate);
+    receiver.systems.udp_channels.register(duplicate);
+    receiver.update(1. / 60., &Default::default());
+    assert!(receiver.world.get_component_by_id_as::<UdpChannelComponent>(duplicate).unwrap().error.is_some());
+    receiver.systems.udp_channels.remove(&mut receiver.world, duplicate);
+    assert_eq!(receiver.world.get_component_by_id_as::<GLTFComponent>(gltf).unwrap().morph_factors[&keys[0]].external, Some(0.4));
     receiver
         .systems
         .remove_subtree_immediate(&mut receiver.world, &mut receiver.visuals, binding);
@@ -331,4 +343,46 @@ on(socket, "UdpState", fn(event) {{ if event.message != "" {{ observation.set_tr
             .translation,
         [1., 0., 0.]
     );
+}
+
+#[test]
+fn udp_subscription_recovers_registration_before_first_sample() {
+    use crate::engine::udp_channels::{ChannelSocket, Schema};
+    let mut publisher = ChannelSocket::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let receive_port = port();
+    let mut scene = load(&format!(r#"
+import {{ f32 }} from "types"
+let socket = UdpSocket.bind("127.0.0.1:{receive_port}") {{}}
+socket
+let incoming = socket.subscribe("value").type(f32)
+incoming
+"#));
+    scene.update(1. / 60., &Default::default());
+    let id = scene.world.all_components().find(|id| scene.world.get_component_by_id_as::<UdpChannelComponent>(*id).is_some()).unwrap();
+    let sub = scene.world.get_component_by_id_as_mut::<UdpChannelComponent>(id).unwrap();
+    assert!(sub.error.as_ref().unwrap().contains("peer"));
+    sub.peer = Some(publisher.local_addr().unwrap());
+    publisher.publish(format!("127.0.0.1:{receive_port}").parse().unwrap(), "value", Schema::primitive(meow_meow_script::TypeTag::F32)).unwrap();
+    for _ in 0..8 {
+        publisher.poll(std::time::Instant::now()).unwrap();
+        scene.update(1. / 60., &Default::default());
+    }
+    let sub = scene.world.get_component_by_id_as::<UdpChannelComponent>(id).unwrap();
+    assert!(sub.ready && sub.error.is_none(), "{:?}", sub.error);
+    // No sample was sent: registration alone must recover readiness.
+    // A later schema rejection must not be cleared by the readiness projection.
+    let bad = scene.world.add_component({
+        let mut c = UdpChannelComponent::new(sub.socket, false, "wrong".into());
+        c.peer = Some(publisher.local_addr().unwrap());
+        c.schema = Some(Schema::primitive(meow_meow_script::TypeTag::F32)); c
+    });
+    scene.systems.udp_channels.register(bad);
+    publisher.publish(format!("127.0.0.1:{receive_port}").parse().unwrap(), "wrong", Schema::primitive(meow_meow_script::TypeTag::Vec3)).unwrap();
+    // A publication created after the previous poll is sent immediately.
+    for _ in 0..8 {
+        publisher.poll(std::time::Instant::now()).unwrap();
+        scene.update(1. / 60., &Default::default());
+    }
+    let sub = scene.world.get_component_by_id_as::<UdpChannelComponent>(bad).unwrap();
+    assert!(!sub.ready && sub.error.is_some());
 }

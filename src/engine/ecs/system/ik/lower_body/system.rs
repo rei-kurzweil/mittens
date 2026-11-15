@@ -26,6 +26,7 @@ pub(super) struct LowerBodyInstance {
     bind_error: Option<&'static str>,
     status: LowerBodyStatus,
     feet: Option<[FootState; 2]>,
+    support_frame: Option<(ComponentId, f32)>,
     walking: WalkingState,
     airborne: super::airborne::AirborneState,
     sole_offsets: Option<[[f32; 3]; 2]>,
@@ -85,19 +86,40 @@ impl LowerBodyIkSystem {
             let mut node = Some(id);
             let mut mounted = false;
             let mut tracking = None;
+            let mut support_frame = None;
             while let Some(current) = node {
                 mounted |= attachments.is_movement_root_mounted(world, current);
                 if tracking.is_none() {
                     if let Some(input) = world.get_component_by_id_as::<InputXRComponent>(current) {
                         tracking = Some(input.enabled && input.pose_valid);
+                        support_frame = world
+                            .parent_of(current)
+                            .and_then(|frame| matrix(world, frame).ok().map(|m| (frame, m[3][1])));
                     } else if let Some(input) =
                         world.get_component_by_id_as::<InputComponent>(current)
                     {
                         tracking = Some(input.enabled);
+                        support_frame = world
+                            .parent_of(current)
+                            .and_then(|frame| matrix(world, frame).ok().map(|m| (frame, m[3][1])));
                     }
                 }
                 node = world.parent_of(current);
             }
+            let vertical_motion = match (instance.support_frame, support_frame) {
+                (Some((old, before)), Some((new, after))) if old == new => after - before,
+                _ => 0.,
+            };
+            let previous_floor = instance
+                .feet
+                .as_ref()
+                .and_then(|feet| {
+                    feet.iter()
+                        .filter_map(|foot| foot.support_height)
+                        .min_by(f32::total_cmp)
+                })
+                .map(|height| height + vertical_motion);
+            instance.support_frame = support_frame;
             let walking_config = walking_settings(world, avatar, id);
             let walking_enabled = walking_config.as_ref().is_ok_and(|config| config.enabled);
             let gate = if !avatar.crouch_enabled && !walking_enabled {
@@ -116,6 +138,7 @@ impl LowerBodyIkSystem {
                     rig,
                     &mut instance.walking,
                     &mut instance.airborne,
+                    previous_floor,
                     world,
                     avatar,
                     &config,
@@ -186,6 +209,8 @@ impl LowerBodyInstance {
             rig.restore(world, emit);
         }
         self.rig = None;
+        self.feet = None;
+        self.support_frame = None;
         self.walking.reset();
         self.airborne.reset();
         match LowerBodyRig::bind(world, root, report) {
@@ -225,6 +250,7 @@ fn solve_frame(
     rig: &mut LowerBodyRig,
     walking: &mut WalkingState,
     airborne: &mut super::airborne::AirborneState,
+    previous_floor: Option<f32>,
     world: &World,
     avatar: &AvatarControlComponent,
     walking_config: &WalkingIkComponent,
@@ -300,6 +326,7 @@ fn solve_frame(
         avatar,
         id,
         soles,
+        previous_floor,
         body.scale[0],
         padding,
         stack,

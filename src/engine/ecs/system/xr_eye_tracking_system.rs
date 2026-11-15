@@ -15,6 +15,7 @@ pub struct XREyeTrackingSystem {
     vrchat_osc_sources: HashSet<ComponentId>,
     htc_sources: HashSet<ComponentId>,
     mediapipe_sources: HashSet<ComponentId>,
+    active_udp: Option<UdpSystem>,
     sockets: HashMap<ComponentId, UdpEndpoint>,
     htc_sockets: HashMap<ComponentId, UdpEndpoint>,
     /// A failed bind is retried so a port becoming available recovers without
@@ -119,6 +120,15 @@ impl XREyeTrackingSystem {
         emit: &mut dyn SignalEmitter,
         udp: &UdpSystem,
     ) {
+        if self.active_udp.as_ref().is_none_or(|old| !old.same_transport(udp)) {
+            // Release leases before rebinding the same configured ports.
+            self.sockets.clear();
+            self.htc_sockets.clear();
+            self.failed_standard_binds.clear();
+            self.failed_htc_binds.clear();
+            self.standard_samples.clear();
+            self.active_udp = Some(udp.clone());
+        }
         self.prune_stale_registrations(world);
         self.ensure_generic_sources(world);
         self.tick_standard(world, emit, udp);
@@ -629,6 +639,52 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
+
+    #[test]
+    fn eye_tracking_rebinds_on_transport_change_and_keeps_clone_leases() {
+        let mut world = World::default();
+        let osc = world.add_component(VRChatOSCEyeTrackingComponent::listen("127.0.0.1", 0));
+        let htc = world.add_component(HTCEyeTrackingComponent::listen("127.0.0.1", 0));
+        let mut system = XREyeTrackingSystem::default();
+        system.register_component(&world, osc);
+        system.register_component(&world, htc);
+        let mut queue = CommandQueue::new();
+        system.tick(&mut world, &mut queue);
+        let standalone = system.standalone_udp.clone();
+        let shared = UdpSystem::default();
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut addresses = standalone.diagnostics();
+        world.get_component_by_id_as_mut::<VRChatOSCEyeTrackingComponent>(osc).unwrap().port = addresses.iter().find(|e| e.label == "eye-osc").unwrap().local_addr.port();
+        world.get_component_by_id_as_mut::<HTCEyeTrackingComponent>(htc).unwrap().port = addresses.iter().find(|e| e.label == "eye-htc").unwrap().local_addr.port();
+        let mut old = standalone.clone();
+        let mut previous_count = 0;
+        for (i, udp) in [standalone.clone(), shared.clone(), shared.clone(), standalone.clone()].iter().enumerate() {
+            system.tick_with_udp(&mut world, &mut queue, udp);
+            if !old.same_transport(udp) { assert!(old.diagnostics().is_empty()); }
+            addresses = udp.diagnostics();
+            assert_eq!(addresses.len(), 2);
+            let before: u64 = addresses.iter().map(|e| e.stats.received_packets).sum();
+            if old.same_transport(udp) { assert_eq!(before, previous_count); }
+            let value = 0.2 + i as f32 * 0.1;
+            let mut packet = Vec::new();
+            for text in ["/tracking/eye/EyesClosedAmount", ",f"] {
+                packet.extend_from_slice(text.as_bytes()); packet.push(0);
+                while packet.len() % 4 != 0 { packet.push(0); }
+            }
+            packet.extend_from_slice(&value.to_be_bytes());
+            sender.send_to(&packet, addresses.iter().find(|e| e.label == "eye-osc").unwrap().local_addr).unwrap();
+            let mut packet = [0u8; 84]; packet[..3].copy_from_slice(&[b'M', 1, 12]);
+            packet[36..40].copy_from_slice(&(1. - value).to_le_bytes());
+            packet[48..52].copy_from_slice(&(1. - value).to_le_bytes());
+            sender.send_to(&packet, addresses.iter().find(|e| e.label == "eye-htc").unwrap().local_addr).unwrap();
+            system.tick_with_udp(&mut world, &mut queue, &udp.clone());
+            assert_eq!(udp.diagnostics().iter().map(|e| e.stats.received_packets).sum::<u64>(), before + 2);
+            assert!((world.get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(osc).unwrap().closure_sample.left.unwrap() - value).abs() < 1e-6);
+            assert!((world.get_component_by_id_as::<HTCEyeTrackingComponent>(htc).unwrap().closure_sample.left.unwrap() - value).abs() < 1e-6);
+            previous_count = before + 2;
+            old = udp.clone();
+        }
+    }
 
     #[test]
     fn generic_tracker_materializes_default_source_components() {

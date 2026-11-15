@@ -419,6 +419,10 @@ impl GrabbableSystem {
         if world.get_component_record(grab.target).is_none() {
             return;
         }
+        // A new owner may already have moved the target out of this grab.
+        if world.parent_of(grab.target) != Some(grab.pointer_parent) {
+            return;
+        }
         let parent = grab
             .original_parent
             .filter(|p| world.get_component_record(*p).is_some());

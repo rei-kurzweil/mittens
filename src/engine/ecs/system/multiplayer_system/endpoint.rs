@@ -3,7 +3,7 @@
 //!
 //! The host owns the roster. Session control and app messages are independent
 //! of spatial telemetry, which uses typed UDP channels.
-use super::protocol::{HOST_PEER_ID, Message, Packet, PeerInfo, snapshot_chunks};
+use super::protocol::{HOST_PEER_ID, Message, Packet, PeerInfo, roster_fits, snapshot_chunks};
 use super::transport::UdpTransport;
 use crate::engine::ecs::component::MultiplayerRole;
 use std::collections::{BTreeMap, HashMap};
@@ -167,7 +167,6 @@ impl MultiplayerEndpoint {
         matches!(self.state, RoleState::Host { .. })
     }
 
-    #[cfg(test)]
     pub fn local_peer_id(&self) -> Option<u32> {
         self.local_peer_id
     }
@@ -305,8 +304,29 @@ impl MultiplayerEndpoint {
                     return;
                 }
                 let id = *next_peer_id;
-                *next_peer_id += 1;
                 let name = truncate(&name, MAX_NAME_BYTES);
+                let mut peers = vec![PeerInfo {
+                    id: HOST_PEER_ID,
+                    name: self.local_name.clone(),
+                }];
+                peers.extend(clients.values().map(|peer| PeerInfo {
+                    id: peer.id,
+                    name: peer.name.clone(),
+                }));
+                peers.push(PeerInfo {
+                    id,
+                    name: name.clone(),
+                });
+                if !roster_fits(peers) {
+                    self.events.push(MultiplayerEvent::Error {
+                        phase: "admission",
+                        message:
+                            "player name would exceed the complete session roster datagram budget"
+                                .into(),
+                    });
+                    return;
+                }
+                *next_peer_id += 1;
                 clients.insert(
                     from,
                     ClientPeer {

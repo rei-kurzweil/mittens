@@ -26,6 +26,24 @@ count_label = 'Participants' if scenario != 'synthetic-pairs' else 'Pairs'
 groups = defaultdict(list)
 for row in rows:
     groups[(int(row['pairs']), row['mode'], row['kind'])].append(row)
+# Validate identity before reporting/filtering any comparisons. A single-mode
+# report is valid; if both comparison modes exist their measurement kinds and
+# trial sets must agree, including lossy trials.
+for key, dataset in groups.items():
+    ids = [row['trial'] for row in dataset]
+    if len(ids) != len(set(ids)):
+        raise SystemExit(f'duplicate trial IDs in {key}')
+for pairs in {p for p, _, _ in groups}:
+    separate = {kind for p, mode, kind in groups if p == pairs and mode == 'separate'}
+    shared = {kind for p, mode, kind in groups if p == pairs and mode == 'shared'}
+    if separate and shared:
+        if separate != shared:
+            raise SystemExit(f'unpaired measurement kinds for {pairs}')
+        for kind in separate:
+            a = {row['trial'] for row in groups[pairs, 'separate', kind]}
+            b = {row['trial'] for row in groups[pairs, 'shared', kind]}
+            if a != b:
+                raise SystemExit(f'unpaired trial IDs for {pairs}, {kind}')
 print(f'| {count_label} | Mode | Replay ns/packet, median [min–max] | Receiver CPU ms / whole run, median [min–max] | UDP p95 µs, median | Drops / send errors | Scratch bytes |')
 print('| --- | --- | --- | --- | --- | --- | --- |')
 for pairs, mode in sorted({(p, m) for p, m, _ in groups}):
