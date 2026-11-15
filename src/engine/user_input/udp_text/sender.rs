@@ -1,9 +1,10 @@
 use super::{Edit, MAX_PACKET, Packet};
+use crate::engine::udp::{UdpEndpoint, UdpSystem};
 use crate::engine::user_input::TextInputFrameEvent;
 use std::{
     collections::VecDeque,
     io,
-    net::{SocketAddr, UdpSocket},
+    net::SocketAddr,
     time::{Duration, Instant},
 };
 struct Pending {
@@ -12,7 +13,8 @@ struct Pending {
     attempts: usize,
 }
 pub struct UdpTextInputSender {
-    socket: UdpSocket,
+    socket: UdpEndpoint,
+    udp: UdpSystem,
     peer: SocketAddr,
     session: uuid::Uuid,
     next: u64,
@@ -24,14 +26,21 @@ pub struct UdpTextInputSender {
 }
 impl UdpTextInputSender {
     pub fn new(peer: SocketAddr) -> io::Result<Self> {
-        let socket = UdpSocket::bind(if peer.is_ipv4() {
-            "0.0.0.0:0"
-        } else {
-            "[::]:0"
-        })?;
-        socket.set_nonblocking(true)?;
+        Self::new_on(&UdpSystem::default(), peer)
+    }
+    pub fn new_on(udp: &UdpSystem, peer: SocketAddr) -> io::Result<Self> {
+        let socket = udp.bind(
+            if peer.is_ipv4() {
+                "0.0.0.0:0"
+            } else {
+                "[::]:0"
+            },
+            MAX_PACKET,
+            "terminal-sender",
+        )?;
         Ok(Self {
             socket,
+            udp: udp.clone(),
             peer,
             session: uuid::Uuid::new_v4(),
             next: 1,
@@ -91,32 +100,29 @@ impl UdpTextInputSender {
             return Ok(());
         }
         let now = Instant::now();
-        let mut buffer = [0u8; MAX_PACKET + 1];
-        for _ in 0..16 {
-            match self.socket.recv_from(&mut buffer) {
-                Ok((size, address)) if address == self.peer => {
-                    if let Some(ack) = Packet::decode(&buffer[..size])
-                        .filter(|p| p.ack && p.events.is_empty() && p.session == self.session)
-                    {
-                        if self
-                            .pending
-                            .as_ref()
-                            .is_some_and(|pending| pending.packet.sequence == ack.sequence)
-                        {
-                            if ack.sequence == 0 {
-                                self.ready = true;
-                            } else {
-                                self.next += 1;
-                            }
-                            self.pending = None;
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) => return Err(error),
+        let udp = self.udp.clone();
+        let socket = self.socket.clone();
+        udp.poll(&socket, 16, |address, bytes| {
+            if address != self.peer {
+                return;
             }
-        }
+            if let Some(ack) = Packet::decode(bytes)
+                .filter(|p| p.ack && p.events.is_empty() && p.session == self.session)
+            {
+                if self
+                    .pending
+                    .as_ref()
+                    .is_some_and(|pending| pending.packet.sequence == ack.sequence)
+                {
+                    if ack.sequence == 0 {
+                        self.ready = true;
+                    } else {
+                        self.next += 1;
+                    }
+                    self.pending = None;
+                }
+            }
+        })?;
         if let Some(pending) = self.pending.as_mut() {
             if now.duration_since(pending.last_sent) >= Duration::from_millis(50) {
                 if pending.attempts >= 40 {

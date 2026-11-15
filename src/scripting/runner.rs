@@ -611,6 +611,18 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             ),
             ("key".to_string(), Value::String(event.key.clone())),
         ])),
+        Some(crate::engine::ecs::EventSignal::UdpSample { value }) => {
+            Value::Map(HashMap::from([(
+                "value".into(),
+                crate::scripting::udp_channel_api::sample_value(value),
+            )]))
+        }
+        Some(crate::engine::ecs::EventSignal::UdpState { ready, message }) => {
+            Value::Map(HashMap::from([
+                ("ready".into(), Value::Bool(*ready)),
+                ("message".into(), Value::String(message.clone())),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::FrameTick { dt_sec }) => {
             Value::Map(HashMap::from([(
                 "dt_sec".to_string(),
@@ -681,7 +693,9 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             }
             Value::Map(payload)
         }
-        Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target }) => {
+        Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target })
+        | Some(crate::engine::ecs::EventSignal::PointerGrabbed { pointer, target })
+        | Some(crate::engine::ecs::EventSignal::PointerReleased { pointer, target }) => {
             Value::Map(grab_event_payload(*pointer, *target))
         }
         Some(crate::engine::ecs::EventSignal::ProjectileHit {
@@ -902,6 +916,33 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                     .unwrap_or(Value::Null),
             ),
         ])),
+        Some(crate::engine::ecs::EventSignal::MultiplayerConnected { peer_id, is_host }) => {
+            Value::Map(HashMap::from([
+                ("peer_id".to_string(), Value::Number(*peer_id as f64)),
+                ("is_host".to_string(), Value::Bool(*is_host)),
+            ]))
+        }
+        Some(
+            crate::engine::ecs::EventSignal::MultiplayerPeerJoined { peer_id, name }
+            | crate::engine::ecs::EventSignal::MultiplayerPeerLeft { peer_id, name },
+        ) => Value::Map(HashMap::from([
+            ("peer_id".to_string(), Value::Number(*peer_id as f64)),
+            ("name".to_string(), Value::String(name.clone())),
+        ])),
+        Some(crate::engine::ecs::EventSignal::MultiplayerMessage { from, name, text }) => {
+            Value::Map(HashMap::from([
+                // `from` is an MMS keyword, so the payload key is `sender`.
+                ("sender".to_string(), Value::Number(*from as f64)),
+                ("name".to_string(), Value::String(name.clone())),
+                ("text".to_string(), Value::String(text.clone())),
+            ]))
+        }
+        Some(crate::engine::ecs::EventSignal::MultiplayerError { phase, message }) => {
+            Value::Map(HashMap::from([
+                ("phase".to_string(), Value::String(phase.clone())),
+                ("message".to_string(), Value::String(message.clone())),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::XrEyeTrackingUpdated {
             combined_look,
             left_look,

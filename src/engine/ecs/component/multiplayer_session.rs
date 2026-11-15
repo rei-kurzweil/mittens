@@ -1,0 +1,159 @@
+use super::Component;
+use crate::engine::ecs::component::ce_helpers::*;
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
+
+/// Default UDP port for `MultiplayerSession.host()` / `MultiplayerSession.join()` without a port.
+pub const MULTIPLAYER_DEFAULT_PORT: u16 = 7010;
+
+/// Which side of session control this process plays. The host owns the roster;
+/// spatial/physics authority is chosen separately by MMS and typed channels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MultiplayerRole {
+    #[default]
+    Host,
+    Client,
+}
+
+/// One multiplayer session endpoint. `addr` is the bind address for a host and
+/// the host's address for a client.
+#[derive(Debug, Clone)]
+pub struct MultiplayerSessionComponent {
+    pub role: MultiplayerRole,
+    pub addr: String,
+    pub player_name: String,
+    /// Roster/heartbeat send rate. Receiving is polled every frame.
+    pub tick_hz: f32,
+    pub enabled: bool,
+    /// Runtime: this process's peer id once connected (host is 1), else 0.
+    pub peer_id: u32,
+    /// Runtime control-plane addresses, used to configure separately typed UDP channels.
+    pub peer_ips: std::collections::HashMap<u32, String>,
+    component: Option<ComponentId>,
+}
+
+impl Default for MultiplayerSessionComponent {
+    fn default() -> Self {
+        Self {
+            role: MultiplayerRole::Host,
+            addr: format!("0.0.0.0:{MULTIPLAYER_DEFAULT_PORT}"),
+            player_name: "player".to_string(),
+            tick_hz: 20.0,
+            enabled: true,
+            peer_id: 0,
+            peer_ips: std::collections::HashMap::new(),
+            component: None,
+        }
+    }
+}
+
+impl MultiplayerSessionComponent {
+    pub fn host(bind_addr: impl Into<String>) -> Self {
+        Self {
+            role: MultiplayerRole::Host,
+            addr: bind_addr.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn join(host_addr: impl Into<String>) -> Self {
+        Self {
+            role: MultiplayerRole::Client,
+            addr: host_addr.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Development launcher configuration:
+    /// `MITTENS_MULTIPLAYER_ROLE` (`host` | `client`, default `host`),
+    /// `MITTENS_MULTIPLAYER_ADDR` (bind address for host, host address for client),
+    /// `MITTENS_MULTIPLAYER_NAME` (player name).
+    pub fn from_env() -> Result<Self, String> {
+        let role = match std::env::var("MITTENS_MULTIPLAYER_ROLE").as_deref() {
+            Ok("host") | Err(_) => MultiplayerRole::Host,
+            Ok("client" | "join") => MultiplayerRole::Client,
+            Ok(other) => {
+                return Err(format!(
+                    "MITTENS_MULTIPLAYER_ROLE must be 'host' or 'client', got '{other}'"
+                ));
+            }
+        };
+        let addr = std::env::var("MITTENS_MULTIPLAYER_ADDR").unwrap_or_else(|_| match role {
+            MultiplayerRole::Host => format!("0.0.0.0:{MULTIPLAYER_DEFAULT_PORT}"),
+            MultiplayerRole::Client => format!("127.0.0.1:{MULTIPLAYER_DEFAULT_PORT}"),
+        });
+        let mut session = Self {
+            role,
+            addr,
+            ..Self::default()
+        };
+        if let Ok(name) = std::env::var("MITTENS_MULTIPLAYER_NAME") {
+            session.player_name = name;
+        }
+        Ok(session)
+    }
+
+    pub fn with_player_name(mut self, name: impl Into<String>) -> Self {
+        self.player_name = name.into();
+        self
+    }
+
+    pub fn with_tick_hz(mut self, tick_hz: f32) -> Self {
+        self.tick_hz = tick_hz;
+        self
+    }
+
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn is_host(&self) -> bool {
+        self.role == MultiplayerRole::Host
+    }
+}
+
+impl Component for MultiplayerSessionComponent {
+    fn name(&self) -> &'static str {
+        "multiplayer_session"
+    }
+
+    fn set_id(&mut self, component: ComponentId) {
+        self.component = Some(component);
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            IntentValue::RegisterMultiplayerSession {
+                component_id: component,
+            },
+        );
+    }
+
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::scripting::ast::ComponentExpression {
+        let ctor = match self.role {
+            MultiplayerRole::Host => "host",
+            MultiplayerRole::Client => "join",
+        };
+        let mut ce = ce_call("MultiplayerSession", ctor, vec![s(&self.addr)])
+            .with_call("player_name", vec![s(&self.player_name)]);
+        if self.tick_hz != Self::default().tick_hz {
+            ce = ce.with_call("tick_hz", vec![num(self.tick_hz as f64)]);
+        }
+        if !self.enabled {
+            ce = ce.with_call("enabled", vec![b(false)]);
+        }
+        ce
+    }
+}

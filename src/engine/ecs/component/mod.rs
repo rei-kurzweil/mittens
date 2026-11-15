@@ -73,6 +73,7 @@ pub mod mesh;
 pub mod mirror;
 pub mod morph_target;
 pub mod mountable;
+pub mod multiplayer_session;
 pub mod music_note;
 pub mod normal_visualisation;
 pub mod opacity;
@@ -253,7 +254,7 @@ pub use clock::ClockComponent;
 pub use walking_ik::WalkingIkComponent;
 mod collidable;
 pub use climbable::ClimbableComponent;
-pub use collidable::{CollidableComponent, CollidableMode};
+pub use collidable::{CollidableComponent, CollidableMode, CollisionResponse};
 pub use color::ColorComponent;
 pub use combine_mesh::CombineMeshComponent;
 pub use component_ref::{
@@ -312,6 +313,9 @@ pub use morph_target::{
     MorphTargetMapComponent,
 };
 pub use mountable::MountableComponent;
+pub use multiplayer_session::{
+    MULTIPLAYER_DEFAULT_PORT, MultiplayerRole, MultiplayerSessionComponent,
+};
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use normal_visualisation::NormalVisualisationComponent;
@@ -621,3 +625,9 @@ pub mod ce_helpers {
 
 pub mod rocket_motion;
 pub use rocket_motion::{AccelerationComponent, ProjectileImpactComponent};
+
+pub mod udp_channel;
+pub use udp_channel::{UdpSocketComponent, UdpChannelComponent, UdpBinding};
+
+pub mod pose_input;
+pub use pose_input::PoseInputComponent;

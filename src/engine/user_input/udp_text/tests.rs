@@ -12,11 +12,11 @@ fn duplicate_and_gap_packets_only_deliver_one_ordered_edit_stream() {
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let session = uuid::Uuid::new_v4();
     Packet::new(session, 0, vec![])
-        .send(&socket, address)
+        .send_raw(&socket, address)
         .unwrap();
     receiver.poll();
     Packet::new(session, 2, vec![Edit::Insert("late".into())])
-        .send(&socket, address)
+        .send_raw(&socket, address)
         .unwrap();
     assert!(receiver.poll().text_input_events().is_empty());
     let first = Packet::new(
@@ -24,8 +24,8 @@ fn duplicate_and_gap_packets_only_deliver_one_ordered_edit_stream() {
         1,
         vec![Edit::Insert("猫".into()), Edit::Left, Edit::Backspace],
     );
-    first.send(&socket, address).unwrap();
-    first.send(&socket, address).unwrap();
+    first.send_raw(&socket, address).unwrap();
+    first.send_raw(&socket, address).unwrap();
     assert_eq!(
         receiver.poll().text_input_events(),
         &[E::InsertText("猫".into()), E::MoveCaretLeft, E::Backspace]
@@ -112,4 +112,10 @@ fn udp_edits_use_normal_text_input_after_browser_focus_loss() {
         std::thread::sleep(Duration::from_millis(2));
     }
     panic!("UDP edits did not reach TextInput");
+}
+
+impl Packet {
+    fn send_raw(&self, socket: &UdpSocket, address: std::net::SocketAddr) -> std::io::Result<()> {
+        socket.send_to(&self.encode()?, address).map(|_| ())
+    }
 }

@@ -251,3 +251,11 @@ versions, provider configuration syntax, body masks and root calibration UX, eye
 and practical camera framing/performance. The component spellings and provider/consumer ownership
 above are the current design direction; none of these unresolved details authorize runtime edits
 in this documentation pass.
+
+## Coordinated posture follow-up
+
+See [avatar posture and tracking inventory](avatar-posture-tracking-inventory.md)
+for current implementation status and the proposed standing lean, crouch,
+all-fours, prone/supine contact modes, shared pelvis ownership, partial tracking
+and OpenXR/webcam fusion plan. This is documentation-only; it does not implement
+a general UpperBodyIkSystem or the planned body/face tracking consumers.

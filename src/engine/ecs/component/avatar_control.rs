@@ -1,7 +1,7 @@
 #[path = "eye_blink_state.rs"]
 mod blink;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{Component, ComponentRef};
+use crate::engine::ecs::component::{Component, ComponentRef, CollisionResponse};
 
 /// How AVC treats retained eye-tracker gaze while the avatar head is moving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -119,6 +119,8 @@ pub struct AvatarControlComponent {
 
     /// Whether AVC should generate an upright collision capsule. Enabled by default.
     pub collision_enabled: bool,
+    /// Whether collision contacts may correct the avatar's locomotion root.
+    pub collision_response: CollisionResponse,
 
     /// Explicit transform corrected by the generated capsule (e.g. a falling root).
     pub movement_target: Option<ComponentRef>,
@@ -191,6 +193,9 @@ pub struct AvatarControlComponent {
     /// the IK target (the head bone pivot chases the HMD position directly).
     /// Default: `None`.
     pub head_ik_eye_height: Option<f32>,
+    /// Eye origin in mapped camera-anchor local space, metres. Explicit shared
+    /// calibration for rigs with or without a camera; otherwise use its wrapper.
+    pub eye_offset: Option<[f32; 3]>,
 
     /// Suppress incoming gaze changes during rapid head motion. This is an
     /// opt-in visual mitigation for unstable eye-tracking samples.
@@ -303,6 +308,7 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_vertical_source: Option<ComponentId>,
     pub(crate) capsule_routing_revision: u64,
     pub(crate) capsule_route_ref: Option<ComponentRef>,
+    pub(crate) capsule_route_response: Option<CollisionResponse>,
     pub(crate) capsule_world_scale: f32,
     pub(crate) capsule_reset_contact_history: bool,
 
@@ -491,6 +497,11 @@ impl AvatarControlComponent {
         Ok(self)
     }
 
+    pub fn with_collision_response(mut self, response: CollisionResponse) -> Self {
+        self.collision_response = response;
+        self
+    }
+
     pub fn with_collision_disabled(mut self) -> Self {
         self.collision_enabled = false;
         self
@@ -582,6 +593,15 @@ impl AvatarControlComponent {
         self
     }
 
+    /// Set a shared camera-anchor-local eye origin for camera-free or local rigs.
+    pub fn with_eye_offset(mut self, offset: [f32; 3]) -> Result<Self, String> {
+        if !offset.into_iter().all(f32::is_finite) {
+            return Err("AvatarControl.eye_offset must be a finite vec3".into());
+        }
+        self.eye_offset = Some(offset);
+        Ok(self)
+    }
+
     /// Set the vertical offset for the head IK target calculation (metres).
     /// Decoupled from the camera position so spine bending and camera positioning
     /// can be controlled independently. Default: `None`.
@@ -612,6 +632,7 @@ impl Default for AvatarControlComponent {
             mouth_open_weight: 0.0,
             mouth_open_missing_slot_diagnosed: false,
             collision_enabled: true,
+            collision_response: CollisionResponse::Slide,
             movement_target: None,
             capsule_radius: 0.28,
             left_two_bone_ik: None,
@@ -650,6 +671,7 @@ impl Default for AvatarControlComponent {
             skip_body_operator: false,
             ik_debug: false,
             head_ik_eye_height: None,
+            eye_offset: None,
             neck_pin_enabled: true,
             model_root_id: None,
             model_root_local_y: 0.0,
@@ -678,6 +700,7 @@ impl Default for AvatarControlComponent {
             capsule_vertical_source: None,
             capsule_routing_revision: 0,
             capsule_route_ref: None,
+            capsule_route_response: None,
             capsule_world_scale: 1.0,
             capsule_reset_contact_history: false,
             capsule_ready: false,
@@ -731,6 +754,9 @@ impl Component for AvatarControlComponent {
         }
         if self.blink_duration != 0.18 {
             c = c.with_call("blink_duration", vec![num(self.blink_duration as f64)]);
+        }
+        if self.collision_response != CollisionResponse::Slide {
+            c = c.with_call("collision_response", vec![s(self.collision_response.as_str())]);
         }
         if !self.collision_enabled {
             c = c.with_call("collision_disabled", vec![]);
@@ -797,6 +823,9 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.eye_height_from_head_bone {
             c = c.with_call("eye_height_from_head_bone", vec![num(dy as f64)]);
+        }
+        if let Some(offset) = self.eye_offset {
+            c = c.with_call("eye_offset", vec![array(nums(offset.map(f64::from)))]);
         }
         if let Some(dy) = self.head_ik_eye_height {
             c = c.with_call("head_ik_eye_height", vec![num(dy as f64)]);

@@ -1,0 +1,234 @@
+# Multiplayer (first slice)
+
+Status: implemented first slice. Desktop/loopback/LAN verified by tests; no
+interpolation, prediction, or reliable delivery yet. See the
+[roadmap](../task/multiplayer-roadmap.md) for what comes next.
+
+See the [four-table component and signal inventory](multiplayer-udp-api-inventory.md)
+for the implemented multiplayer and UDP API, including internal intents.
+
+## Run the example
+
+Two processes on one machine:
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=host   MITTENS_MULTIPLAYER_NAME=rei cargo run --release -- load examples/multiplayer-basic.mms
+MITTENS_MULTIPLAYER_ROLE=client MITTENS_MULTIPLAYER_NAME=dan cargo run --release -- load examples/multiplayer-basic.mms
+```
+
+Across a LAN, the host binds `0.0.0.0:7010` by default; set
+`MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010` on the client and allow UDP 7010 on the host.
+Addresses are numeric; hostnames are not resolved.
+
+### Two computers over Tailscale
+
+Use the same example on both computers; no separate scene is required. Both
+must run a compatible branch/protocol. On Rei's computer, get the numeric IPv4
+address with `tailscale ip -4`, then run:
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=host MITTENS_MULTIPLAYER_NAME=rei cargo run --release -- load examples/multiplayer-basic.mms
+```
+
+On Dan's computer, replace `<rei-tailscale-ip>` with that numeric address:
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=client MITTENS_MULTIPLAYER_NAME=dan MITTENS_MULTIPLAYER_ADDR="<rei-tailscale-ip>:7010" cargo run --release -- load examples/multiplayer-basic.mms
+```
+
+The default host bind `0.0.0.0:7010` includes its Tailscale IPv4 interface.
+Tailnet access rules and the host firewall must permit this UDP traffic. Use
+numeric addresses; the current example does not resolve MagicDNS hostnames.
+Tailscale handles connectivity between the machines, including relayed paths
+when direct connectivity is unavailable; see its
+[connection types](https://tailscale.com/docs/reference/connection-types).
+This two-computer workflow has not been verified by the local loopback tests.
+The channel-based migration must preserve it alongside the two-window local
+workflow; the demo uses MultiplayerSession for control and typed channels for telemetry.
+
+Desktop uses Mitten's first-person head-mounted camera. WASD/right-drag
+moves the local rig; scripted hand targets exercise arm IK without a headset. Both avatar
+copies run ambient eye-saccade animations locally. The local desktop avatar runs an
+authored looping blink clip (2.8-second loop); XR uses tracked eye closure only,
+with pupil-direction tracking and synthetic idle blinking disabled. Blink weights
+travel across the network so both people see the source avatar blink. A wall
+mirror shows your own avatar as well as the other player.
+The receiving machine solves AVC/IK locally and binds the received blink weights
+to that avatar's morph slots. The orange ball is simulated only by the host.
+Press **E** to kick it; client requests remain host-authoritative.
+
+The control protocol is version 2 (including pose-independent heartbeats); run
+the same checkout on both computers. The control session uses UDP 7010. Typed telemetry uses UDP 7011 on the host and
+7012 on the client, so tailnet/host firewall policy must also allow those ports
+between the machines in both directions. Peer IPs come from the control session;
+localhost is not hardcoded into the channel setup. This demo is a two-peer scene.
+
+Choose the view mode with the two flags at the very top of the example:
+
+| Machine | `use_xr` | `use_desktop` | Network role |
+| --- | --- | --- | --- |
+| Dan's desktop | `false` | `true` | `client` |
+| Rei's headset | `true` | `false` | `host` |
+
+The committed defaults are desktop-only; Rei changes the two booleans locally.
+Desktop mode creates a winit window and Camera3D, with no CameraXR or InputXR.
+XR-only mode uses the existing no-window host and CameraXR/InputXR, with no
+winit event loop, desktop surface/swapchain, Camera3D or desktop movement input.
+Both flags can be true for XR with a desktop first-person view; XR owns locomotion
+in that mode. View mode does not choose authority: launch Rei with
+`MITTENS_MULTIPLAYER_ROLE=host`, and Dan with `client` and
+`MITTENS_MULTIPLAYER_ADDR="<rei-tailscale-ip>:7010"` as shown above.
+
+MMS does not currently expose general environment-variable access. The
+Rust-backed `MultiplayerSession.from_env()` constructor reads the three
+`MITTENS_MULTIPLAYER_*` launcher variables. The view flags are ordinary MMS
+values, not environment reads.
+
+Remote rigs use `collision_response("read_only")`, keeping their collision
+capsules enabled while local contact response cannot correct their received root
+or velocity. Local rigs retain the default slide response. See
+[avatar collision response](avatar-collision-response.md) for the native query
+behavior and current scope.
+
+Remote rigs use PoseInput and external hand targets, never the receiver's local
+tracking. Physical XR/Tailscale validation is still required; the mode checks
+run without opening either a window or an XR runtime.
+
+See [typed channel authoring](typed-udp-channels.md) for the implemented API.
+The former `MultiplayerSync` component has been removed. Session control handles
+connections, roster and app messages; typed channels carry spatial/face telemetry.
+MMS explicitly decides which received channels affect transforms, morphs or physics.
+
+## Authority model
+
+| State | Owner | Path |
+| --- | --- | --- |
+| Roster | Host | Session roster snapshots and peer events |
+| Avatar poses and blinks | Owning peer | Typed publications, explicit receiver bindings |
+| Shared objects / physics | Chosen by MMS policy | Typed channels and example helpers |
+| Gameplay intents | Chosen by MMS policy | Session app messages or typed channels |
+
+Session app messages flow client → host or host → clients. Typed channel addresses
+are configured independently; the session does not automatically relay telemetry.
+
+## MMS surface
+
+```mms parse-only
+let net = MultiplayerSession.from_env() {}   // or .host("0.0.0.0:7010") / .join("192.168.1.20:7010")
+net
+
+on(net, "MultiplayerConnected", fn(event) { net.send("hello", net.local_name()) })
+```
+
+`MultiplayerSession` constructors: `host(addr?)`, `join(host_addr)`, `from_env()`
+(`MITTENS_MULTIPLAYER_ROLE` = `host`|`client`, `MITTENS_MULTIPLAYER_ADDR`, `MITTENS_MULTIPLAYER_NAME`).
+Builders: `player_name(name)`, `tick_hz(hz)` (default 20; positive rates below
+1 Hz are rejected, rates above 120 Hz are capped), `enabled(bool)`.
+Player names accept Unicode and emojis and are truncated at a UTF-8 boundary to
+64 bytes. The host admits a join only if the complete encoded roster still fits
+one 1,200-byte control datagram, including JSON escaping. Up to 16 clients are
+allowed; long names can lower that capacity. Rejection emits a host-side
+`MultiplayerError` with phase `admission`; the rejected client remains unwelcomed.
+Truncation preserves valid UTF-8 but can split a multi-code-point emoji sequence.
+Methods: `send(name, text)`, `is_host()`, `peer_id()`, `local_name()`.
+
+Events on the session component:
+
+| Event | Payload |
+| --- | --- |
+| `MultiplayerConnected` | `peer_id`, `is_host` |
+| `MultiplayerPeerJoined` / `MultiplayerPeerLeft` | `peer_id`, `name` |
+| `MultiplayerMessage` | `sender`, `name`, `text` (`from` is an MMS keyword) |
+| `MultiplayerError` | `phase`, `message` |
+
+Only one `MultiplayerSession` may be active per process. The host is always peer
+`1`; clients are assigned `2, 3, …`. For typed transform/morph receive bindings,
+see [typed channel authoring](typed-udp-channels.md).
+
+## Wire and runtime behavior
+
+- UDP, JSON envelope `{v, session, seq, msg}`; version mismatches are dropped.
+  Every datagram stays within 1,200 bytes; large roster snapshots are split into
+  independently applicable chunks (only the first carries the roster). The v2
+  wire codec retains legacy pose fields for compatibility and codec tests; the
+  session endpoint ignores them and never publishes or applies poses.
+- Nonblocking socket polled once per frame, at most 256 datagrams per poll; no
+  worker thread and no blocking on the update path. Oversize datagrams are
+  discarded, not truncated.
+- The net tick runs after fixed-step physics and before camera/XR publication,
+  and publishes session roster/heartbeat control independently of spatial data.
+- Sends happen at `tick_hz`; a late frame does not burst to catch up.
+- Clients resend `Hello` every 0.5 s until welcomed. Either side treats 3 s of
+  silence as a disconnect; a client then re-handshakes automatically. Dropping
+  the session sends a best-effort `Bye`.
+- Snapshots older than the newest applied tick are ignored.
+- Trusted-LAN only: no authentication or encryption. The host does override the
+  claimed sender of app messages with the sender's assigned peer id.
+
+Implementation: [`multiplayer_system.rs`](../../src/engine/ecs/system/multiplayer_system.rs)
+and its `multiplayer_system/` modules (`protocol`, `transport`, `endpoint`).
+
+XR mode includes the shared XR settings panel beside the starting position. Its
+floor correction loads/saves the existing XR calibration file and adjusts tracked
+head, hands, and rendered eyes together. Corrected tracking poses and the locomotion
+root are sent through the existing channels; the receiver does not apply its own
+XR calibration to a remote avatar. Secondary motion (shirt and bow), IK, and
+ambient gaze run independently on each machine, with no secondary-motion bone
+updates sent over UDP. These simulations may differ slightly between peers.
+
+### Shared grab prototype
+
+Grab the cyan cube or black spring gohei with the desktop pointer or an XR hand's grip. Either peer can
+hold, move, release, and pick it up again. The holder runs local GrabbableSystem;
+the receiver applies world poses from MMS through a typed channel. No remote
+hand parenting or engine network-grab API is required. Pointer-scoped
+`PointerGrabbed` / `PointerReleased` drive the helper's state transitions.
+
+The example uses latest-transition ownership (client wins equal-revision ties),
+not host approval. It repeats complete ownership/pose snapshots at 20 Hz, even
+after release, to recover lost transition packets. Released props stay in place:
+there is no throw/gravity simulation for these props. The gohei's paper spring motion runs locally on each machine. Weapons and firing are still
+separate follow-ups. See [shared grabbing](../task/multiplayer-shared-grabbing.md).
+
+The helper wraps an existing movable root; both peers create the same named
+object locally. `name` identifies its channel, not a serialized component ID.
+`rank` is 1 for the host and 2 for the client in this two-peer example.
+
+```mms parse-only
+import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+let shared = shared_grabbable({
+    socket = socket
+    name = "arena.gohei.1"
+    target = gohei
+    rank = local_rank
+})
+shared.root
+shared.bind_pointer(local_pointer)
+// On peer connection; channels live under the connection's scene group:
+shared.connect(peer_channels, peer_address)
+// On peer departure, before removing that group:
+shared.disconnect()
+```
+
+The helper owns an identity mount at the scene root. Use equal root scales on
+both peers; it replicates translation and rotation, not scale.
+
+The mirror has no backing and sits beyond the arena floor/posts to leave the
+reflected-camera side empty. This works around the current mirror clipping issue;
+it does not fix the renderer's handling of geometry behind the mirror.
+
+Both avatar copies use paper-craft's calibrated sole offsets and
+`WalkingIK { step_scale(1.3) }`. The pool-tiled arena floor has static support
+collision. Desktop uses a Mitten-specific 1.58 m authored eye height so its soles
+reach the floor; XR continues to use actual tracking and floor calibration.
+Leg IK, stepping, and gohei paper motion are solved locally, not transmitted.
+
+`AVC.eye_offset([0.0, 0.08, 0.12])` supplies the same mapped-camera-anchor-local
+eye origin to local and camera-free remote rigs. Without an explicit value, AVC
+continues to infer the offset from camera wrappers as before. A remote rig can
+query ground support through its read-only collision capsule; this changes its leg pose without
+adding collision response or modifying the received locomotion root.
+
+The scene uses the shared pool ceramic material/texture, paper-craft's twilight
+sky with moon/clouds, and its EmissivePass/Bloom settings. The mirror clearance
+workaround remains in place.

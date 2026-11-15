@@ -14,6 +14,19 @@ pub(super) fn configure(component: &mut mms::ComponentBuilder<'_, MittensBinding
         ]),
     );
     component.builder_call("laser", component_signature([]));
+    component.builder_call("external", component_signature([mms::ValueType::Bool]));
+    host_method(
+        component,
+        "XRHand",
+        "pose_valid",
+        mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+    );
+    host_method(
+        component,
+        "XRHand",
+        "set_pose_valid",
+        mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
+    );
     host_method(
         component,
         "XRHand",

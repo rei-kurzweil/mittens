@@ -2323,6 +2323,12 @@ impl OpenXRSystem {
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
+        if world
+            .get_component_by_id_as::<XRHandComponent>(component)
+            .is_some_and(|c| c.externally_driven)
+        {
+            return;
+        }
         self.controller_components.insert(component);
         self.controller_pose_source_last_logged.remove(&component);
         if world

@@ -73,12 +73,14 @@ use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
 #[path = "registries/editor_ui_registry.rs"]
 mod editor_ui_registry;
-#[path = "registries/xr_gamepad_registry.rs"]
-mod xr_gamepad_registry;
-#[path = "registries/gravity_registry.rs"]
-pub(super) mod gravity_registry;
 #[path = "registries/geometry_registry.rs"]
 mod geometry_registry;
+#[path = "registries/gravity_registry.rs"]
+pub(super) mod gravity_registry;
+#[path = "registries/multiplayer_registry.rs"]
+pub(super) mod multiplayer_registry;
+#[path = "registries/xr_gamepad_registry.rs"]
+mod xr_gamepad_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
 #[path = "registries/interaction_registry.rs"]
 mod interaction_registry;
@@ -153,6 +155,11 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "HtmlElement",
     "HttpClient",
     "HttpServer",
+    "PoseInput",
+    "UdpSocket",
+    "UdpPublication",
+    "UdpSubscription",
+    "MultiplayerSession",
     "XREyeTracking",
     "Zone",
     "XREyeTrackingHTC",
@@ -1789,6 +1796,15 @@ fn create_component(
             }
             add!(c)
         }
+        "PoseInput" => Ok(world.add_component(crate::engine::ecs::component::PoseInputComponent)),
+        "UdpSocket" => {
+            if ctor != Some("bind") || args.len() != 1 { return Err("UdpSocket.bind expects a numeric IP:port".into()); }
+            let address = arg_str(args, 0)?.to_string();
+            address.parse::<std::net::SocketAddr>().map_err(|e| e.to_string())?;
+            Ok(world.add_component(crate::engine::ecs::component::UdpSocketComponent::new(address)))
+        }
+        "UdpPublication" | "UdpSubscription" => Err("create channels through a socket's publish/subscribe methods".into()),
+        "MultiplayerSession" => multiplayer_registry::create(world, type_name, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
         "VRChatOSCEyeTracking" => match ctor { Some("on") | None => add!(VRChatOSCEyeTrackingComponent::on()), Some("listen") => add!(VRChatOSCEyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("VRChatOSCEyeTracking: unknown constructor '{method}'")) },
@@ -2963,13 +2979,33 @@ fn apply_call(
     {
         return geometry_registry::apply(world, id, method, args);
     }
-    if world.get_component_by_id_as::<XREyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<XREyeTrackingHtcComponent>(id).is_some()
-        || world.get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<HTCEyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<MediaPipeEyeTrackingComponent>(id).is_some()
-        || (matches!(method,"idle_blink"|"blink_interval"|"blink_duration") && world.get_component_by_id_as::<AvatarControlComponent>(id).is_some()) {
-        return eye_tracking_registry::apply(world,id,method,args);
+    if world
+        .get_component_by_id_as::<crate::engine::ecs::component::MultiplayerSessionComponent>(id)
+        .is_some()
+    {
+        return multiplayer_registry::apply(world, id, method, args);
+    }
+    if world
+        .get_component_by_id_as::<XREyeTrackingComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<XREyeTrackingHtcComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<HTCEyeTrackingComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<MediaPipeEyeTrackingComponent>(id)
+            .is_some()
+        || (matches!(method, "idle_blink" | "blink_interval" | "blink_duration")
+            && world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some())
+    {
+        return eye_tracking_registry::apply(world, id, method, args);
     }
     if world
         .get_component_by_id_as::<DraggableComponent>(id)
@@ -2994,11 +3030,18 @@ fn apply_call(
         return Ok(());
     }
 
-    if world.get_component_by_id_as::<PointerComponent>(id).is_some() {
-        return pointer_registry::apply(world,id,method,args);
+    if world
+        .get_component_by_id_as::<PointerComponent>(id)
+        .is_some()
+    {
+        return pointer_registry::apply(world, id, method, args);
     }
 
     if let Some(hand) = world.get_component_by_id_as_mut::<XRHandComponent>(id) {
+        if method == "external" {
+            hand.externally_driven = arg_bool(args, 0)?;
+            hand.pose_valid = hand.externally_driven;
+        }
         if method == "laser" {
             hand.laser = true;
         }
@@ -3501,6 +3544,7 @@ fn apply_call(
             "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             "friction" => current.with_friction(arg_f32(args, 0)?)?,
+            "response" => current.with_response(crate::engine::ecs::component::CollisionResponse::parse(arg_str(args, 0)?)?)?,
             _ => return Err(format!("Collidable: unknown builder '{method}'")),
         };
         *world
@@ -3959,6 +4003,7 @@ fn apply_call(
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),
             "ik_debug" => *avc = avc.clone().with_ik_debug(),
             "collision_disabled" => *avc = avc.clone().with_collision_disabled(),
+            "collision_response" => *avc = avc.clone().with_collision_response(crate::engine::ecs::component::CollisionResponse::parse(arg_str(args, 0)?)?),
             "capsule_radius" => *avc = avc.clone().with_capsule_radius(arg_f32(args, 0)?),
             "body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(arg_f32(args, 0)?),
             "body_yaw_rate" => *avc = avc.clone().with_body_yaw_rate(arg_f32(args, 0)?),
@@ -3971,6 +4016,7 @@ fn apply_call(
                     .clone()
                     .with_eye_height_from_head_bone(arg_f32(args, 0)?)
             }
+            "eye_offset" => *avc = avc.clone().with_eye_offset(arg_f32_arr::<3>(args, 0)?)?,
             "head_ik_eye_height" => *avc = avc.clone().with_head_ik_eye_height(arg_f32(args, 0)?),
             "head_motion_gaze_policy" => {
                 *avc = avc.clone().with_head_motion_gaze_policy(
@@ -4544,6 +4590,21 @@ fn apply_layout_bounds_ctor(
 mod tests {
     use super::*;
     use crate::engine::ecs::component::RayCastComponent;
+    #[test]
+    fn legacy_eye_offset_without_arguments_returns_error() {
+        let ce = MaterializedCE {
+            component_type: "AVC".into(),
+            component_property_assignment_only: false,
+            ctor_method: None,
+            ctor_args: vec![],
+            calls: vec![("eye_offset".into(), vec![])],
+            named: vec![], positionals: vec![], deferred_block: None, children: vec![],
+        };
+        let mut world = World::default();
+        let mut emit = crate::engine::ecs::RxWorld::default();
+        assert!(spawn_tree(&ce, None, &mut world, &mut emit).is_err());
+    }
+
     #[test]
     fn legacy_keyframe_spawn_is_rejected_before_world_mutation() {
         let ce = MaterializedCE {

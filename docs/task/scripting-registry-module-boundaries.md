@@ -48,3 +48,68 @@ Current broader checks expose four failures: the marker-schema test
 does not exempt `Joint`, and the legacy roundtrip helper cannot handle Animation,
 Keyframe, or the current MusicNote representation. Record/fix those independently
 instead of changing semantics to make a file reorganization pass.
+
+## Note (2026-11-13)
+
+The multiplayer `MultiplayerSession`/`MultiplayerSync` bindings were added as one family pair,
+`registries/multiplayer_registry.rs` and `registries/multiplayer_runtime_config.rs`, with
+single-line dispatch hooks in the central files. New families should follow
+the same shape rather than growing the central registries.
+
+## Naming review (2026-11-13)
+
+Rename the multiplayer family and central dispatch references consistently.
+This scoped rename adds no runtime work; the responsibility-based split above
+remains proposed. Validate with multiplayer and documentation catalog tests.
+
+## MMS channel integration
+
+UDP authoring stays in a cohesive registry/config pair; central dispatch receives only routing hooks. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.
+
+Instance `.from(...)` uses the same contextual member-name parser as constructor chains. No new block or factory syntax is introduced.
+
+### Host method-family follow-up
+
+The scoped channel slice also touches the large scripting/host.rs dispatcher.
+A future responsibility split should group transform/pose/morph host methods
+behind one coherent pose-data adapter, leaving handle validation, lease ownership
+and operation routing in host.rs. Keep typed direct calls, shared value conversion
+and existing phase gating; avoid per-operation runtime dispatch or new per-frame
+allocations. Validate language tests, partial transform execution, morph ownership
+and two-peer avatar tests. This proposal does not perform the split.
+
+## Authored morph-animation API
+
+Group GLTF morph read/write/clear operations in a cohesive morph API adapter,
+separate from UDP authoring. Keep host.rs and runtime_config.rs dispatch-only
+for this family. Resolve slots per GLTF instance and preserve direct factor
+updates; no per-draw allocation or new renderer pipelines. Validate script
+weights, tracker/network precedence, animation callbacks and the two-peer demo.
+
+## Shared camera-free avatar eye calibration
+
+The multiplayer proxy needs the same eye-origin calibration as a camera-bearing
+local rig. Add a generic explicit eye_offset vec3 to AVC, preserving the existing
+camera-wrapper fallback when omitted. The large AVC component/initialization and
+component_registry dispatch should eventually group pose/eye calibration config,
+serialization, and initialization coherently; keep direct scalar/vector math and
+no per-frame allocations or dynamic dispatch. This scoped addition does not
+perform the proposed split. Validate finite inputs, MMS serialization, camera
+view/driver agreement, and local/proxy foot contact.
+
+## MultiplayerSync removal
+
+Remove the superseded automatic replication component and its lifecycle intent
+from the large component registry, runtime configuration, signal routing and
+SystemWorld teardown modules. Keep this a scoped deletion. Existing proposed
+responsibility boundaries remain; any later split must preserve direct matches,
+batched teardown and typed-channel hot paths without new allocation/dispatch.
+Validate MMS rejection of the removed API, session lifecycle/messages, typed UDP
+bindings and the two-peer avatar example.
+
+Removal verification: 14 multiplayer checks pass (session lifecycle/messages,
+stale rosters, removed MMS API rejection, desktop/XR configuration and two-peer
+Mitten typed poses/blinks/IK), plus 25 UDP checks (1 intentionally ignored).
+The session no longer stores, forwards, publishes or applies poses. Legacy v2
+pose wire fields remain recognized by the codec for compatibility and codec
+regressions; the live endpoint ignores them.

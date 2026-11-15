@@ -4,14 +4,16 @@
 //! authoritative here. The legacy registry remains the host implementation
 //! while its declarations move into this specification.
 
+#[path = "runtime_component_common.rs"]
+pub(super) mod component_common;
+#[path = "registries/eye_tracking_runtime_config.rs"]
+mod eye_tracking_runtime_config;
+#[path = "registries/multiplayer_runtime_config.rs"]
+mod multiplayer_runtime_config;
 #[path = "registries/renderable_runtime_config.rs"]
 mod renderable_runtime_config;
 #[path = "registries/spring_runtime_config.rs"]
 mod spring_runtime_config;
-#[path = "registries/eye_tracking_runtime_config.rs"]
-mod eye_tracking_runtime_config;
-#[path = "runtime_component_common.rs"]
-pub(super) mod component_common;
 use meow_meow_script as mms;
 #[path = "builtin_api_config.rs"]
 mod builtin_api_config;
@@ -175,6 +177,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             let method = |arguments, result| mms::ValueSignature::new(arguments, result);
             match canonical {
                 "Transform" => {
+                    for name in ["set_translation", "set_rotation_quat"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            mms::ValueSignature::with_optional(
+                                vec![mms::ValueType::Array, mms::ValueType::String],
+                                1,
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                     host_method(
                         component,
                         canonical,
@@ -442,7 +456,19 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "bind", strings(1));
                     constructor_and_builder(component, "enabled", booleans(1));
                 }
-                "XREyeTracking" | "XREyeTrackingHTC" | "VRChatOSCEyeTracking" | "HTCEyeTracking" | "MediaPipeEyeTracking" => eye_tracking_runtime_config::configure(component,canonical),
+                "XREyeTracking"
+                | "XREyeTrackingHTC"
+                | "VRChatOSCEyeTracking"
+                | "HTCEyeTracking"
+                | "MediaPipeEyeTracking" => {
+                    eye_tracking_runtime_config::configure(component, canonical)
+                }
+                "UdpSocket" | "UdpPublication" | "UdpSubscription" => {
+                    super::udp_channel_api::configure(component, canonical)
+                }
+                "MultiplayerSession" => {
+                    multiplayer_runtime_config::configure(component, canonical)
+                }
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }
@@ -575,6 +601,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.builder_call("root", any(1));
                 }
                 "GLTF" => {
+                    super::morph_api::configure(component, canonical);
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
                 }
@@ -1014,6 +1041,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Collidable" => {
                     no_arg_constructors(component, &["static", "slide"]);
+                    component.builder_call("response", strings(1));
                     component
                         .builder_call("friction", floats(1))
                         .builder_call("movement_target", any(1))
@@ -1256,6 +1284,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     ] {
                         constructor_and_builder(component, method, floats(1));
                     }
+                    constructor_and_builder(component, "eye_offset", any(1));
+                    constructor_and_builder(component, "collision_response", strings(1));
                     constructor_and_builder(component, "head_motion_gaze_policy", strings(1));
                     constructor_and_builder(component, "mouth_open_from_amplitude", any(1));
                     constructor_and_builder(component, "mouth_open_rms_center_range", floats(2));
@@ -1331,6 +1361,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "DragEnd",
         "GrabStart",
         "GrabEnd",
+        "PointerGrabbed",
+        "PointerReleased",
         "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",
@@ -1353,6 +1385,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "HttpRequest",
         "HttpResponse",
         "HttpError",
+        "UdpSample",
+        "UdpState",
+        "MultiplayerConnected",
+        "MultiplayerPeerJoined",
+        "MultiplayerPeerLeft",
+        "MultiplayerMessage",
+        "MultiplayerError",
         "XrEyeTrackingUpdated",
         "XrEyeTrackingHtcUpdated",
     ] {

@@ -1,3 +1,4 @@
+use crate::engine::udp::{UdpEndpoint, UdpSystem};
 use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
 use crate::engine::ecs::component::{
     EyeTrackingSource, HTCEyeTrackingComponent, MediaPipeEyeTrackingComponent,
@@ -6,16 +7,17 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::utils::math::quat_rotate_vec3;
 use std::collections::{HashMap, HashSet};
-use std::net::UdpSocket;
 
 #[derive(Debug, Default)]
 pub struct XREyeTrackingSystem {
+    standalone_udp: UdpSystem,
     selectors: HashSet<ComponentId>,
     vrchat_osc_sources: HashSet<ComponentId>,
     htc_sources: HashSet<ComponentId>,
     mediapipe_sources: HashSet<ComponentId>,
-    sockets: HashMap<ComponentId, UdpSocket>,
-    htc_sockets: HashMap<ComponentId, UdpSocket>,
+    active_udp: Option<UdpSystem>,
+    sockets: HashMap<ComponentId, UdpEndpoint>,
+    htc_sockets: HashMap<ComponentId, UdpEndpoint>,
     /// A failed bind is retried so a port becoming available recovers without
     /// restarting the scene, but each active component reports that failure
     /// only once.
@@ -109,10 +111,28 @@ impl XREyeTrackingSystem {
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        let udp = self.standalone_udp.clone();
+        self.tick_with_udp(world, emit, &udp);
+    }
+    pub fn tick_with_udp(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        udp: &UdpSystem,
+    ) {
+        if self.active_udp.as_ref().is_none_or(|old| !old.same_transport(udp)) {
+            // Release leases before rebinding the same configured ports.
+            self.sockets.clear();
+            self.htc_sockets.clear();
+            self.failed_standard_binds.clear();
+            self.failed_htc_binds.clear();
+            self.standard_samples.clear();
+            self.active_udp = Some(udp.clone());
+        }
         self.prune_stale_registrations(world);
         self.ensure_generic_sources(world);
-        self.tick_standard(world, emit);
-        self.tick_htc(world, emit);
+        self.tick_standard(world, emit, udp);
+        self.tick_htc(world, emit, udp);
         self.resolve_generic_trackers(world);
     }
 
@@ -221,7 +241,7 @@ impl XREyeTrackingSystem {
                 .unwrap_or_else(EyeClosureSample::default);
         }
     }
-    fn tick_standard(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+    fn tick_standard(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, udp: &UdpSystem) {
         let ids: Vec<_> = self.vrchat_osc_sources.iter().copied().collect();
         for id in ids {
             // Closure is a live driver value, unlike retained gaze. If the
@@ -238,9 +258,8 @@ impl XREyeTrackingSystem {
                 .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id)
                 .unwrap();
             if !self.sockets.contains_key(&id) {
-                match UdpSocket::bind(format!("{}:{}", c.host, c.port)) {
+                match udp.bind(format!("{}:{}", c.host, c.port), 1024, "eye-osc") {
                     Ok(s) => {
-                        let _ = s.set_nonblocking(true);
                         self.failed_standard_binds.remove(&id);
                         eprintln!("[VRChatOSCEyeTracking] listening on {}:{}", c.host, c.port);
                         self.sockets.insert(id, s);
@@ -256,12 +275,11 @@ impl XREyeTrackingSystem {
                 }
             }
             if let Some(s) = self.sockets.get(&id) {
-                let mut bytes = [0u8; 1024];
+                let socket = s.clone();
                 let mut received_update = false;
                 let mut received_gaze = false;
                 let mut received_closure = false;
-                while let Ok(len) = s.recv(&mut bytes) {
-                    let packet = &bytes[..len];
+                let _ = udp.poll(&socket, 256, |_from, packet| {
                     match decode_osc(packet) {
                         Some((combined_look, left_look, right_look, combined_openness)) => {
                             received_gaze |= combined_look.is_some()
@@ -285,7 +303,7 @@ impl XREyeTrackingSystem {
                         }
                         None => {}
                     }
-                }
+                });
                 // A face tracker can submit many UDP packets between rendered
                 // frames. Keep only the newest sample so script callbacks and
                 // renderer mutations remain bounded to one per frame/source.
@@ -332,7 +350,7 @@ impl XREyeTrackingSystem {
             }
         }
     }
-    fn tick_htc(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+    fn tick_htc(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, udp: &UdpSystem) {
         let ids: Vec<_> = self.htc_sources.iter().copied().collect();
         for id in ids {
             if let Some(component) = world.get_component_by_id_as_mut::<HTCEyeTrackingComponent>(id)
@@ -344,9 +362,8 @@ impl XREyeTrackingSystem {
                 .get_component_by_id_as::<HTCEyeTrackingComponent>(id)
                 .unwrap();
             if !self.htc_sockets.contains_key(&id) {
-                match UdpSocket::bind(format!("{}:{}", c.host, c.port)) {
+                match udp.bind(format!("{}:{}", c.host, c.port), 1024, "eye-htc") {
                     Ok(s) => {
-                        let _ = s.set_nonblocking(true);
                         self.failed_htc_binds.remove(&id);
                         eprintln!("[HTCEyeTracking] listening on {}:{}", c.host, c.port);
                         self.htc_sockets.insert(id, s);
@@ -362,14 +379,11 @@ impl XREyeTrackingSystem {
                 }
             }
             if let Some(s) = self.htc_sockets.get(&id) {
-                let mut b = [0u8; 1024];
-                let mut packets = Vec::new();
-                while let Ok(n) = s.recv(&mut b) {
-                    if let Some((left, right)) = decode_htc(&b[..n]) {
-                        packets.push((left, right));
-                    }
-                }
-                for (left, right) in packets {
+                let socket = s.clone();
+                let _ = udp.poll(&socket, 256, |_from, packet| {
+                    let Some((left, right)) = decode_htc(packet) else {
+                        return;
+                    };
                     let gaze_sample = htc_gaze_sample(&left, &right, self.next_sequence());
                     let closure_sequence = self.next_sequence();
                     let closure_sample = htc_closure_sample(&left, &right, closure_sequence);
@@ -393,7 +407,7 @@ impl XREyeTrackingSystem {
                     }) {
                         emit.push_event(selector, event);
                     }
-                }
+                });
             }
         }
     }
@@ -625,6 +639,52 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
+
+    #[test]
+    fn eye_tracking_rebinds_on_transport_change_and_keeps_clone_leases() {
+        let mut world = World::default();
+        let osc = world.add_component(VRChatOSCEyeTrackingComponent::listen("127.0.0.1", 0));
+        let htc = world.add_component(HTCEyeTrackingComponent::listen("127.0.0.1", 0));
+        let mut system = XREyeTrackingSystem::default();
+        system.register_component(&world, osc);
+        system.register_component(&world, htc);
+        let mut queue = CommandQueue::new();
+        system.tick(&mut world, &mut queue);
+        let standalone = system.standalone_udp.clone();
+        let shared = UdpSystem::default();
+        let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut addresses = standalone.diagnostics();
+        world.get_component_by_id_as_mut::<VRChatOSCEyeTrackingComponent>(osc).unwrap().port = addresses.iter().find(|e| e.label == "eye-osc").unwrap().local_addr.port();
+        world.get_component_by_id_as_mut::<HTCEyeTrackingComponent>(htc).unwrap().port = addresses.iter().find(|e| e.label == "eye-htc").unwrap().local_addr.port();
+        let mut old = standalone.clone();
+        let mut previous_count = 0;
+        for (i, udp) in [standalone.clone(), shared.clone(), shared.clone(), standalone.clone()].iter().enumerate() {
+            system.tick_with_udp(&mut world, &mut queue, udp);
+            if !old.same_transport(udp) { assert!(old.diagnostics().is_empty()); }
+            addresses = udp.diagnostics();
+            assert_eq!(addresses.len(), 2);
+            let before: u64 = addresses.iter().map(|e| e.stats.received_packets).sum();
+            if old.same_transport(udp) { assert_eq!(before, previous_count); }
+            let value = 0.2 + i as f32 * 0.1;
+            let mut packet = Vec::new();
+            for text in ["/tracking/eye/EyesClosedAmount", ",f"] {
+                packet.extend_from_slice(text.as_bytes()); packet.push(0);
+                while packet.len() % 4 != 0 { packet.push(0); }
+            }
+            packet.extend_from_slice(&value.to_be_bytes());
+            sender.send_to(&packet, addresses.iter().find(|e| e.label == "eye-osc").unwrap().local_addr).unwrap();
+            let mut packet = [0u8; 84]; packet[..3].copy_from_slice(&[b'M', 1, 12]);
+            packet[36..40].copy_from_slice(&(1. - value).to_le_bytes());
+            packet[48..52].copy_from_slice(&(1. - value).to_le_bytes());
+            sender.send_to(&packet, addresses.iter().find(|e| e.label == "eye-htc").unwrap().local_addr).unwrap();
+            system.tick_with_udp(&mut world, &mut queue, &udp.clone());
+            assert_eq!(udp.diagnostics().iter().map(|e| e.stats.received_packets).sum::<u64>(), before + 2);
+            assert!((world.get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(osc).unwrap().closure_sample.left.unwrap() - value).abs() < 1e-6);
+            assert!((world.get_component_by_id_as::<HTCEyeTrackingComponent>(htc).unwrap().closure_sample.left.unwrap() - value).abs() < 1e-6);
+            previous_count = before + 2;
+            old = udp.clone();
+        }
+    }
 
     #[test]
     fn generic_tracker_materializes_default_source_components() {

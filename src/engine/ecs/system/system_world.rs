@@ -22,6 +22,7 @@ use crate::engine::ecs::system::KeyboardInputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MeshBoundsSystem;
 use crate::engine::ecs::system::MirrorSystem;
+use crate::engine::ecs::system::MultiplayerSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::PointerSystem;
@@ -1376,8 +1377,9 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             ControllerXRComponent, HttpClientComponent, HttpServerComponent, InputComponent,
-            InputXRComponent, PointerComponent, RayCastComponent, RenderableComponent,
-            SignalRouteUpwardComponent, StencilClipComponent, TransformComponent,
+            InputXRComponent, MultiplayerSessionComponent,
+            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
+            StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1465,6 +1467,13 @@ impl SystemWorld {
                 .is_some()
             {
                 self.http_server.remove_component(n);
+            }
+            self.udp_channels.remove(world, n);
+            if world
+                .get_component_by_id_as::<MultiplayerSessionComponent>(n)
+                .is_some()
+            {
+                self.multiplayer.component_removed(n);
             }
             if world
                 .get_component_by_id_as::<HttpClientComponent>(n)

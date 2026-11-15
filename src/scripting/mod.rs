@@ -80,6 +80,8 @@ mod lumae_pacing_tests;
 mod sakura_desktop_tests;
 
 #[cfg(test)]
+mod multiplayer_tests;
+#[cfg(test)]
 mod untracked_avatar_tests;
 
 #[cfg(test)]
@@ -120,3 +122,19 @@ mod rocket_motion_tests;
 
 #[cfg(test)]
 mod editor_settings_trigger_tests;
+
+mod udp_channel_api;
+
+#[cfg(test)]
+mod udp_channel_tests;
+
+mod morph_api;
+
+#[cfg(test)]
+mod shared_grab_tests;
+
+#[cfg(test)]
+mod shared_udp_tests;
+
+#[cfg(test)]
+mod collision_response_tests;

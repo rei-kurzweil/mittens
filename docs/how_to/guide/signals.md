@@ -405,6 +405,32 @@ on(scope, "GrabEnd", fn(event) { print(event) })
 scope
 ```
 
+#### `PointerGrabbed`
+<!-- catalog:signal source="PointerGrabbed" kind="event" mms="observable-payload" -->
+**Event.** A local `Grabbable` hold successfully attached. Emitted once on the
+holding pointer, after native grab acquisition. Payload: `pointer`, `target` (the
+moved Transform, including `Grabbable.parent()` resolution). Rejected grabs do
+not emit this event. This is a notification, not a cancellable permission request.
+Climbing and attachment mounting are separate interactions.
+```mms parse-only
+let pointer = Pointer {}
+on(pointer, "PointerGrabbed", fn(event) { print(event.target) })
+pointer
+```
+
+#### `PointerReleased`
+<!-- catalog:signal source="PointerReleased" kind="event" mms="observable-payload" -->
+**Event.** A local `Grabbable` hold ended. Emitted once on its pointer, with
+`pointer` and `target`, on ordinary release or invalidated hold cleanup (including
+external reparenting). IDs can refer to removed components during cleanup; a
+removed pointer has no live scoped listener. This does not drive a second grab or
+release operation.
+```mms parse-only
+let pointer = Pointer {}
+on(pointer, "PointerReleased", fn(event) { print(event.target) })
+pointer
+```
+
 #### `Click`
 <!-- catalog:signal source="Click" kind="event" mms="observable-null" -->
 **Event.** A drag ended within the click displacement threshold. The interaction and physics subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with `null`**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
@@ -600,6 +626,53 @@ scope
 let scope = Transform {}
 on(scope, "HttpError", fn(event) { print(event) })
 scope
+```
+
+### Networking
+
+#### `MultiplayerConnected`
+<!-- catalog:signal source="MultiplayerConnected" kind="event" mms="observable-payload" -->
+**Event.** The local session has a peer id: immediately for a host, after the welcome handshake for a client. Payload: `peer_id`, `is_host`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerConnected", fn(event) { print(event) })
+net
+```
+
+#### `MultiplayerPeerJoined`
+<!-- catalog:signal source="MultiplayerPeerJoined" kind="event" mms="observable-payload" -->
+**Event.** Another peer entered the session roster. Payload: `peer_id`, `name`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerPeerJoined", fn(event) { print(event) })
+net
+```
+
+#### `MultiplayerPeerLeft`
+<!-- catalog:signal source="MultiplayerPeerLeft" kind="event" mms="observable-payload" -->
+**Event.** A peer left, timed out, or the client lost its host. Payload: `peer_id`, `name`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerPeerLeft", fn(event) { print(event) })
+net
+```
+
+#### `MultiplayerMessage`
+<!-- catalog:signal source="MultiplayerMessage" kind="event" mms="observable-payload" -->
+**Event.** An application message arrived through `MultiplayerSession.send`. Clients receive host broadcasts; the host receives client messages. Payload: `sender` (peer id), `name`, `text`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerMessage", fn(event) { print(event) })
+net
+```
+
+#### `MultiplayerError`
+<!-- catalog:signal source="MultiplayerError" kind="event" mms="observable-payload" -->
+**Event.** A session bind, send, timeout, or configuration problem. Payload: `phase`, `message`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerError", fn(event) { print(event) })
+net
 ```
 
 ## Intent catalog
@@ -1562,9 +1635,39 @@ Transform {}
 HttpClient {}
 ```
 
+#### `RegisterMultiplayerSession`
+<!-- catalog:signal source="RegisterMultiplayerSession" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Binds the session's UDP endpoint when a `MultiplayerSession` initializes; only one session may be active per process. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+MultiplayerSession.host() {}
+```
+
+#### `MultiplayerSend`
+<!-- catalog:signal source="MultiplayerSend" kind="intent" mms="live-api" -->
+**Intent — Available through a live method/builtin.** `MultiplayerSession.send(name, text)` queues one unreliable application datagram (client to host, or host to all clients). Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
+```mms parse-only
+MultiplayerSession.host() {}
+```
+
 #### `HttpServerReply`
 <!-- catalog:signal source="HttpServerReply" kind="intent" mms="live-api" -->
 **Intent — Available through a live method/builtin.** Requests the `HttpServerReply` operation. A live component method or evaluator builtin requests this intent; the RX/default executor or owning system consumes it. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 HttpServer {}
 ```
+
+#### `UdpSample`
+<!-- catalog:signal source="UdpSample" kind="event" mms="observable-payload" -->
+An unbound typed subscription received a new latest value. Payload: value. Consumed through on(subscription, "UdpSample", callback). Native bindings apply directly instead of allocating callback payloads.
+
+#### `UdpState`
+<!-- catalog:signal source="UdpState" kind="event" mms="observable-payload" -->
+Socket/channel readiness or error observation. Payload: ready, message. Consumed through scoped or global handlers.
+
+#### `RegisterUdp`
+<!-- catalog:signal source="RegisterUdp" kind="intent" mms="component-lifecycle" -->
+Activates socket/channel participation through the normal component lifecycle. User code creates and attaches handles rather than authoring this intent.
+
+#### `PatchTransformTrs`
+<!-- catalog:signal source="PatchTransformTrs" kind="intent" mms="live-api" -->
+Emitted by Transform.set_translation/set_rotation_quat. Merges requested channels against the current local/world transform at execution, preserving untouched channels across independently queued writes.

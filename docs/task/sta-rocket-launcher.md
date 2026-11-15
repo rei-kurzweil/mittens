@@ -44,6 +44,22 @@ collision support needed to eliminate per-frame MMS flight callbacks.
 
 ## Remaining work
 
+- [ ] Recalibrate held grip against the current exported asset: user reports the
+      launcher roughly 40 cm too far back along local Z. The machine pistol fits
+      Mitten's hand correctly and must retain its grip calibration. In Sakura,
+      the launcher model is wrapped in `T.position(0.191, -1.50, -0.15)`;
+      the current GLTF root translates by approximately
+      `[-0.191245, 1.387106, 0.449388]`, leaving roughly
+      `[-0.000245, -0.112894, 0.299388]` before child transforms and the held
+      hand offset `[0, 0, -0.105]`. Inspect mesh/handle position and the full
+      hierarchy rather than assuming Blender's object origin is the imported
+      grip origin. Calibrate model and muzzle together, preserve intended table
+      placement, and visually verify XR grip and launch direction. No offset
+      correction has been applied based solely on this arithmetic.
+- [ ] Add optional socket/weapon identity options and typed firing replication
+      alongside shared grab authority; see
+      [shared multiplayer grabbing](multiplayer-shared-grabbing.md#weapons-and-firing-channels).
+
 - [ ] Establish model orientation, scale, barrel position, and launch effect.
 - [ ] Implement launcher firing and 100 ms delay; integrate held input in Sakura.
 - [x] Implement native local-space acceleration driving Velocity, including a

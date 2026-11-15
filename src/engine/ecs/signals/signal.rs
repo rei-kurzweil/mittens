@@ -167,6 +167,17 @@ pub enum EventSignal {
         target: ComponentId,
     },
 
+    /// Successful local Grabbable acquisition, scoped to the holding pointer.
+    PointerGrabbed {
+        pointer: ComponentId,
+        target: ComponentId,
+    },
+    /// Local Grabbable ownership ended, including invalidated holds. Pointer scope.
+    PointerReleased {
+        pointer: ComponentId,
+        target: ComponentId,
+    },
+
     /// An opt-in sensor overlaps an enabled slide collidable. Scoped to the sensor.
     ProjectileHit {
         zone: ComponentId,
@@ -353,6 +364,36 @@ pub enum EventSignal {
         url: Option<String>,
         bind_addr: Option<String>,
     },
+    UdpSample {
+        value: meow_meow_script::TransportValue,
+    },
+    UdpState {
+        ready: bool,
+        message: String,
+    },
+    /// The local `MultiplayerSession` has a peer id (immediately for a host).
+    MultiplayerConnected {
+        peer_id: u32,
+        is_host: bool,
+    },
+    MultiplayerPeerJoined {
+        peer_id: u32,
+        name: String,
+    },
+    MultiplayerPeerLeft {
+        peer_id: u32,
+        name: String,
+    },
+    /// Application message from another peer (`MultiplayerSession.send`).
+    MultiplayerMessage {
+        from: u32,
+        name: String,
+        text: String,
+    },
+    MultiplayerError {
+        phase: String,
+        message: String,
+    },
     XrEyeTrackingUpdated {
         combined_look: Option<[f32; 3]>,
         left_look: Option<[f32; 3]>,
@@ -388,6 +429,8 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::GrabStart { .. } => SignalKind::GrabStart,
             EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
+            EventSignal::PointerGrabbed { .. } => SignalKind::PointerGrabbed,
+            EventSignal::PointerReleased { .. } => SignalKind::PointerReleased,
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
@@ -413,6 +456,13 @@ impl EventSignal {
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
+            EventSignal::UdpSample { .. } => SignalKind::UdpSample,
+            EventSignal::UdpState { .. } => SignalKind::UdpState,
+            EventSignal::MultiplayerConnected { .. } => SignalKind::MultiplayerConnected,
+            EventSignal::MultiplayerPeerJoined { .. } => SignalKind::MultiplayerPeerJoined,
+            EventSignal::MultiplayerPeerLeft { .. } => SignalKind::MultiplayerPeerLeft,
+            EventSignal::MultiplayerMessage { .. } => SignalKind::MultiplayerMessage,
+            EventSignal::MultiplayerError { .. } => SignalKind::MultiplayerError,
             EventSignal::XrEyeTrackingUpdated { .. } => SignalKind::XrEyeTrackingUpdated,
             EventSignal::XrEyeTrackingHtcUpdated { .. } => SignalKind::XrEyeTrackingHtcUpdated,
         }
@@ -686,6 +736,17 @@ pub enum IntentValue {
     RegisterHttpClient {
         component_id: ComponentId,
     },
+    RegisterUdp {
+        component_id: ComponentId,
+    },
+    RegisterMultiplayerSession {
+        component_id: ComponentId,
+    },
+    MultiplayerSend {
+        component_id: ComponentId,
+        name: String,
+        text: String,
+    },
     HttpClientRequest {
         component_id: ComponentId,
         method: String,
@@ -717,6 +778,12 @@ pub enum IntentValue {
         translation: [f32; 3],
         rotation_quat_xyzw: [f32; 4],
         scale: [f32; 3],
+    },
+    PatchTransformTrs {
+        component_id: ComponentId,
+        space: crate::engine::transform::TransformSpace,
+        translation: Option<[f32; 3]>,
+        rotation: Option<[f32; 4]>,
     },
     SetTransformTrs {
         component_id: ComponentId,
@@ -1076,10 +1143,14 @@ impl IntentValue {
             IntentValue::RegisterHttpClient { .. } => "register_http_client",
             IntentValue::HttpClientRequest { .. } => "http_client_request",
             IntentValue::HttpServerReply { .. } => "http_server_reply",
+            IntentValue::RegisterUdp { .. } => "register_udp",
+            IntentValue::RegisterMultiplayerSession { .. } => "register_multiplayer_session",
+            IntentValue::MultiplayerSend { .. } => "multiplayer_send",
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
+            IntentValue::PatchTransformTrs { .. } => "patch_transform_trs",
             IntentValue::SetTransformTrs { .. } => "set_transform_trs",
             IntentValue::RemoveTransform { .. } => "remove_transform",
 
@@ -1225,6 +1296,8 @@ pub enum SignalKind {
     DragEnd,
     GrabStart,
     GrabEnd,
+    PointerGrabbed,
+    PointerReleased,
     ProjectileHit,
     ZoneEntered,
     ZoneExited,
@@ -1255,6 +1328,13 @@ pub enum SignalKind {
     HttpRequest,
     HttpResponse,
     HttpError,
+    UdpSample,
+    UdpState,
+    MultiplayerConnected,
+    MultiplayerPeerJoined,
+    MultiplayerPeerLeft,
+    MultiplayerMessage,
+    MultiplayerError,
     XrEyeTrackingUpdated,
     XrEyeTrackingHtcUpdated,
 }

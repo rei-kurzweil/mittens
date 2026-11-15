@@ -195,3 +195,24 @@ They do not test calibrated rendered soles or kneeling posture.
 - [Skinned humanoid comparison/calibration](skinned-humanoid-avc-calibration.md)
 - [HMD floor-contact feedback investigation](../bugs/mittens-corp-hmd-height-floor-contact-feedback.md)
 - [Display-car floor contact](display-car-floor-contact-and-gravity.md)
+
+## Multiplayer follow-up
+
+The multiplayer scene uses the paper-craft sole landmarks and WalkingIK for both
+local and received rigs. Collision-disabled visual rigs need read-only support
+queries from sole positions, without enabling capsule collision response or
+changing received root transforms. Preserve the retained BVH path and allocation
+behavior. Validate static and moving local/proxy legs, missing support, and root
+authority. The desktop authored eye height is 1.58 m for the current Mitten model;
+the generic 1.65 m pose left soles about 6.6 cm above the arena and outside the
+5 cm support margin. This does not calibrate a human's XR standing height.
+
+### Lower-body test responsibility boundaries
+
+The shared lower-body tests.rs is about 1,250 lines and mixes fixture setup,
+rig calibration, support, and posture assertions. Propose grouping the remaining
+support and calibration cases under cohesive test-family modules, retaining one
+shared Fixture; do not split the production solver or introduce per-frame scene
+queries/allocations. Add new proxy-support cases to one family module now. A
+full test reorganization is deferred until requested. Validate all lower_body
+tests and the two-peer scene's solved sole positions and render camera matrices.

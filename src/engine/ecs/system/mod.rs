@@ -74,6 +74,7 @@ pub mod mesh_bounds_system;
 pub mod mirror_system;
 pub mod model;
 pub mod morph_target_system;
+pub mod multiplayer_system;
 pub mod music_system;
 pub mod object_placement_preview;
 pub mod openxr_system;
@@ -174,6 +175,7 @@ pub use layout::LayoutSystem;
 pub use light_system::LightSystem;
 pub use mesh_bounds_system::{MeshBoundsSystem, MeshOutputBounds, MeshOutputKind};
 pub use mirror_system::MirrorSystem;
+pub use multiplayer_system::MultiplayerSystem;
 pub use music_system::MusicSystem;
 pub use openxr_system::OpenXRSystem as XrSystem;
 pub use pipeline_system::PipelineSystem;
@@ -236,3 +238,7 @@ pub trait System: std::fmt::Debug {
 pub mod zone_observation_system;
 
 mod projectile_motion;
+
+pub mod udp_channel_system;
+
+pub use crate::engine::udp::UdpSystem;

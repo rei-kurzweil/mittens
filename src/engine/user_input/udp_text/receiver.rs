@@ -1,9 +1,10 @@
 use super::{MAX_PACKET, Packet};
+use crate::engine::udp::{UdpEndpoint, UdpSystem};
 use crate::engine::user_input::{HidProvider, InputState};
 use std::{
     collections::VecDeque,
     io,
-    net::{SocketAddr, UdpSocket},
+    net::SocketAddr,
     time::{Duration, Instant},
 };
 struct Controller {
@@ -13,7 +14,8 @@ struct Controller {
     seen: Instant,
 }
 pub struct UdpTextInputProvider {
-    socket: UdpSocket,
+    socket: UdpEndpoint,
+    udp: UdpSystem,
     controller: Option<Controller>,
     retired: VecDeque<uuid::Uuid>,
     last_poll: Instant,
@@ -21,10 +23,13 @@ pub struct UdpTextInputProvider {
 }
 impl UdpTextInputProvider {
     pub fn bind(address: SocketAddr) -> io::Result<Self> {
-        let socket = UdpSocket::bind(address)?;
-        socket.set_nonblocking(true)?;
+        Self::bind_on(&UdpSystem::default(), address)
+    }
+    pub fn bind_on(udp: &UdpSystem, address: SocketAddr) -> io::Result<Self> {
+        let socket = udp.bind(address, MAX_PACKET, "terminal-input")?;
         Ok(Self {
             socket,
+            udp: udp.clone(),
             controller: None,
             retired: VecDeque::new(),
             last_poll: Instant::now(),
@@ -97,21 +102,17 @@ impl HidProvider for UdpTextInputProvider {
         }
         self.last_poll = now;
         let mut input = InputState::default();
-        let mut buffer = [0u8; MAX_PACKET + 1];
-        for _ in 0..64 {
-            match self.socket.recv_from(&mut buffer) {
-                Ok((size, address)) => {
-                    if !self.drain {
-                        if let Some(packet) = Packet::decode(&buffer[..size]) {
-                            self.accept(packet, address, now, &mut input);
-                        }
-                    }
+        let udp = self.udp.clone();
+        let socket = self.socket.clone();
+        if let Ok(report) = udp.poll(&socket, 64, |address, bytes| {
+            if !self.drain {
+                if let Some(packet) = Packet::decode(bytes) {
+                    self.accept(packet, address, now, &mut input);
                 }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    self.drain = false;
-                    break;
-                }
-                Err(_) => break,
+            }
+        }) {
+            if report.drained {
+                self.drain = false;
             }
         }
         input

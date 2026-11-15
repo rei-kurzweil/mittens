@@ -91,6 +91,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
             | IntentValue::UpdateTransform { component_id, .. }
+            | IntentValue::PatchTransformTrs { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }
             | IntentValue::RegisterCamera3d { component_id }
@@ -200,7 +201,10 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseApply { .. }
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
-            | IntentValue::HttpServerReply { .. } => None,
+            | IntentValue::HttpServerReply { .. }
+            | IntentValue::RegisterUdp { .. }
+            | IntentValue::RegisterMultiplayerSession { .. }
+            | IntentValue::MultiplayerSend { .. } => None,
         }
     }
 
@@ -247,6 +251,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
             | IntentValue::UpdateTransform { component_id, .. }
+            | IntentValue::PatchTransformTrs { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }
             | IntentValue::RegisterCamera3d { component_id }
@@ -357,7 +362,10 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseApply { .. }
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
-            | IntentValue::HttpServerReply { .. } => None,
+            | IntentValue::HttpServerReply { .. }
+            | IntentValue::RegisterUdp { .. }
+            | IntentValue::RegisterMultiplayerSession { .. }
+            | IntentValue::MultiplayerSend { .. } => None,
         }
     }
 }

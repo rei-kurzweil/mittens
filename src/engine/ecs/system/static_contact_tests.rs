@@ -936,3 +936,6 @@ fn profile_original_scan_against_retained_bvh() {
     );
     assert!(indexed.candidate_pairs < scan.candidate_pairs);
 }
+
+#[path = "static_contact_read_only_tests.rs"]
+mod read_only;

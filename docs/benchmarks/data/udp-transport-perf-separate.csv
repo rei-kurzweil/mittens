@@ -1,0 +1,24 @@
+# UDP buffer-locality experiment; unchanged OSC/JSON decoders, equal socket count/order/budget
+# eye=120Hz session=20Hz per pair, scale=1, poll=90Hz, poses=false; times are receiver-thread CPU
+kind,pairs,mode,trial,packets,scratch_bytes,ns_per_packet,cpu_ms,wall_s,eye_received,session_received,sent,send_errors,dropped,invalid,duplicate,latency_p50_us,latency_p95_us,latency_p99_us,eye_p95_us,session_p95_us,checksum
+replay,1,separate,0,700000,66560,115.370,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,1,700000,66560,116.049,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,2,700000,66560,116.066,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,3,700000,66560,116.087,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,4,700000,66560,115.397,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,5,700000,66560,115.054,,,,,,,,,,,,,,,2034479704235
+replay,1,separate,6,700000,66560,115.138,,,,,,,,,,,,,,,2034479704235
+replay,8,separate,0,5600000,532480,112.090,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,1,5600000,532480,114.436,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,2,5600000,532480,111.766,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,3,5600000,532480,112.433,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,4,5600000,532480,111.785,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,5,5600000,532480,111.480,,,,,,,,,,,,,,,16275838710062
+replay,8,separate,6,5600000,532480,111.747,,,,,,,,,,,,,,,16275838710062
+replay,32,separate,0,22400000,2129920,113.700,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,1,22400000,2129920,111.687,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,2,22400000,2129920,110.725,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,3,22400000,2129920,110.556,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,4,22400000,2129920,110.902,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,5,22400000,2129920,110.643,,,,,,,,,,,,,,,65103369602295
+replay,32,separate,6,22400000,2129920,110.642,,,,,,,,,,,,,,,65103369602295

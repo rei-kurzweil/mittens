@@ -1,0 +1,4 @@
+   Compiling mittens-udp-transport-bench v0.0.0 (/tmp/mittens-udp-transport-9sv0xx5c)
+    Finished `release` profile [optimized] target(s) in 1.16s
+SUMMARY pairs=8 mode=separate replay_ns/pkt median=114.022 min=113.245 max=115.149; UDP receiver_cpu_ms median=13.4737 (5/5 loss-free trials)
+SUMMARY pairs=8 mode=shared replay_ns/pkt median=114.776 min=114.289 max=115.757; UDP receiver_cpu_ms median=13.3481 (5/5 loss-free trials)
