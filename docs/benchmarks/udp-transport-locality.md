@@ -241,3 +241,10 @@ time. Treat every timing/counter result here as exploratory, not a controlled
 faster/slower conclusion. The observed small differences need a quiet-window
 rerun before guiding performance decisions. Functional checks and recorded
 packet/checksum accounting are not invalidated by that interaction.
+
+### Avatar-shaped replacement workloads
+
+The original source-pair numbers above do not represent avatars. The subsequent
+[avatar scenarios](avatar-udp.md) add real binary TRS/blink sample layouts for
+2 VR, 4 VR, and 2 VR + 2 desktop participants, with multiplexed receiving sockets.
+Use those scenarios for representative steady-state traffic comparisons.

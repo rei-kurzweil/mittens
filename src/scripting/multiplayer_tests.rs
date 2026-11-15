@@ -1,5 +1,4 @@
 use crate::engine::Universe;
-use crate::engine::ecs::component::VelocityComponent;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, World};
 use std::time::Duration;
@@ -21,88 +20,47 @@ fn load(source: &str, path: &str) -> Universe {
     scene
 }
 
-const SHARED: &str = r#"
-let proxies = T { name = "proxies" }
-proxies
-fn remote_player(event) {
-    return T { name = "proxy_" + event.name  MultiplayerSync.remote_player(event.peer_id) }
-}
-on(net, "MultiplayerPeerJoined", fn(event) { proxies.attach(remote_player(event)) })
-Gravity.enabled(true) {
-    Velocity { name = "ball_velocity"
-        T.position(0.0, 5.0, 0.0) { name = "ball" MultiplayerSync.host("ball") }
+#[test]
+fn multiplayer_session_connects_roster_and_app_messages_without_sync() {
+    let mut host = load(r#"
+XR.off()
+let net = MultiplayerSession.host("127.0.0.1:47011").player_name("rei") {}
+net
+T { name = "message_flag" }
+on(net, "MultiplayerMessage", fn(event) {
+    if event.name == "hello" && event.text == "dan" {
+        query("[name='message_flag']").update_transform([7., 7., 7.], [0., 0., 0.], [1., 1., 1.])
+    }
+})
+"#, "examples/_session-host-test.mms");
+    let mut client = load(r#"
+XR.off()
+let net = MultiplayerSession.join("127.0.0.1:47011").player_name("dan") {}
+net
+on(net, "MultiplayerConnected", fn(event) { net.send("hello", net.local_name()) })
+"#, "examples/_session-client-test.mms");
+    for _ in 0..90 {
+        host.update(1. / 60., &Default::default());
+        client.update(1. / 60., &Default::default());
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(world_position(&host, "message_flag"), Some([7.; 3]));
+    use crate::engine::ecs::component::MultiplayerSessionComponent;
+    for scene in [&host, &client] {
+        let session = scene.world.all_components().find_map(|id|
+            scene.world.get_component_by_id_as::<MultiplayerSessionComponent>(id)
+        ).unwrap();
+        assert_ne!(session.peer_id, 0);
+        assert_eq!(session.peer_ips.len(), 1);
     }
 }
-"#;
 
 #[test]
-fn host_and_client_replicate_players_host_physics_and_messages() {
-    let host_source = format!(
-        r#"
-let net = MultiplayerSession.host("127.0.0.1:47011").player_name("rei") {{}}
-net
-T.position(1.0, 2.0, 3.0) {{ name = "local_player" MultiplayerSync.local_player() }}
-T {{ name = "message_flag" }}
-on(net, "MultiplayerMessage", fn(event) {{
-    if event.name == "hello" && event.text == "dan" {{
-        query("[name='message_flag']").update_transform([7.0, 7.0, 7.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-    }}
-}})
-{SHARED}"#
-    );
-    let client_source = format!(
-        r#"
-let net = MultiplayerSession.join("127.0.0.1:47011").player_name("dan") {{}}
-net
-T.position(-4.0, 0.0, 1.5) {{ name = "local_player" MultiplayerSync.local_player() }}
-on(net, "MultiplayerConnected", fn(event) {{ net.send("hello", net.local_name()) }})
-{SHARED}"#
-    );
-    let mut host = load(&host_source, "examples/_net-host-test.mms");
-    let mut client = load(&client_source, "examples/_net-client-test.mms");
-
-    for _ in 0..90 {
-        host.update(1.0 / 60.0, &Default::default());
-        std::thread::sleep(Duration::from_millis(1));
-        client.update(1.0 / 60.0, &Default::default());
-        std::thread::sleep(Duration::from_millis(1));
-    }
-
-    // Each side spawned a proxy for the other and it follows the owner's pose.
-    let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-3);
-    assert!(near(
-        world_position(&client, "proxy_rei").unwrap(),
-        [1.0, 2.0, 3.0]
-    ));
-    assert!(near(
-        world_position(&host, "proxy_dan").unwrap(),
-        [-4.0, 0.0, 1.5]
-    ));
-
-    // The host simulates the ball; the client never does, yet sees it fall.
-    let client_velocity = named(&client, "ball_velocity").unwrap();
-    assert!(
-        !client
-            .world
-            .get_component_by_id_as::<VelocityComponent>(client_velocity)
-            .unwrap()
-            .enabled
-    );
-    let host_ball = world_position(&host, "ball").unwrap()[1];
-    let client_ball = world_position(&client, "ball").unwrap()[1];
-    assert!(host_ball < 4.0, "host ball should have fallen: {host_ball}");
-    assert!(
-        client_ball < 4.5,
-        "client ball should follow host: {client_ball}"
-    );
-    // At most a few send intervals behind the host.
-    assert!((client_ball - host_ball).abs() < 1.0);
-
-    // Client -> host app message, with the sender's name as payload.
-    assert!(near(
-        world_position(&host, "message_flag").unwrap(),
-        [7.0, 7.0, 7.0]
-    ));
+fn removed_multiplayer_sync_is_not_an_mms_component() {
+    let mut scene = Universe::new(World::default());
+    assert!(scene.load_mms_source_at_path(
+        "T { MultiplayerSync.local_player() }", "examples/_removed-sync-test.mms"
+    ).is_err());
 }
 
 fn status_text(scene: &Universe) -> String {

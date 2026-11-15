@@ -204,7 +204,6 @@ impl SignalPipelineProcessor {
             | IntentValue::HttpServerReply { .. }
             | IntentValue::RegisterUdp { .. }
             | IntentValue::RegisterMultiplayerSession { .. }
-            | IntentValue::RegisterMultiplayerSync { .. }
             | IntentValue::MultiplayerSend { .. } => None,
         }
     }
@@ -366,7 +365,6 @@ impl SignalPipelineProcessor {
             | IntentValue::HttpServerReply { .. }
             | IntentValue::RegisterUdp { .. }
             | IntentValue::RegisterMultiplayerSession { .. }
-            | IntentValue::RegisterMultiplayerSync { .. }
             | IntentValue::MultiplayerSend { .. } => None,
         }
     }

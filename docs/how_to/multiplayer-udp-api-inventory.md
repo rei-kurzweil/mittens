@@ -13,12 +13,11 @@ constructors. Their component IDs are local handles, not network identities.
 | MMS component | Rust component | Creation / important API | Responsibility and current use |
 | --- | --- | --- | --- |
 | `MultiplayerSession` | `MultiplayerSessionComponent` | `.host(bind_address)`, `.join(host_address)`, `.from_env()`; builders `.player_name(name)`, `.tick_hz(rate)`, `.enabled(bool)`; methods `.is_host()`, `.peer_id()`, `.local_name()`, `.peer_ip(peer_id)`, `.send(name, text)` | Host/client session, peer roster, peer IDs/addresses, heartbeat/lifecycle and application messages. The current example uses this control plane alongside separate typed UDP channels. `from_env()` reads the specific `MITTENS_MULTIPLAYER_*` launcher variables; it is not general MMS environment access. |
-| `MultiplayerSync` | `MultiplayerSyncComponent` | `.host(key)`, `.local_player()`, `.remote_player(peer_id)` | Earlier automatic replication path: synchronizes its parent Transform's world pose through the active session. Host-owned entities are simulated by the host; player poses belong to their owning peer. Still supported, but the migrated multiplayer example uses explicit typed channels for avatar/ball telemetry. |
 
-`MultiplayerSync` is superseded by explicit typed-channel/MMS binding in the
-current demo. It is still registered, compiled and tested: there is no formal
-Rust deprecation annotation or removal in this branch. Treat it as the earlier
-compatibility path, not the preferred pattern for new demo features.
+The former `MultiplayerSync` component and its registration intent have been
+removed. Use explicit typed publications/subscriptions and MMS receive bindings
+for avatar and object telemetry. Session control does not apply transforms or
+change physics authority.
 
 ## Multiplayer signals
 
@@ -30,7 +29,6 @@ compatibility path, not the preferred pattern for new demo features.
 | `MultiplayerMessage` | Event; observable payload | Session; `MultiplayerSystem` | `from`, `name`, `text` | Application message from another peer, originating from `.send(name, text)`. The current app-message transport is best effort, not reliable delivery. |
 | `MultiplayerError` | Event; observable payload | Session; `MultiplayerSystem` | `phase`, `message` | Session configuration, bind, send or other reported protocol/transport failure. |
 | `RegisterMultiplayerSession` | Internal intent; not `on(...)` | Session initialization → system registration | `component_id` | Activates/registers the session endpoint. |
-| `RegisterMultiplayerSync` | Internal intent; not `on(...)` | Sync initialization → system registration | `component_id` | Registers the automatic parent-transform replication component. |
 | `MultiplayerSend` | Internal intent; not `on(...)` | Session `.send(...)` → `MultiplayerSystem` | `component_id`, `name`, `text` | Requests sending an application message through that session. |
 
 ## UDP components
@@ -106,7 +104,6 @@ and unchanged external protocol compatibility are the main maintenance benefit.
 ## Sources and further reading
 
 - [Session component](../../src/engine/ecs/component/multiplayer_session.rs)
-- [Automatic sync component](../../src/engine/ecs/component/multiplayer_sync.rs)
 - [Multiplayer MMS configuration](../../src/scripting/registries/multiplayer_runtime_config.rs)
 - [Socket/channel components](../../src/engine/ecs/component/udp_channel.rs)
 - [UDP MMS methods and bindings](../../src/scripting/udp_channel_api.rs)

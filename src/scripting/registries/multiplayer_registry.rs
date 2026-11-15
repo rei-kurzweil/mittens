@@ -1,7 +1,7 @@
-//! Multiplayer session and replication authoring bindings.
+//! Multiplayer session control authoring bindings.
 use super::{ComponentId, Value, World, arg_bool, arg_f32, arg_str};
 use crate::engine::ecs::IntentValue;
-use crate::engine::ecs::component::{MultiplayerSessionComponent, MultiplayerSyncComponent};
+use crate::engine::ecs::component::MultiplayerSessionComponent;
 
 pub(super) fn create(
     world: &mut World,
@@ -29,17 +29,6 @@ pub(super) fn create(
                 }
             };
             Ok(world.add_component(session))
-        }
-        "MultiplayerSync" => {
-            let sync = match ctor {
-                Some("host") => MultiplayerSyncComponent::host(arg_str(args, 0)?),
-                Some("local_player") | None => MultiplayerSyncComponent::local_player(),
-                Some("remote_player") => MultiplayerSyncComponent::remote_player(peer_id(args)?),
-                Some(method) => {
-                    return Err(format!("MultiplayerSync: unknown constructor '{method}'"));
-                }
-            };
-            Ok(world.add_component(sync))
         }
         _ => unreachable!(),
     }
@@ -110,9 +99,7 @@ pub(crate) fn call(
 fn peer_id(args: &[Value]) -> Result<u32, String> {
     let id = arg_f32(args, 0)?;
     if id.fract() != 0.0 || !(1.0..=u32::MAX as f32).contains(&id) {
-        return Err(format!(
-            "MultiplayerSync.remote_player: invalid peer id {id}"
-        ));
+        return Err(format!("MultiplayerSession.peer_ip: invalid peer id {id}"));
     }
     Ok(id as u32)
 }

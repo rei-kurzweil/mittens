@@ -17,10 +17,16 @@ for path in sys.argv[1:]:
             rows.append(row)
 if not rows:
     raise SystemExit('usage: summarize_udp_transport.py result.csv')
+scenarios = {row.get('scenario', 'synthetic-pairs') for row in rows}
+if len(scenarios) != 1:
+    raise SystemExit('summarize one avatar scenario at a time')
+scenario = next(iter(scenarios))
+print(f'Scenario: {scenario}. CPU times cover the whole run, including the drain interval.\n')
+count_label = 'Participants' if scenario != 'synthetic-pairs' else 'Pairs'
 groups = defaultdict(list)
 for row in rows:
     groups[(int(row['pairs']), row['mode'], row['kind'])].append(row)
-print('| Pairs | Mode | Replay ns/packet, median [min–max] | Receiver CPU ms / whole run, median [min–max] | UDP p95 µs, median | Drops / send errors | Scratch bytes |')
+print(f'| {count_label} | Mode | Replay ns/packet, median [min–max] | Receiver CPU ms / whole run, median [min–max] | UDP p95 µs, median | Drops / send errors | Scratch bytes |')
 print('| --- | --- | --- | --- | --- | --- | --- |')
 for pairs, mode in sorted({(p, m) for p, m, _ in groups}):
     replay = groups[pairs, mode, 'replay']

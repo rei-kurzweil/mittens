@@ -10,11 +10,9 @@ Mitten demo are tracked in [the task](../task/typed-udp-channels-and-mms-binding
 ## Where the current abstraction makes decisions
 
 `MultiplayerSession` owns discovery/handshake, peer identity, roster, and app
-messages. `MultiplayerSync` additionally chooses a parent transform, publishes
-its complete world pose, applies received translation/rotation/scale, and
-turns off the ancestor Velocity for host-owned entities on clients. These
-choices are currently coupled in `MultiplayerSystem::tick` and
-`disable_local_simulation`.
+messages. The former `MultiplayerSync` coupled full-parent-transform replication
+and client physics disabling; that component and automatic application path have
+now been removed in favor of explicit typed channels and MMS policy.
 
 The useful separation is transport → validated typed messages → MMS policy →
 explicit scene writes. Receiving telemetry should not itself change a transform
@@ -326,7 +324,7 @@ arriving before channel registration. Preserve bounded nonblocking frame work
 and direct/batched application paths.
 
 The source now implements this native/MMS slice and migrates the multiplayer
-demo. MultiplayerSync remains available as a separate older replication API. Future declarative property bindings can reuse these primitives.
+demo. The old automatic replication component has been removed. Future declarative property bindings can reuse these primitives.
 
 ## Intermediate milestone: compressed audio transport investigation
 

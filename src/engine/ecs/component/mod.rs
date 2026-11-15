@@ -74,7 +74,6 @@ pub mod mirror;
 pub mod morph_target;
 pub mod mountable;
 pub mod multiplayer_session;
-pub mod multiplayer_sync;
 pub mod music_note;
 pub mod normal_visualisation;
 pub mod opacity;
@@ -317,7 +316,6 @@ pub use mountable::MountableComponent;
 pub use multiplayer_session::{
     MULTIPLAYER_DEFAULT_PORT, MultiplayerRole, MultiplayerSessionComponent,
 };
-pub use multiplayer_sync::{MultiplayerAuthority, MultiplayerSyncComponent};
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use normal_visualisation::NormalVisualisationComponent;

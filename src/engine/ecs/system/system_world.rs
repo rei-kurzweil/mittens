@@ -1377,7 +1377,7 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             ControllerXRComponent, HttpClientComponent, HttpServerComponent, InputComponent,
-            InputXRComponent, MultiplayerSessionComponent, MultiplayerSyncComponent,
+            InputXRComponent, MultiplayerSessionComponent,
             PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
             StencilClipComponent, TransformComponent,
         };
@@ -1472,9 +1472,6 @@ impl SystemWorld {
             if world
                 .get_component_by_id_as::<MultiplayerSessionComponent>(n)
                 .is_some()
-                || world
-                    .get_component_by_id_as::<MultiplayerSyncComponent>(n)
-                    .is_some()
             {
                 self.multiplayer.component_removed(n);
             }

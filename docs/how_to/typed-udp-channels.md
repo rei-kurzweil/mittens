@@ -121,7 +121,7 @@ ComponentIds. See [wire format and bounds](../spec/typed-udp-channel-wire.md).
 
 The [multiplayer demo](multiplayer.md) uses the existing control session for
 roster, address discovery and gameplay requests, and typed binary channels for
-spatial/face telemetry. Control heartbeats work without MultiplayerSync poses.
+spatial/face telemetry. Session control heartbeats are independent of typed spatial samples.
 Audio compression/worker research and AudioStream/voice chat are deferred in
 [the design draft](../draft/typed-telemetry-mms-bindings.md).
 

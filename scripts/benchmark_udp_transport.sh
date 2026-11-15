@@ -26,21 +26,32 @@ with tempfile.TemporaryDirectory(prefix='mittens-udp-transport-') as directory:
     manifest += f'serde_json = "={versions["serde_json"]}"\n'
     manifest += f'uuid = {{ version="={versions["uuid"]}", features=["v4","serde"] }}\n'
     manifest += f'slotmap = "={versions["slotmap"]}"\n'
+    manifest += 'meow-meow-script = { path=' + json.dumps(str(root / 'crates/meow-meow-script')) + ' }\n'
     manifest += f'libc = "={versions["libc"]}"\n'
     (package / 'Cargo.toml').write_text(manifest)
     (package / 'Cargo.lock').write_text((root / 'Cargo.lock').read_text())
     for path in (root / 'benchmarks/udp_transport').glob('*.rs'):
         shutil.copyfile(path, source / path.name)
     shutil.copyfile(root / 'src/engine/udp/mod.rs', source / 'udp.rs')
-    # Extract the self-contained production OSC decoder without changing its
+    (source / 'udp').mkdir()
+    shutil.copyfile(root / 'src/engine/udp/tests.rs', source / 'udp/tests.rs')
+    shutil.copyfile(root / 'src/utils/math.rs', source / 'math.rs')
+    shutil.copytree(root / 'src/engine/udp_channels', source / 'udp_channels')
+    with (source / 'udp_channels/mod.rs').open('a') as wrapper:
+        wrapper.write("\n" + (root / 'benchmarks/udp_transport/channel_adapter.inc').read_text())
+    # Extract the self-contained production OSC/HTC decoders without changing its
     # visibility or pulling the engine/ECS/render dependencies into the harness.
     eye = (root / 'src/engine/ecs/system/xr_eye_tracking_system.rs').read_text()
     start = eye.index('pub fn decode_osc(')
     end = eye.index('#[derive(Debug, Clone, PartialEq)]\npub struct HtcEye', start)
-    (source / 'eye.rs').write_text('pub type Look = [f32; 3];\n' + eye[start:end])
+    htc_end = eye.index('#[cfg(test)]', end)
+    (source / 'eye.rs').write_text('pub type Look = [f32; 3];\nuse crate::math::quat_rotate_vec3;\n' + eye[start:htc_end])
     shutil.copyfile(root / 'src/engine/ecs/system/multiplayer_system/protocol.rs', source / 'protocol.rs')
     subprocess.run(['cargo','build','--offline','--release','--manifest-path',str(package / 'Cargo.toml'),
                     '--target-dir',str(target)],check=True)
+    if os.environ.get('BENCH_TEST') == '1':
+        subprocess.run(['cargo','test','--offline','--release','--manifest-path',str(package / 'Cargo.toml'),
+                        '--target-dir',str(target),'avatars::tests'],check=True, stdout=sys.stderr)
     command = [str(target / 'release/mittens-udp-transport-bench'), *sys.argv[1:]]
     if os.environ.get('PERF') == '1':
         command = ['perf','stat','-e','cycles,instructions,cache-references,cache-misses', '--', *command]

@@ -1025,18 +1025,10 @@ HttpServer {}
 
 ### `MultiplayerSessionComponent`
 <!-- catalog:component source="MultiplayerSessionComponent" mms="direct" names="MultiplayerSession" -->
-One multiplayer endpoint per process. `MultiplayerSession.host(addr?)` binds and owns world/physics authority; `MultiplayerSession.join(host_addr)` connects as a client; `MultiplayerSession.from_env()` reads `MITTENS_MULTIPLAYER_ROLE`, `MITTENS_MULTIPLAYER_ADDR`, and `MITTENS_MULTIPLAYER_NAME`. Builders: `player_name`, `tick_hz`, `enabled`. Methods: `send(name, text)`, `is_host()`, `peer_id()`, `local_name()`. Emits `MultiplayerConnected`, `MultiplayerPeerJoined`, `MultiplayerPeerLeft`, `MultiplayerMessage`, and `MultiplayerError`. See [multiplayer](../multiplayer.md).
+One multiplayer endpoint per process. `MultiplayerSession.host(addr?)` binds and owns the session roster; `MultiplayerSession.join(host_addr)` connects as a client; `MultiplayerSession.from_env()` reads `MITTENS_MULTIPLAYER_ROLE`, `MITTENS_MULTIPLAYER_ADDR`, and `MITTENS_MULTIPLAYER_NAME`. Builders: `player_name`, `tick_hz`, `enabled`. Methods: `send(name, text)`, `is_host()`, `peer_id()`, `local_name()`. Emits `MultiplayerConnected`, `MultiplayerPeerJoined`, `MultiplayerPeerLeft`, `MultiplayerMessage`, and `MultiplayerError`. See [multiplayer](../multiplayer.md).
 **Directly constructible** as `MultiplayerSession`. Sources: [Rust implementation](../../../src/engine/ecs/component/multiplayer_session.rs) and [MMS registry](../../../src/scripting/registries/multiplayer_registry.rs).
 ```mms parse-only
 MultiplayerSession.host("0.0.0.0:7010").player_name("rei") {}
-```
-
-### `MultiplayerSyncComponent`
-<!-- catalog:component source="MultiplayerSyncComponent" mms="direct" names="MultiplayerSync" -->
-Replicates the world pose of its parent `Transform`. `MultiplayerSync.local_player()` publishes this peer's player; `MultiplayerSync.remote_player(peer_id)` applies another peer's player pose to a proxy; `MultiplayerSync.host(key)` is published by the host and applied on clients, which also disable the `Velocity` driving it. Poses are applied as received, without interpolation.
-**Directly constructible** as `MultiplayerSync`. Sources: [Rust implementation](../../../src/engine/ecs/component/multiplayer_sync.rs) and [MMS registry](../../../src/scripting/registries/multiplayer_registry.rs).
-```mms parse-only
-T { MultiplayerSync.host("ball") }
 ```
 
 ### `RouterComponent`

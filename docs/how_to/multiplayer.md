@@ -89,19 +89,21 @@ tracking. Physical XR/Tailscale validation is still required; the mode checks
 run without opening either a window or an XR runtime.
 
 See [typed channel authoring](typed-udp-channels.md) for the implemented API.
-The session/MultiplayerSync examples below describe the older automatic
-replication API, which remains supported separately from the migrated demo.
+The former `MultiplayerSync` component has been removed. Session control handles
+connections, roster and app messages; typed channels carry spatial/face telemetry.
+MMS explicitly decides which received channels affect transforms, morphs or physics.
 
 ## Authority model
 
 | State | Owner | Path |
 | --- | --- | --- |
-| Roster (who is connected) | Host | Carried in every snapshot; clients diff it into `MultiplayerPeerJoined`/`MultiplayerPeerLeft` |
-| Player pose | The peer that owns the player | Client → host (`PlayerPose`), host → all (`Snapshot.players`) |
-| World/physics entities | Host | Host → clients (`Snapshot.entities`); clients disable the driving `Velocity` |
-| Gameplay intents | Requested by anyone, decided by host | `MultiplayerSession.send(name, text)` → `MultiplayerMessage` on the host |
+| Roster | Host | Session roster snapshots and peer events |
+| Avatar poses and blinks | Owning peer | Typed publications, explicit receiver bindings |
+| Shared objects / physics | Chosen by MMS policy | Typed channels and example helpers |
+| Gameplay intents | Chosen by MMS policy | Session app messages or typed channels |
 
-Clients never talk to each other directly; the host relays.
+Session app messages flow client → host or host → clients. Typed channel addresses
+are configured independently; the session does not automatically relay telemetry.
 
 ## MMS surface
 
@@ -109,15 +111,7 @@ Clients never talk to each other directly; the host relays.
 let net = MultiplayerSession.from_env() {}   // or .host("0.0.0.0:7010") / .join("192.168.1.20:7010")
 net
 
-// This peer's player: publish the pose of the parent transform.
-T { MultiplayerSync.local_player() C3D {} }
-
-// Host-owned body: the host simulates and publishes; clients only apply.
-Gravity.enabled(true) { Velocity { T { MultiplayerSync.host("ball") R.sphere() {} } } }
-
-// Another peer's player, typically spawned from MultiplayerPeerJoined.
-fn proxy(event) { return T { MultiplayerSync.remote_player(event.peer_id) R.cube() {} } }
-on(net, "MultiplayerPeerJoined", fn(event) { net_proxies.attach(proxy(event)) })
+on(net, "MultiplayerConnected", fn(event) { net.send("hello", net.local_name()) })
 ```
 
 `MultiplayerSession` constructors: `host(addr?)`, `join(host_addr)`, `from_env()`
@@ -134,21 +128,22 @@ Events on the session component:
 | `MultiplayerMessage` | `sender`, `name`, `text` (`from` is an MMS keyword) |
 | `MultiplayerError` | `phase`, `message` |
 
-`MultiplayerSync` replicates the **world** pose of its parent `Transform`, applied with
-`SetTransformTrs` in world space. Only one `MultiplayerSession` may be active per
-process. The host is always peer `1`; clients are assigned `2, 3, …`.
+Only one `MultiplayerSession` may be active per process. The host is always peer
+`1`; clients are assigned `2, 3, …`. For typed transform/morph receive bindings,
+see [typed channel authoring](typed-udp-channels.md).
 
 ## Wire and runtime behavior
 
 - UDP, JSON envelope `{v, session, seq, msg}`; version mismatches are dropped.
-  Every datagram stays within 1,200 bytes; large snapshots are split into
-  independently applicable chunks (only the first carries the roster).
+  Every datagram stays within 1,200 bytes; large roster snapshots are split into
+  independently applicable chunks (only the first carries the roster). The v2
+  wire codec retains legacy pose fields for compatibility and codec tests; the
+  session endpoint ignores them and never publishes or applies poses.
 - Nonblocking socket polled once per frame, at most 256 datagrams per poll; no
   worker thread and no blocking on the update path. Oversize datagrams are
   discarded, not truncated.
 - The net tick runs after fixed-step physics and before camera/XR publication,
-  so the host publishes this frame's simulation and received poses are visible
-  in the same frame.
+  and publishes session roster/heartbeat control independently of spatial data.
 - Sends happen at `tick_hz`; a late frame does not burst to catch up.
 - Clients resend `Hello` every 0.5 s until welcomed. Either side treats 3 s of
   silence as a disconnect; a client then re-handshakes automatically. Dropping

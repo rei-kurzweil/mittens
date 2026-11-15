@@ -81,7 +81,8 @@ MITTENS_MULTIPLAYER_ROLE=client MITTENS_MULTIPLAYER_NAME=dan cargo run --release
 These are the current launch commands. Preserve this workflow or update the
 example, tests and how-to together if launcher configuration changes. Verify
 remote motion in both windows, ball authority and E-to-kick, plus restart/loss
-behavior. Revisit or replace MultiplayerSync after the replacement path passes.
+behavior. The replacement path passed; the superseded MultiplayerSync component,
+MMS API, lifecycle intent and automatic pose application have now been removed.
 
 Also validate the same scene on two computers over Tailscale: host binds
 `0.0.0.0:7010`, client sets `MITTENS_MULTIPLAYER_ADDR=<host-tailscale-ip>:7010`.

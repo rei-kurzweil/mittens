@@ -39,8 +39,8 @@ impl Receivers {
                     udp.bind(
                         "127.0.0.1:0",
                         match kind {
-                            Kind::Eye => 1024,
-                            Kind::Session => 1200,
+                            Kind::Eye | Kind::Htc => 1024,
+                            Kind::Session | Kind::Avatar => 1200,
                         },
                         "benchmark",
                     )
@@ -83,8 +83,8 @@ impl Transport {
             Mode::Separate => kinds
                 .iter()
                 .map(|kind| match kind {
-                    Kind::Eye => 1024,
-                    Kind::Session => SCRATCH,
+                    Kind::Eye | Kind::Htc => 1024,
+                    Kind::Session | Kind::Avatar => SCRATCH,
                 })
                 .collect(),
             Mode::Shared => vec![SCRATCH],

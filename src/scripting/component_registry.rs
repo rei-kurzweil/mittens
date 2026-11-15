@@ -160,7 +160,6 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "UdpPublication",
     "UdpSubscription",
     "MultiplayerSession",
-    "MultiplayerSync",
     "XREyeTracking",
     "Zone",
     "XREyeTrackingHTC",
@@ -1805,7 +1804,7 @@ fn create_component(
             Ok(world.add_component(crate::engine::ecs::component::UdpSocketComponent::new(address)))
         }
         "UdpPublication" | "UdpSubscription" => Err("create channels through a socket's publish/subscribe methods".into()),
-        "MultiplayerSession" | "MultiplayerSync" => multiplayer_registry::create(world, type_name, ctor, args),
+        "MultiplayerSession" => multiplayer_registry::create(world, type_name, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
         "VRChatOSCEyeTracking" => match ctor { Some("on") | None => add!(VRChatOSCEyeTrackingComponent::on()), Some("listen") => add!(VRChatOSCEyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("VRChatOSCEyeTracking: unknown constructor '{method}'")) },

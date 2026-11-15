@@ -1,9 +1,12 @@
 //! Built by scripts/benchmark_udp_transport.sh with cached, locked dependencies.
 #![allow(dead_code)]
+mod avatars;
 mod eye;
+mod math;
 mod protocol;
 mod transport;
 mod udp;
+mod udp_channels;
 mod workload;
 use std::{
     hint::black_box,
@@ -35,6 +38,17 @@ fn sleep_until(deadline: Instant) {
         thread::sleep(delay);
     }
 }
+fn median(sorted: &[f64]) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
+    let middle = sorted.len() / 2;
+    if sorted.len() % 2 == 0 {
+        (sorted[middle - 1] + sorted[middle]) / 2.
+    } else {
+        sorted[middle]
+    }
+}
 fn percentile(sorted: &[f64], quantile: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
@@ -43,6 +57,7 @@ fn percentile(sorted: &[f64], quantile: f64) -> f64 {
 }
 struct Config {
     pairs: Vec<usize>,
+    avatars: Option<String>,
     seconds: f64,
     trials: usize,
     rounds: usize,
@@ -56,6 +71,7 @@ impl Config {
     fn parse() -> Self {
         let mut c = Self {
             pairs: vec![1, 8],
+            avatars: None,
             seconds: 1.0,
             trials: 5,
             rounds: 500,
@@ -77,7 +93,7 @@ impl Config {
             }
             if arg == "--help" {
                 println!(
-                    "--pairs 1,8 --seconds 1 --trials 5 --rounds 500 --rate-scale 1 --poll-hz 90 --mode both|all|separate|shared|runtime --poses --replay-only"
+                    "--avatars vr2|vr4|mixed4 (optional) --pairs 1,8 --seconds 1 --trials 5 --rounds 500 --rate-scale 1 --poll-hz 90 --mode both|all|separate|shared|runtime --poses --replay-only"
                 );
                 std::process::exit(0);
             }
@@ -85,6 +101,10 @@ impl Config {
                 .next()
                 .unwrap_or_else(|| panic!("missing value for {arg}"));
             match arg.as_str() {
+                "--avatars" => {
+                    c.pairs = vec![if value == "vr2" { 2 } else { 4 }];
+                    c.avatars = Some(value);
+                }
                 "--pairs" => c.pairs = value.split(',').map(|v| v.parse().unwrap()).collect(),
                 "--seconds" => c.seconds = value.parse().unwrap(),
                 "--trials" => c.trials = value.parse().unwrap(),
@@ -108,6 +128,17 @@ impl Config {
         assert!(c.seconds.is_finite() && c.seconds > 0. && c.seconds <= 30.);
         assert!(c.poll_hz.is_finite() && c.poll_hz > 0. && c.poll_hz <= 10_000.);
         assert!(c.trials > 0 && c.rounds > 0 && (1..=100).contains(&c.scale));
+        if let Some(case) = &c.avatars {
+            assert!(
+                !c.poses,
+                "--poses describes the legacy JSON workload, not typed avatars"
+            );
+            c.pairs = vec![match case.as_str() {
+                "vr2" => 2,
+                "vr4" | "mixed4" => 4,
+                _ => panic!("unknown avatar scenario"),
+            }];
+        }
         c
     }
 }
@@ -147,6 +178,7 @@ struct UdpResult {
     sent: usize,
     eye: usize,
     session: usize,
+    avatar: usize,
     invalid: usize,
     duplicate: usize,
     send_errors: usize,
@@ -188,6 +220,7 @@ fn loopback(mode: Mode, work: Arc<Workload>, poll_hz: f64) -> io::Result<UdpResu
         sent: 0,
         eye: 0,
         session: 0,
+        avatar: 0,
         invalid: 0,
         duplicate: 0,
         send_errors: 0,
@@ -231,9 +264,12 @@ fn loopback(mode: Mode, work: Arc<Workload>, poll_hz: f64) -> io::Result<UdpResu
                 let latency = elapsed.saturating_sub(sent_at - 1) as f64 / 1000.;
                 result.latency.push(latency);
                 match kind {
-                    Kind::Eye => {
+                    Kind::Eye | Kind::Htc => {
                         result.eye += 1;
                         result.eye_latency.push(latency);
+                    }
+                    Kind::Avatar => {
+                        result.avatar += 1;
                     }
                     Kind::Session => {
                         result.session += 1;
@@ -260,22 +296,40 @@ fn loopback(mode: Mode, work: Arc<Workload>, poll_hz: f64) -> io::Result<UdpResu
 fn main() -> io::Result<()> {
     let config = Config::parse();
     println!(
-        "# UDP buffer-locality experiment; unchanged OSC/JSON decoders, equal socket count/order/budget"
+        "# UDP buffer-locality experiment; production eye/session/typed decoders, equal socket count/order/budget"
     );
     println!(
-        "# eye=120Hz session=20Hz per pair, scale={}, poll={}Hz, poses={}; times are receiver-thread CPU",
-        config.scale, config.poll_hz, config.poses
+        "# scenario={}; pairs column denotes participants for avatar scenarios",
+        config.avatars.as_deref().unwrap_or("synthetic-pairs")
     );
+    if config.avatars.is_none() {
+        println!(
+            "# legacy workload: eye=120Hz session=20Hz per pair, scale={}, poll={}Hz, poses={}; times are receiver-thread CPU",
+            config.scale, config.poll_hz, config.poses
+        );
+    }
     println!(
-        "kind,pairs,mode,trial,packets,scratch_bytes,ns_per_packet,cpu_ms,wall_s,eye_received,session_received,sent,send_errors,dropped,invalid,duplicate,latency_p50_us,latency_p95_us,latency_p99_us,eye_p95_us,session_p95_us,checksum"
+        "kind,pairs,mode,trial,packets,scratch_bytes,ns_per_packet,cpu_ms,wall_s,eye_received,session_received,sent,send_errors,dropped,invalid,duplicate,latency_p50_us,latency_p95_us,latency_p99_us,eye_p95_us,session_p95_us,checksum,avatar_received,scenario"
     );
+    if let Some(case) = &config.avatars {
+        eprintln!(
+            "Avatar scenario={case}: one VR observer; CPU covers receive/decode, excludes rendering/IK and sender encoding"
+        );
+    }
+    let scenario = config.avatars.as_deref().unwrap_or("synthetic-pairs");
     for pairs in config.pairs.iter().copied() {
-        let work = Arc::new(Workload::new(
-            pairs,
-            config.seconds,
-            config.scale,
-            config.poses,
-        ));
+        let work = Arc::new(if let Some(case) = &config.avatars {
+            avatars::workload(case, config.seconds, config.scale)
+        } else {
+            Workload::new(pairs, config.seconds, config.scale, config.poses)
+        });
+        println!(
+            "# offered_packets={} offered_datagram_bytes={} poll_hz={} rate_scale={}",
+            work.events.len(),
+            work.events.iter().map(|e| e.bytes.len()).sum::<usize>(),
+            config.poll_hz,
+            config.scale
+        );
         let mut summaries: Vec<(Mode, Vec<f64>, Vec<f64>)> = config
             .modes
             .iter()
@@ -311,7 +365,7 @@ fn main() -> io::Result<()> {
                 } else {
                     let (ns, scratch, checksum) = replay(mode, &work, config.rounds);
                     println!(
-                        "replay,{pairs},{},{trial},{},{scratch},{ns:.3},,,,,,,,,,,,,,,{checksum}",
+                        "replay,{pairs},{},{trial},{},{scratch},{ns:.3},,,,,,,,,,,,,,,{checksum},0,{scenario}",
                         mode.name(),
                         work.events.len() * config.rounds
                     );
@@ -320,10 +374,10 @@ fn main() -> io::Result<()> {
                 };
                 if !config.replay_only {
                     let result = loopback(mode, Arc::clone(&work), config.poll_hz)?;
-                    let received = result.eye + result.session;
+                    let received = result.eye + result.session + result.avatar;
                     let drops = result.sent.saturating_sub(received);
                     println!(
-                        "udp,{pairs},{},{trial},{received},{scratch},,{:.4},{:.6},{},{},{},{},{drops},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{}",
+                        "udp,{pairs},{},{trial},{received},{scratch},,{:.4},{:.6},{},{},{},{},{drops},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{scenario}",
                         mode.name(),
                         result.cpu_ms,
                         result.wall_s,
@@ -338,7 +392,8 @@ fn main() -> io::Result<()> {
                         percentile(&result.latency, 0.99),
                         percentile(&result.eye_latency, 0.95),
                         percentile(&result.session_latency, 0.95),
-                        result.checksum
+                        result.checksum,
+                        result.avatar
                     );
                     // Never treat reduced work caused by drops as a speedup.
                     assert_eq!(
@@ -359,10 +414,10 @@ fn main() -> io::Result<()> {
             eprintln!(
                 "SUMMARY pairs={pairs} mode={} replay_ns/pkt median={:.3} min={:.3} max={:.3}; UDP receiver_cpu_ms median={:.4} ({}/{} loss-free trials)",
                 mode.name(),
-                percentile(&replay, 0.5),
+                median(&replay),
                 replay.first().copied().unwrap_or(f64::NAN),
                 replay.last().copied().unwrap_or(f64::NAN),
-                percentile(&cpu, 0.5),
+                median(&cpu),
                 cpu.len(),
                 config.trials
             );

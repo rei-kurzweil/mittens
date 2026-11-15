@@ -1,10 +1,9 @@
 //! Session state for one host or client, independent of the ECS so it can be
 //! exercised over loopback in tests.
 //!
-//! Authority model: the host owns world/physics entities and the roster;
-//! each peer owns its own player pose. Clients send poses and app messages to
-//! the host only, and the host fans state back out in snapshots.
-use super::protocol::{HOST_PEER_ID, Message, Packet, PeerInfo, Pose, snapshot_chunks};
+//! The host owns the roster. Session control and app messages are independent
+//! of spatial telemetry, which uses typed UDP channels.
+use super::protocol::{HOST_PEER_ID, Message, Packet, PeerInfo, snapshot_chunks};
 use super::transport::UdpTransport;
 use crate::engine::ecs::component::MultiplayerRole;
 use std::collections::{BTreeMap, HashMap};
@@ -47,7 +46,6 @@ struct ClientPeer {
     name: String,
     session: uuid::Uuid,
     last_heard: Instant,
-    pose: Option<Pose>,
 }
 
 #[derive(Debug)]
@@ -76,9 +74,6 @@ pub struct MultiplayerEndpoint {
     state: RoleState,
     /// Remote peers as this process knows them (never includes itself).
     roster: BTreeMap<u32, String>,
-    /// Latest received poses; drained by the ECS adapter each frame.
-    remote_players: HashMap<u32, Pose>,
-    host_entities: HashMap<String, Pose>,
     events: Vec<MultiplayerEvent>,
     recv_scratch: Vec<(SocketAddr, Packet)>,
 }
@@ -156,8 +151,6 @@ impl MultiplayerEndpoint {
             local_peer_id: None,
             state,
             roster: BTreeMap::new(),
-            remote_players: HashMap::new(),
-            host_entities: HashMap::new(),
             events: Vec::new(),
             recv_scratch: Vec::new(),
         };
@@ -187,14 +180,6 @@ impl MultiplayerEndpoint {
         std::mem::take(&mut self.events)
     }
 
-    pub fn take_remote_players(&mut self) -> HashMap<u32, Pose> {
-        std::mem::take(&mut self.remote_players)
-    }
-
-    pub fn take_host_entities(&mut self) -> HashMap<String, Pose> {
-        std::mem::take(&mut self.host_entities)
-    }
-
     /// Receive, handshake, and expire peers. Call once per frame.
     pub fn poll(&mut self, now: Instant) {
         let mut packets = std::mem::take(&mut self.recv_scratch);
@@ -210,14 +195,8 @@ impl MultiplayerEndpoint {
         self.expire_and_handshake(now);
     }
 
-    /// Publish this tick's authoritative state. The host sends snapshots of
-    /// every player plus its entities; a client sends only its own pose.
-    pub fn publish(
-        &mut self,
-        tick: u64,
-        local_player: Option<Pose>,
-        entities: Vec<(String, Pose)>,
-    ) {
+    /// Publish roster control on the host, or a heartbeat on a welcomed client.
+    pub fn publish(&mut self, tick: u64) {
         match &self.state {
             RoleState::Host { clients, .. } => {
                 if clients.is_empty() {
@@ -227,22 +206,14 @@ impl MultiplayerEndpoint {
                     id: HOST_PEER_ID,
                     name: self.local_name.clone(),
                 }];
-                let mut players = Vec::new();
-                if let Some(pose) = local_player {
-                    players.push((HOST_PEER_ID, pose));
-                }
                 for client in clients.values() {
                     peers.push(PeerInfo {
                         id: client.id,
                         name: client.name.clone(),
                     });
-                    if let Some(pose) = client.pose {
-                        players.push((client.id, pose));
-                    }
                 }
                 let targets: Vec<_> = clients.keys().copied().collect();
-                // TODO(multiplayer): per-client interest/relevance and delta compression.
-                for message in snapshot_chunks(tick, peers, players, entities) {
+                for message in snapshot_chunks(tick, peers, Vec::new(), Vec::new()) {
                     for &to in &targets {
                         self.send(message.clone(), to, "snapshot");
                     }
@@ -254,11 +225,7 @@ impl MultiplayerEndpoint {
                 ..
             } => {
                 let host_addr = *host_addr;
-                if let Some(pose) = local_player {
-                    self.send(Message::PlayerPose { pose }, host_addr, "pose");
-                } else {
-                    self.send(Message::Heartbeat, host_addr, "heartbeat");
-                }
+                self.send(Message::Heartbeat, host_addr, "heartbeat");
             }
             RoleState::Client { .. } => {}
         }
@@ -347,7 +314,6 @@ impl MultiplayerEndpoint {
                         name: name.clone(),
                         session: packet.session,
                         last_heard: now,
-                        pose: None,
                     },
                 );
                 self.roster.insert(id, name.clone());
@@ -367,10 +333,6 @@ impl MultiplayerEndpoint {
         };
         client.last_heard = now;
         match packet.msg {
-            Message::PlayerPose { pose } if pose.is_finite() => {
-                client.pose = Some(pose);
-                self.remote_players.insert(client.id, pose);
-            }
             Message::App { name, text, .. } => {
                 // Never trust the claimed sender id.
                 let from = client.id;
@@ -430,12 +392,7 @@ impl MultiplayerEndpoint {
             msg if *host_session == Some(packet.session) => {
                 *last_heard = now;
                 match msg {
-                    Message::Snapshot {
-                        tick,
-                        peers,
-                        players,
-                        entities,
-                    } => {
+                    Message::Snapshot { tick, peers, .. } => {
                         // Chunks of one tick share it; anything older is stale.
                         if tick < *last_tick {
                             return;
@@ -443,17 +400,6 @@ impl MultiplayerEndpoint {
                         *last_tick = tick;
                         if let Some(peers) = peers {
                             self.apply_roster(peers);
-                        }
-                        let me = self.local_peer_id;
-                        for (id, pose) in players {
-                            if Some(id) != me && pose.is_finite() {
-                                self.remote_players.insert(id, pose);
-                            }
-                        }
-                        for (key, pose) in entities {
-                            if pose.is_finite() {
-                                self.host_entities.insert(key, pose);
-                            }
                         }
                     }
                     Message::App { from, name, text } => {
@@ -505,8 +451,6 @@ impl MultiplayerEndpoint {
             self.events
                 .push(MultiplayerEvent::PeerLeft { peer_id: id, name });
         }
-        self.remote_players.clear();
-        self.host_entities.clear();
         self.local_peer_id = None;
         if let RoleState::Client {
             host_session,

@@ -104,9 +104,9 @@ fn client_handshakes_and_both_sides_see_each_other() {
         vec![MultiplayerEvent::Connected { peer_id: 2 }]
     );
 
-    // First snapshot carries the roster, the host's player, and host entities.
-    host.publish(1, Some(pose(3.0)), vec![("ball".into(), pose(5.0))]);
-    client.publish(1, Some(pose(-3.0)), Vec::new());
+    // Session snapshots carry only the roster; spatial telemetry uses typed channels.
+    host.publish(1);
+    client.publish(1);
     pump(&mut host, &mut client, now);
     assert_eq!(
         client.take_events(),
@@ -115,23 +115,35 @@ fn client_handshakes_and_both_sides_see_each_other() {
             name: "rei".into()
         }]
     );
-    assert_eq!(client.take_remote_players().get(&1), Some(&pose(3.0)));
-    assert_eq!(client.take_host_entities().get("ball"), Some(&pose(5.0)));
-    assert_eq!(host.take_remote_players().get(&2), Some(&pose(-3.0)));
     assert_eq!(client.local_peer_id(), Some(2));
 }
 
 #[test]
-fn stale_snapshots_are_dropped() {
+fn stale_roster_snapshots_are_dropped() {
     let now = Instant::now();
     let (mut host, mut client) = host_and_client(now);
     pump(&mut host, &mut client, now);
-    host.publish(5, None, vec![("ball".into(), pose(5.0))]);
+    host.publish(5);
     pump(&mut host, &mut client, now);
-    assert!(client.take_host_entities().contains_key("ball"));
-    host.publish(4, None, vec![("ball".into(), pose(4.0))]);
+    client.take_events();
+    let mut third = MultiplayerEndpoint::bind(
+        MultiplayerRole::Client,
+        &host.local_addr().unwrap().to_string(),
+        "third",
+        now,
+    )
+    .unwrap();
+    pump(&mut host, &mut third, now);
+    host.publish(4);
     pump(&mut host, &mut client, now);
-    assert!(client.take_host_entities().is_empty());
+    assert!(
+        client.take_events().is_empty(),
+        "old roster must not introduce third"
+    );
+    host.publish(6);
+    pump(&mut host, &mut client, now);
+    assert!(client.take_events().iter().any(|event| matches!(event,
+        MultiplayerEvent::PeerJoined { name, .. } if name == "third")));
 }
 
 #[test]
@@ -212,8 +224,8 @@ fn message_only_sessions_stay_alive_without_legacy_pose_replication() {
     client.take_events();
     for tick in 1..=12 {
         let now = start + Duration::from_millis(tick * 500);
-        client.publish(tick, None, Vec::new());
-        host.publish(tick, None, Vec::new());
+        client.publish(tick);
+        host.publish(tick);
         pump(&mut host, &mut client, now);
         assert!(
             !host

@@ -96,3 +96,20 @@ serialization, and initialization coherently; keep direct scalar/vector math and
 no per-frame allocations or dynamic dispatch. This scoped addition does not
 perform the proposed split. Validate finite inputs, MMS serialization, camera
 view/driver agreement, and local/proxy foot contact.
+
+## MultiplayerSync removal
+
+Remove the superseded automatic replication component and its lifecycle intent
+from the large component registry, runtime configuration, signal routing and
+SystemWorld teardown modules. Keep this a scoped deletion. Existing proposed
+responsibility boundaries remain; any later split must preserve direct matches,
+batched teardown and typed-channel hot paths without new allocation/dispatch.
+Validate MMS rejection of the removed API, session lifecycle/messages, typed UDP
+bindings and the two-peer avatar example.
+
+Removal verification: 14 multiplayer checks pass (session lifecycle/messages,
+stale rosters, removed MMS API rejection, desktop/XR configuration and two-peer
+Mitten typed poses/blinks/IK), plus 25 UDP checks (1 intentionally ignored).
+The session no longer stores, forwards, publishes or applies poses. Legacy v2
+pose wire fields remain recognized by the codec for compatibility and codec
+regressions; the live endpoint ignores them.

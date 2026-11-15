@@ -1642,13 +1642,6 @@ HttpClient {}
 MultiplayerSession.host() {}
 ```
 
-#### `RegisterMultiplayerSync`
-<!-- catalog:signal source="RegisterMultiplayerSync" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Adds a `MultiplayerSync` to the net system's replication index. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
-```mms parse-only
-T { MultiplayerSync.local_player() }
-```
-
 #### `MultiplayerSend`
 <!-- catalog:signal source="MultiplayerSend" kind="intent" mms="live-api" -->
 **Intent — Available through a live method/builtin.** `MultiplayerSession.send(name, text)` queues one unreliable application datagram (client to host, or host to all clients). Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).

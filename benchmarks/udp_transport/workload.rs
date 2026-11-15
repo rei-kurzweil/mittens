@@ -8,7 +8,9 @@ use std::time::Duration;
 #[derive(Clone, Copy)]
 pub enum Kind {
     Eye,
+    Htc,
     Session,
+    Avatar,
 }
 pub struct Event {
     pub at: Duration,
@@ -29,7 +31,7 @@ fn osc_string(out: &mut Vec<u8>, text: &str) {
         out.push(0);
     }
 }
-fn packet(kind: Kind, sequence: usize, poses: bool) -> Vec<u8> {
+pub(crate) fn packet(kind: Kind, sequence: usize, poses: bool) -> Vec<u8> {
     match kind {
         Kind::Eye => {
             let mut out = Vec::new();
@@ -47,6 +49,7 @@ fn packet(kind: Kind, sequence: usize, poses: bool) -> Vec<u8> {
             }
             out
         }
+        Kind::Htc | Kind::Avatar => unreachable!("avatar packets have their own generator"),
         Kind::Session => {
             let pose = Pose {
                 p: [1.0, 1.58, 2.0],
@@ -99,8 +102,8 @@ impl Workload {
         let mut schedule = Vec::new();
         for (route, kind) in kinds.iter().copied().enumerate() {
             let rate = (match kind {
-                Kind::Eye => 120,
-                Kind::Session => 20,
+                Kind::Eye | Kind::Htc => 120,
+                Kind::Session | Kind::Avatar => 20,
             }) * scale;
             for tick in 0..(seconds * rate as f64).floor() as usize {
                 schedule.push((
@@ -145,6 +148,18 @@ pub fn decode(kind: Kind, bytes: &[u8]) -> Option<(usize, u64)> {
                 u32::from_be_bytes(bytes.get(bytes.len().checked_sub(4)?..)?.try_into().ok()?);
             Some(((bits & 0x7fffff) as usize, checksum))
         }
+        Kind::Htc => {
+            let (left, right) = eye::decode_htc(bytes)?;
+            let checksum = left
+                .look?
+                .into_iter()
+                .chain(right.look?)
+                .chain([left.openness?, right.openness?])
+                .fold(0u64, |sum, value| sum.wrapping_add(value.to_bits() as u64));
+            let bits = u32::from_le_bytes(bytes.get(68..72)?.try_into().ok()?);
+            Some(((bits & 0x7fffff) as usize, checksum))
+        }
+        Kind::Avatar => crate::udp_channels::bench_decode(bytes),
         Kind::Session => {
             let decoded = Packet::decode(bytes)?;
             let sequence = usize::try_from(decoded.seq).ok()?;

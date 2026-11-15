@@ -742,9 +742,6 @@ pub enum IntentValue {
     RegisterMultiplayerSession {
         component_id: ComponentId,
     },
-    RegisterMultiplayerSync {
-        component_id: ComponentId,
-    },
     MultiplayerSend {
         component_id: ComponentId,
         name: String,
@@ -1148,7 +1145,6 @@ impl IntentValue {
             IntentValue::HttpServerReply { .. } => "http_server_reply",
             IntentValue::RegisterUdp { .. } => "register_udp",
             IntentValue::RegisterMultiplayerSession { .. } => "register_multiplayer_session",
-            IntentValue::RegisterMultiplayerSync { .. } => "register_multiplayer_sync",
             IntentValue::MultiplayerSend { .. } => "multiplayer_send",
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",

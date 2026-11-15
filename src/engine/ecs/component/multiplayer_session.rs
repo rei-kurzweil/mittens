@@ -5,8 +5,8 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 /// Default UDP port for `MultiplayerSession.host()` / `MultiplayerSession.join()` without a port.
 pub const MULTIPLAYER_DEFAULT_PORT: u16 = 7010;
 
-/// Which side of a session this process plays. The host owns world/physics
-/// authority; clients own only their local player pose.
+/// Which side of session control this process plays. The host owns the roster;
+/// spatial/physics authority is chosen separately by MMS and typed channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MultiplayerRole {
     #[default]
@@ -21,7 +21,7 @@ pub struct MultiplayerSessionComponent {
     pub role: MultiplayerRole,
     pub addr: String,
     pub player_name: String,
-    /// Snapshot/pose send rate. Receiving is polled every frame.
+    /// Roster/heartbeat send rate. Receiving is polled every frame.
     pub tick_hz: f32,
     pub enabled: bool,
     /// Runtime: this process's peer id once connected (host is 1), else 0.

@@ -59,3 +59,18 @@ counts and whole-run CPU units.
 A later user report of workspace interaction during benchmarking further limits
 timing comparisons. Functional regressions remain valid; repeat performance
 measurements with a quiet host before interpreting small differences.
+
+## Realistic avatar traffic scenarios
+
+Added [avatar UDP benchmark](../benchmarks/avatar-udp.md): two VR participants,
+four VR participants, and two VR plus two desktop participants. One VR observer
+receives actual binary root/head/hand and blink/validity sample layouts at 20 Hz,
+local HTC gaze/openness input at 120 Hz, and representative session traffic.
+Desktop sources omit tracked hands and eye sensors. Webcam/MediaPipe stays out
+of scope. Compare identical workloads across separate/shared scratch buffers and
+the actual UdpSystem; report whole-run CPU and packet/error accounting.
+
+Follow-up: measure real scene subscription/binding application, morphs, IK and
+rendering independently. The traffic benchmark does not instantiate Mitten rigs
+or claim four-user MMS scene support. Steady-state packet decoding excludes
+channel declaration/retry/ACK and connection setup.
