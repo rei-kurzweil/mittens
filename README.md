@@ -54,13 +54,14 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
 - Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
 - For XR without a desktop window, run `cargo run --release --example openxr-only`.
   See [XR-only desktop startup](docs/desktop/xr-only.md) for bounded runs and validation.
-- Documentation media/design sources, large model downloads, and Blender source assets are omitted
+- Documentation media/design sources, all `.glb` models, and Blender source assets are omitted
   from the crates.io package. Bundled runtime textures, audio, and component assets remain included. Every example
   that needs downloaded models calls `mittens_engine::example_support::ensure_model_assets()` before scene
   setup; if `assets/models` contains no `.glb` files, it runs
-  `examples/scripts/download-model-assets.sh` to fetch the example model bundle from
-  GitHub. Run the script manually to prefetch models. Set
-  `MITTENS_MODEL_ASSET_BASE_URL` to override the download source.
+  `examples/scripts/download-model-assets.sh` to fetch every model from the GitHub tag matching the
+  package version (`v<version>`). Run the script manually to prefetch models. Set
+  `MITTENS_MODEL_ASSET_REF` to fetch from another tag or branch, or `MITTENS_MODEL_ASSET_BASE_URL` to
+  override the download source.
 
 Offline texture generators: [cherry blossom emoji backgrounds](assets/textures/cherry-blossoms/README.md)
 and `cargo run --release --example generate-pool-tiles`.

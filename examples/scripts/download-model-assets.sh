@@ -1,11 +1,40 @@
 #!/usr/bin/env sh
+# Fetch the .glb models omitted from the crates.io package.
+#
+# Models come from the git tag matching this package's version (v<version>).
+# Set MITTENS_MODEL_ASSET_REF to use another tag/branch/commit, or
+# MITTENS_MODEL_ASSET_BASE_URL to replace the whole download base.
 set -eu
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
-models_dir="$repo_root/assets/models"
-base_url="${MITTENS_MODEL_ASSET_BASE_URL:-https://raw.githubusercontent.com/rei-kurzweil/cat-engine/main}"
+version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo_root/Cargo.toml" | head -n 1)"
+ref="${MITTENS_MODEL_ASSET_REF:-v$version}"
+base_url="${MITTENS_MODEL_ASSET_BASE_URL:-https://raw.githubusercontent.com/rei-kurzweil/mittens/$ref}"
 
-mkdir -p "$models_dir"
+# Every .glb the repository tracks; keep in sync with `git ls-files '*.glb'`.
+models="
+assets/components/characters/lumae/lumae.glb
+assets/models/STA_launcher.glb
+assets/models/STA_rocket_bullet.glb
+assets/models/bisket.glb
+assets/models/broom.glb
+assets/models/broomstick.glb
+assets/models/capsule_stick_figure.glb
+assets/models/car.glb
+assets/models/color-cat.2.glb
+assets/models/estradiol-tablet.glb
+assets/models/kawaii_wings.glb
+assets/models/kawaii_wings_line_art.glb
+assets/models/mitten.glb
+assets/models/mitten_pickup.glb
+assets/models/pc-rei.hoodie.glb
+assets/models/sakura-machine-pistol.glb
+assets/models/sativa-preroll.glb
+assets/models/smoke-rounded-box.glb
+assets/models/straw.glb
+assets/models/sub-machinegun.glb
+assets/models/suspension-spring.glb
+"
 
 download_one() {
     rel="$1"
@@ -17,6 +46,7 @@ download_one() {
         return 0
     fi
 
+    mkdir -p "$(dirname -- "$dest")"
     tmp="$dest.tmp.$$"
     echo "[download-model-assets] downloading $url"
 
@@ -41,21 +71,18 @@ download_one() {
 }
 
 if [ "$#" -eq 0 ]; then
-    set -- \
-        assets/models/bisket.5.5.glb \
-        assets/models/bisket.8.0.glb \
-        assets/models/bisket.11.0.glb \
-        assets/models/color-cat.2.glb \
-        assets/models/pc-rei.hoodie.glb
+    # Word-split the newline-separated list; paths contain no spaces.
+    # shellcheck disable=SC2086
+    set -- $models
 fi
 
 for rel in "$@"; do
-    case "$rel" in
-        assets/models/bisket.5.5.glb|\
-        assets/models/bisket.8.0.glb|\
-        assets/models/bisket.11.0.glb|\
-        assets/models/color-cat.2.glb|\
-        assets/models/pc-rei.hoodie.glb)
+    case "
+$models
+" in
+        *"
+$rel
+"*)
             download_one "$rel"
             ;;
         *)

@@ -74,3 +74,45 @@ fn models_dir_has_glb() -> bool {
             .unwrap_or(false)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    fn collect_glbs(root: &Path, dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap().filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_glbs(root, &path, out);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("glb"))
+            {
+                let relative = path.strip_prefix(root).unwrap();
+                out.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+
+    /// The crates.io package omits every .glb, so the downloader must list them all.
+    #[test]
+    fn model_downloader_lists_every_bundled_glb() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script =
+            std::fs::read_to_string(root.join("examples/scripts/download-model-assets.sh"))
+                .unwrap();
+        let listed: Vec<_> = script.lines().map(str::trim).collect();
+        let mut glbs = Vec::new();
+        collect_glbs(root, &root.join("assets"), &mut glbs);
+        // Untracked local and third-party models are not published with tags.
+        glbs.retain(|path| !path.starts_with("assets/models/local/"));
+        let missing: Vec<_> = glbs
+            .iter()
+            .filter(|path| !listed.contains(&path.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "add these to download-model-assets.sh: {missing:?}"
+        );
+    }
+}

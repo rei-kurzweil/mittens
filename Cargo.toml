@@ -18,7 +18,9 @@ repository.workspace = true
 readme = "README.md"
 description = "A Vulkan and OpenXR scene engine with ECS, reactive signals, and Meow Meow scripting"
 exclude = [
-    "assets/models/*.glb",
+    # Models exceed the crates.io upload limit; examples/scripts/download-model-assets.sh
+    # fetches them from the matching git tag.
+    "*.glb",
     "assets/models/blender/**",
     "assets/images/**",
     "!assets/images/flash_red_0.png",
