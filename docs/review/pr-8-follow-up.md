@@ -207,6 +207,27 @@ assessment is corrected below rather than treating every review suggestion as a 
   leave received root/input transforms untouched, and preserve missing-floor and
   scale behavior. Check candidate-query bounds as well as final surface acceptance.
 
+#### Follow-up — Invalidate cached support when the input frame changes
+
+- [x] Reproduced, fixed and verified for the support-frame follow-up.
+- The additional review of `LowerBodyIkSystem::tick` was valid: an unmatched
+  frame previously produced a zero vertical delta while still retaining the old
+  world-space floor height. The original crouch fix did not distinguish that
+  transition from an unchanged frame.
+- Regression: `collision_disabled_support_reacquires_floor_after_frame_change`
+  failed before the fix, selecting the floor at height 0 after reparenting the
+  input to a different frame at height 0.4. Both floors remained present.
+- Change: compute a retained floor only for matching known frames, or when both
+  frames are absent (the existing fallback behavior). Changing, losing or
+  acquiring a known frame discards the cached height and uses fresh sole-based
+  support acquisition. No new allocation, scene write or world scan is introduced.
+- Verification: the regression passes with walking enabled and disabled, repeated
+  switches between heights, known → unknown → known frame transitions, an
+  unchanged unknown-frame crouch, correct floor identity/sole height, and unchanged
+  received input/root transforms. `cargo test --lib lower_body`: **37 passed**;
+  `git diff --check`: passed. Logs: `/tmp/pr8-frame-before.log` and
+  `/tmp/pr8-frame-lower-body.log`.
+
 ### R11 — Preserve the new parent when a grab loses ownership
 
 - [x] Implemented and verified locally; uncommitted. See verification record below.

@@ -15,3 +15,13 @@ for deterministic send failure tests. Measure any meaningful hot-path change.
 Validate failed registration recovery, duplicate morph writers, publication
 fairness/retry timestamps, eye transport ownership, grab takeover, and the full
 MMS typed-avatar example. The review tracker records individual acceptance.
+
+## Lower-body support frame follow-up
+
+Keep support-reference invalidation in the lower-body instance scheduler, with
+support-query geometry in `support.rs` and regressions in `tests/visual_rigs.rs`.
+If the scheduler grows further, split cohesive tracking/eligibility and retained
+support-reference policy from pose solving. Preserve the existing ancestor walk,
+direct reads and bounded BVH queries; no new frame allocations or world scans.
+Verify switching frames at different heights, losing/acquiring a frame, unchanged
+frame crouching and locomotion, and the full lower-body regression suite.

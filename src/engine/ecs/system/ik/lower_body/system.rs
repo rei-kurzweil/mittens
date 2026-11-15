@@ -107,18 +107,23 @@ impl LowerBodyIkSystem {
                 node = world.parent_of(current);
             }
             let vertical_motion = match (instance.support_frame, support_frame) {
-                (Some((old, before)), Some((new, after))) if old == new => after - before,
-                _ => 0.,
+                (Some((old, before)), Some((new, after))) if old == new => Some(after - before),
+                (None, None) => Some(0.),
+                // Cached world-space support belongs to its frame. Switching,
+                // losing or acquiring a known frame must reacquire the floor.
+                _ => None,
             };
-            let previous_floor = instance
-                .feet
-                .as_ref()
-                .and_then(|feet| {
-                    feet.iter()
-                        .filter_map(|foot| foot.support_height)
-                        .min_by(f32::total_cmp)
-                })
-                .map(|height| height + vertical_motion);
+            let previous_floor = vertical_motion.and_then(|motion| {
+                instance
+                    .feet
+                    .as_ref()
+                    .and_then(|feet| {
+                        feet.iter()
+                            .filter_map(|foot| foot.support_height)
+                            .min_by(f32::total_cmp)
+                    })
+                    .map(|height| height + motion)
+            });
             instance.support_frame = support_frame;
             let walking_config = walking_settings(world, avatar, id);
             let walking_enabled = walking_config.as_ref().is_ok_and(|config| config.enabled);

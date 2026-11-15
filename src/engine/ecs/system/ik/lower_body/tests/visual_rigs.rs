@@ -119,3 +119,75 @@ fn collision_disabled_support_reference_follows_locomotion_height() {
         "old floor must not anchor a translated player"
     );
 }
+
+#[test]
+fn collision_disabled_support_reacquires_floor_after_frame_change() {
+    for walking in [false, true] {
+        let mut f = Fixture::new(None);
+        let first = f.world.add_component(TransformComponent::new());
+        let second = f
+            .world
+            .add_component(TransformComponent::new().with_position(0., 0.4, 0.));
+        f.world.add_child(f.scene, first).unwrap();
+        f.world.add_child(f.scene, second).unwrap();
+        // A non-transform parent makes the immediate support frame unknown.
+        let unknown = f.world.add_component(ZoneComponent::cube([1.; 3]));
+        f.world.add_child(second, unknown).unwrap();
+        let platform = f
+            .world
+            .add_component(TransformComponent::new().with_position(0., 0.35, 0.));
+        f.world.add_child(f.scene, platform).unwrap();
+        let platform_zone = f.world.add_component(ZoneComponent::cube([3., 0.05, 3.]));
+        f.world.add_child(platform, platform_zone).unwrap();
+        let collider = f.world.add_component(CollidableComponent::static_());
+        f.world.add_child(platform_zone, collider).unwrap();
+        let avatar = f
+            .world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+            .unwrap();
+        avatar.collision_enabled = false;
+        avatar.capsule_ready = false;
+        avatar.walking_enabled = walking;
+        f.world.set_parent(f.input, Some(first)).unwrap();
+        f.propagate();
+        f.step();
+        assert!(
+            f.feet()
+                .iter()
+                .all(|foot| foot.support == Some(f.floor_zone))
+        );
+        // Both floors remain present, so a stale cache could choose the old
+        // floor rather than merely report missing support.
+        for (frame, zone, height) in [
+            (second, platform_zone, 0.4),
+            (first, f.floor_zone, 0.),
+            (unknown, platform_zone, 0.4),
+            (first, f.floor_zone, 0.),
+            (second, platform_zone, 0.4),
+        ] {
+            f.world.set_parent(f.input, Some(frame)).unwrap();
+            f.propagate();
+            let input = matrix(&f.world, f.driven).unwrap();
+            let root = matrix(&f.world, f.root).unwrap();
+            f.step();
+            for foot in f.feet() {
+                assert_eq!(foot.support, Some(zone), "walking={walking}: {foot:?}");
+                assert!((foot.solved_sole[1] - height).abs() < 1e-4, "{foot:?}");
+            }
+            assert_eq!(matrix(&f.world, f.driven).unwrap(), input);
+            assert_eq!(matrix(&f.world, f.root).unwrap(), root);
+            if frame == unknown {
+                // None -> None retains support during an ordinary crouch.
+                f.drop_body(0.1);
+                f.step();
+                assert!(
+                    f.feet()
+                        .iter()
+                        .all(|foot| foot.support == Some(platform_zone))
+                );
+                f.drop_body(0.);
+                f.step();
+            }
+        }
+    }
+}
