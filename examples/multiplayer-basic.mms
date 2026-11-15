@@ -139,7 +139,7 @@ fn make_mitten(prefix, local_player) {
         crouch_enabled(true)
         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
         WalkingIK { step_scale(1.3) }
-        if !local_player { collision_disabled() }
+        if !local_player { collision_response("read_only") }
         initial_yaw(3.14159)
         arm_ik(vroid_arm_ik_bend_plane_prototype())
         hand_rotation_smoothing(220.0)

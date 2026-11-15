@@ -1,7 +1,7 @@
-//! Retained static-zone broad phase. Updated synchronously before contact queries.
+//! Retained static and read-only moving-zone broad phase, synchronized before queries.
 use super::{TransformSystem, collision_geometry, spatial_bvh, zone_query};
 use crate::engine::ecs::component::{
-    CollidableComponent, CollidableMode, CollisionShape, ZoneComponent,
+    CollidableComponent, CollidableMode, CollisionResponse, CollisionShape, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use bvh::Point3;
@@ -20,6 +20,8 @@ pub(crate) struct Surface {
     pub zone: ComponentId,
     pub frame_id: ComponentId,
     pub friction: f32,
+    motion: CollidableMode,
+    response: CollisionResponse,
     mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
     local_mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
     shape: CollisionShape,
@@ -43,6 +45,10 @@ impl BHShape for Surface {
     }
 }
 impl Surface {
+    pub fn observes_contacts(&self) -> bool {
+        self.motion == CollidableMode::Slide && self.response == CollisionResponse::ReadOnly
+    }
+
     /// Horizontal top face containing this X/Z point. Broad-phase bounds alone
     /// are insufficient, particularly for yawed boxes and stacked geometry.
     pub fn flat_support(
@@ -52,6 +58,9 @@ impl Surface {
         bottom: f32,
         margin: f32,
     ) -> Option<f32> {
+        if self.motion != CollidableMode::Static {
+            return None;
+        }
         if let Some(mesh) = &self.mesh {
             let origin = [sole[0], bottom + margin, sole[2]];
             let distance = mesh.ray(origin, [0., -1., 0.])?;
@@ -287,7 +296,11 @@ impl CollidableBvh {
                     }
                     if c.mode == CollidableMode::Slide {
                         self.movers.insert(id, zone_id);
-                        return None;
+                        // Read-only moving geometry is queryable as an obstacle,
+                        // while retaining its independent mover/response identity.
+                        if c.response != CollisionResponse::ReadOnly {
+                            return None;
+                        }
                     }
                     Some((
                         zone_id,
@@ -295,6 +308,8 @@ impl CollidableBvh {
                         z.shape,
                         TransformSystem::world_model(world, frame_id?)?,
                         c.friction,
+                        c.mode,
+                        c.response,
                     ))
                 });
             if world
@@ -306,7 +321,7 @@ impl CollidableBvh {
                 }
                 self.dependencies.insert(id, dependencies);
             }
-            let Some((zone, frame_id, shape, frame, friction)) = resolved else {
+            let Some((zone, frame_id, shape, frame, friction, motion, response)) = resolved else {
                 if let Some(index) = self.indices.remove(&id) {
                     self.surfaces.swap_remove(index);
                     if let Some(swapped) = self.surfaces.get(index) {
@@ -325,6 +340,8 @@ impl CollidableBvh {
                     && s.shape == shape
                     && s.frame == frame
                     && s.friction == friction
+                    && s.motion == motion
+                    && s.response == response
                     && match (&s.local_mesh, &local_mesh) {
                         (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
                         (None, None) => true,
@@ -355,6 +372,8 @@ impl CollidableBvh {
                 shape,
                 frame,
                 friction,
+                motion,
+                response,
                 mesh: world_mesh,
                 local_mesh,
                 axis_shape: collision_geometry::axis_aligned_world_shape(shape, frame),
@@ -508,6 +527,10 @@ mod tests {
             .get_component_by_id_as_mut::<CollidableComponent>(collider)
             .unwrap()
             .mode = CollidableMode::Slide;
+        world
+            .get_component_by_id_as_mut::<CollidableComponent>(collider)
+            .unwrap()
+            .response = CollisionResponse::Slide;
         index.sync(&world);
         assert_eq!(index.len(), 0);
         assert_eq!(index.movers.get(&collider), Some(&zone));

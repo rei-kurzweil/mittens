@@ -254,7 +254,7 @@ pub use clock::ClockComponent;
 pub use walking_ik::WalkingIkComponent;
 mod collidable;
 pub use climbable::ClimbableComponent;
-pub use collidable::{CollidableComponent, CollidableMode};
+pub use collidable::{CollidableComponent, CollidableMode, CollisionResponse};
 pub use color::ColorComponent;
 pub use combine_mesh::CombineMeshComponent;
 pub use component_ref::{

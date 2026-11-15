@@ -4,7 +4,7 @@ use eye_blink::*;
 use crate::engine::ecs::component::HumanoidSlot;
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    CollidableComponent, CollisionShape, ControllerHand, ControllerPoseSource,
+    CollidableComponent, CollisionResponse, CollisionShape, ControllerHand, ControllerPoseSource,
     ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
     HeadRotationCompensation, IKChainComponent, IKSolver, InputComponent, InputXRComponent,
     SerializeComponent, TransformComponent, TransformOperatorComponent,
@@ -124,8 +124,11 @@ impl AvatarControlSystem {
                 continue;
             };
             let enabled = capsule_contact_valid(world, avatar, operators);
+            let response = avatar.collision_response;
             let collidable = avatar.capsule_collidable_id;
-            let reset = avatar.capsule_reset_contact_history;
+            let reset = avatar.capsule_reset_contact_history || collidable
+                .and_then(|id| world.get_component_by_id_as::<CollidableComponent>(id))
+                .is_some_and(|c| c.response != response);
             if reset {
                 if let Some(zone) = collidable.and_then(|id| world.parent_of(id)) {
                     contact.forget_zone(zone);
@@ -139,6 +142,9 @@ impl AvatarControlSystem {
                 .and_then(|id| world.get_component_by_id_as_mut::<CollidableComponent>(id))
             {
                 collidable.enabled = enabled;
+                // Permission changes take effect before any contact pass, even
+                // when route preparation occurs in a later avatar phase.
+                collidable.response = response;
             }
         }
     }
@@ -811,9 +817,12 @@ fn refresh_capsule_routing(avc_id: ComponentId, world: &mut World) {
     };
     if avatar.capsule_routing_revision == world.query_revision()
         && avatar.capsule_route_ref == avatar.movement_target
+        && avatar.capsule_route_response == Some(avatar.collision_response)
     {
         return;
     }
+    let response = avatar.collision_response;
+    let previous_response = avatar.capsule_route_response;
     let sample = avatar.capsule_sample_id;
     let previous_source = avatar.capsule_vertical_source;
     let previous_target = world
@@ -822,8 +831,10 @@ fn refresh_capsule_routing(avc_id: ComponentId, world: &mut World) {
     let target = automatic_avc_movement_target(world, avc_id);
     let source = owning_input_xr(world, avc_id)
         .and_then(|input| xr_locomotion_target_transform(world, input));
-    let source = source
-        .filter(|source| target.is_some_and(|target| ancestor_or_self(world, target, *source)));
+    let source = source.filter(|source| {
+        response == CollisionResponse::ReadOnly
+            || target.is_some_and(|target| ancestor_or_self(world, target, *source))
+    });
     let authored_target = avatar.movement_target.clone();
     if let Some(sample) = sample {
         let reference = source
@@ -839,14 +850,17 @@ fn refresh_capsule_routing(avc_id: ComponentId, world: &mut World) {
     if let Some(component) = world.get_component_by_id_as_mut::<CollidableComponent>(collidable) {
         component.movement_target_id = target;
         component.movement_target_required = true;
+        component.response = response;
     }
     let revision = world.query_revision();
     if let Some(avatar) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
         avatar.capsule_vertical_source = source;
         avatar.capsule_routing_revision = revision;
         avatar.capsule_route_ref = authored_target;
-        avatar.capsule_reset_contact_history |=
-            previous_source != source || previous_target != target;
+        avatar.capsule_route_response = Some(response);
+        avatar.capsule_reset_contact_history |= previous_source != source
+            || previous_target != target
+            || previous_response != Some(response);
     }
 }
 
@@ -856,6 +870,8 @@ fn capsule_contact_valid(
     operators: &super::TransformOperatorSystem,
 ) -> bool {
     if !avatar.collision_enabled
+        || (avatar.collision_response == CollisionResponse::Slide
+            && avatar.capsule_route_response != Some(CollisionResponse::Slide))
         || avatar.model_root_id.is_none_or(|id| {
             world
                 .get_component_by_id_as::<TransformComponent>(id)
@@ -938,7 +954,8 @@ fn try_init_or_route_capsule(
     let vertical_source = xr.and_then(|input| xr_locomotion_target_transform(world, input));
     if xr.is_some()
         && vertical_source.is_none_or(|source| {
-            movement_target.is_none_or(|target| !ancestor_or_self(world, target, source))
+            avc.collision_response == CollisionResponse::Slide
+                && movement_target.is_none_or(|target| !ancestor_or_self(world, target, source))
         })
     {
         return;
@@ -1029,6 +1046,8 @@ fn try_init_or_route_capsule(
     let serialize = world.add_component(SerializeComponent::off());
     let zone = world.add_component(ZoneComponent::new(inferred.shape));
     let mut collider = CollidableComponent::slide().with_runtime_movement_target(movement_target);
+    collider.response = avc.collision_response;
+    collider.query_owner = Some(avc_id);
     // The generic unresolved-source fallback preserves tracked Y. Never let
     // an XR proxy use it for contact while its sample is still pending.
     collider.enabled = xr.is_none();
@@ -1103,14 +1122,16 @@ fn publish_capsule_readiness(
         {
             return None;
         }
-        let target = collidable.movement_target_id?;
-        if super::static_contact_system::movement_target(
-            world,
-            collidable_id,
-            world.parent_of(collidable_id)?,
-        ) != Some(target)
-        {
-            return None;
+        if avatar.collision_response == CollisionResponse::Slide {
+            let target = collidable.movement_target_id?;
+            if super::static_contact_system::movement_target(
+                world,
+                collidable_id,
+                world.parent_of(collidable_id)?,
+            ) != Some(target)
+            {
+                return None;
+            }
         }
         let zone_id = world.parent_of(collidable_id)?;
         let zone = world.get_component_by_id_as::<ZoneComponent>(zone_id)?;
@@ -3498,6 +3519,15 @@ mod capsule_tests {
 
     impl XrCapsuleFixture {
         fn new(starting_head_y: f32, scale: f32) -> Self {
+            Self::new_with_response(starting_head_y, scale, CollisionResponse::Slide, true)
+        }
+
+        fn new_with_response(
+            starting_head_y: f32,
+            scale: f32,
+            response: CollisionResponse,
+            has_target: bool,
+        ) -> Self {
             let mut world = World::default();
             let root = world.add_component(
                 TransformComponent::new()
@@ -3510,20 +3540,19 @@ mod capsule_tests {
                 .get_component_by_id_as_mut::<InputXRComponent>(input)
                 .unwrap()
                 .pose_valid = true;
-            let head = world.add_component(TransformComponent::new().with_position(
-                0.0,
-                starting_head_y,
-                0.0,
-            ));
+            let head =
+                world.add_component(TransformComponent::new().with_position(0.0, starting_head_y, 0.0));
             let mut avc = AvatarControlComponent::new();
-            avc.movement_target = Some(ComponentRef::Guid(
-                world.get_component_record(root).unwrap().guid,
-            ));
+            avc.collision_response = response;
+            avc.movement_target = Some(if has_target {
+                ComponentRef::Guid(world.get_component_record(root).unwrap().guid)
+            } else {
+                ComponentRef::Query("[name='missing_response_target']".into())
+            });
             avc.head_mount = Some(head); // Stand in for the completed humanoid splice.
             avc.model_root_local_y = -1.6;
             let avatar = world.add_component(avc);
-            let model =
-                world.add_component(TransformComponent::new().with_position(0.0, -1.6, 0.0));
+            let model = world.add_component(TransformComponent::new().with_position(0.0, -1.6, 0.0));
             world
                 .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
                 .unwrap()
@@ -3628,6 +3657,59 @@ mod capsule_tests {
                 "actual={actual:?} expected={expected:?}"
             );
         }
+    }
+
+    #[test]
+    fn read_only_avatar_capsule_observes_without_target_and_switches_back_to_slide() {
+        let mut f = XrCapsuleFixture::new_with_response(0.8, 1.0, CollisionResponse::ReadOnly, false);
+        let collider = f.avatar().capsule_collidable_id.unwrap();
+        f.set_position(f.root, [0., 2.2, 0.]);
+        for _ in 0..4 {
+            f.tick();
+        }
+        assert_position(f.position(f.root), [0., 2.2, 0.]);
+        assert_eq!(f.avatar().capsule_collidable_id, Some(collider));
+        assert!(f.avatar().capsule_ready);
+        assert!(
+            f.world
+                .get_component_by_id_as::<CollidableComponent>(collider)
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            f.systems
+                .static_contact
+                .contacts()
+                .iter()
+                .any(|contact| contact.collidable == collider)
+        );
+        let target = ComponentRef::Guid(f.world.get_component_record(f.root).unwrap().guid);
+        let avatar = f
+            .world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+            .unwrap();
+        avatar.collision_response = CollisionResponse::Slide;
+        // Without a valid target, correction must fail closed.
+        f.tick();
+        assert_position(f.position(f.root), [0., 2.2, 0.]);
+        f.world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+            .unwrap()
+            .movement_target = Some(target);
+        for _ in 0..4 {
+            f.tick();
+        }
+        assert_position(f.position(f.root), [0., 3.0, 0.]);
+        assert_eq!(f.avatar().capsule_collidable_id, Some(collider));
+        // A new read-only permission must take effect before the first contact
+        // pass, not one frame after the old slide response has moved the root.
+        f.world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+            .unwrap()
+            .collision_response = CollisionResponse::ReadOnly;
+        f.set_position(f.root, [0., 2.2, 0.]);
+        f.tick();
+        assert_position(f.position(f.root), [0., 2.2, 0.]);
     }
 
     #[test]

@@ -3544,6 +3544,7 @@ fn apply_call(
             "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             "friction" => current.with_friction(arg_f32(args, 0)?)?,
+            "response" => current.with_response(crate::engine::ecs::component::CollisionResponse::parse(arg_str(args, 0)?)?)?,
             _ => return Err(format!("Collidable: unknown builder '{method}'")),
         };
         *world
@@ -4002,6 +4003,7 @@ fn apply_call(
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),
             "ik_debug" => *avc = avc.clone().with_ik_debug(),
             "collision_disabled" => *avc = avc.clone().with_collision_disabled(),
+            "collision_response" => *avc = avc.clone().with_collision_response(crate::engine::ecs::component::CollisionResponse::parse(arg_str(args, 0)?)?),
             "capsule_radius" => *avc = avc.clone().with_capsule_radius(arg_f32(args, 0)?),
             "body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(arg_f32(args, 0)?),
             "body_yaw_rate" => *avc = avc.clone().with_body_yaw_rate(arg_f32(args, 0)?),

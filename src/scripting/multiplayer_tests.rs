@@ -172,6 +172,11 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
                 named(scene, "remote_avatar").unwrap(),
             )
             .unwrap();
+        assert!(remote_avatar.collision_enabled && remote_avatar.capsule_ready);
+        assert_eq!(remote_avatar.collision_response, crate::engine::ecs::component::CollisionResponse::ReadOnly);
+        let remote_collider = scene.world.get_component_by_id_as::<crate::engine::ecs::component::CollidableComponent>(remote_avatar.capsule_collidable_id.unwrap()).unwrap();
+        assert!(remote_collider.enabled);
+        assert_eq!(remote_collider.response, crate::engine::ecs::component::CollisionResponse::ReadOnly);
         assert!(
             remote_avatar.head_mount.is_some(),
             "remote head solver was not initialized"

@@ -84,6 +84,12 @@ Rust-backed `MultiplayerSession.from_env()` constructor reads the three
 `MITTENS_MULTIPLAYER_*` launcher variables. The view flags are ordinary MMS
 values, not environment reads.
 
+Remote rigs use `collision_response("read_only")`, keeping their collision
+capsules enabled while local contact response cannot correct their received root
+or velocity. Local rigs retain the default slide response. See
+[avatar collision response](avatar-collision-response.md) for the native query
+behavior and current scope.
+
 Remote rigs use PoseInput and external hand targets, never the receiver's local
 tracking. Physical XR/Tailscale validation is still required; the mode checks
 run without opening either a window or an XR runtime.
@@ -220,7 +226,7 @@ Leg IK, stepping, and gohei paper motion are solved locally, not transmitted.
 `AVC.eye_offset([0.0, 0.08, 0.12])` supplies the same mapped-camera-anchor-local
 eye origin to local and camera-free remote rigs. Without an explicit value, AVC
 continues to infer the offset from camera wrappers as before. A remote rig can
-query ground support with collision disabled; this changes its leg pose without
+query ground support through its read-only collision capsule; this changes its leg pose without
 adding collision response or modifying the received locomotion root.
 
 The scene uses the shared pool ceramic material/texture, paper-craft's twilight

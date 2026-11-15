@@ -1,7 +1,7 @@
 #[path = "eye_blink_state.rs"]
 mod blink;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{Component, ComponentRef};
+use crate::engine::ecs::component::{Component, ComponentRef, CollisionResponse};
 
 /// How AVC treats retained eye-tracker gaze while the avatar head is moving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -119,6 +119,8 @@ pub struct AvatarControlComponent {
 
     /// Whether AVC should generate an upright collision capsule. Enabled by default.
     pub collision_enabled: bool,
+    /// Whether collision contacts may correct the avatar's locomotion root.
+    pub collision_response: CollisionResponse,
 
     /// Explicit transform corrected by the generated capsule (e.g. a falling root).
     pub movement_target: Option<ComponentRef>,
@@ -306,6 +308,7 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_vertical_source: Option<ComponentId>,
     pub(crate) capsule_routing_revision: u64,
     pub(crate) capsule_route_ref: Option<ComponentRef>,
+    pub(crate) capsule_route_response: Option<CollisionResponse>,
     pub(crate) capsule_world_scale: f32,
     pub(crate) capsule_reset_contact_history: bool,
 
@@ -494,6 +497,11 @@ impl AvatarControlComponent {
         Ok(self)
     }
 
+    pub fn with_collision_response(mut self, response: CollisionResponse) -> Self {
+        self.collision_response = response;
+        self
+    }
+
     pub fn with_collision_disabled(mut self) -> Self {
         self.collision_enabled = false;
         self
@@ -624,6 +632,7 @@ impl Default for AvatarControlComponent {
             mouth_open_weight: 0.0,
             mouth_open_missing_slot_diagnosed: false,
             collision_enabled: true,
+            collision_response: CollisionResponse::Slide,
             movement_target: None,
             capsule_radius: 0.28,
             left_two_bone_ik: None,
@@ -691,6 +700,7 @@ impl Default for AvatarControlComponent {
             capsule_vertical_source: None,
             capsule_routing_revision: 0,
             capsule_route_ref: None,
+            capsule_route_response: None,
             capsule_world_scale: 1.0,
             capsule_reset_contact_history: false,
             capsule_ready: false,
@@ -744,6 +754,9 @@ impl Component for AvatarControlComponent {
         }
         if self.blink_duration != 0.18 {
             c = c.with_call("blink_duration", vec![num(self.blink_duration as f64)]);
+        }
+        if self.collision_response != CollisionResponse::Slide {
+            c = c.with_call("collision_response", vec![s(self.collision_response.as_str())]);
         }
         if !self.collision_enabled {
             c = c.with_call("collision_disabled", vec![]);

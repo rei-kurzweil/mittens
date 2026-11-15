@@ -25,3 +25,31 @@ support-reference policy from pose solving. Preserve the existing ancestor walk,
 direct reads and bounded BVH queries; no new frame allocations or world scans.
 Verify switching frames at different heights, losing/acquiring a frame, unchanged
 frame crouching and locomotion, and the full lower-body regression suite.
+
+## Collision response builder implementation
+
+Keep this slice focused on an explicit Slide/ReadOnly response policy, capsule
+participation and observed contacts. Retain the existing static-contact solver,
+using its shared retained/refitted query index for read-only moving proxies;
+separate observation from response writes. Future splits should group scene
+contact observation/response, index maintenance, avatar capsule authoring, and
+MMS component-family bindings. No per-body BVHs, dynamic dispatch, repeated
+geometry construction, or per-frame contact-buffer allocation after warmup.
+
+Validate read-only overlaps/sweeps with unchanged roots and velocity, missing
+response targets, indexed moving proxies and self/support filtering, runtime
+mode transitions, MMS constructor/body forms and serialization, real remote
+avatar capsules and local slide behavior. The broader ground-query redesign
+remains separate from this builder/participation implementation.
+
+Implemented: `AVC.collision_response`, generic `Collidable.response`, independent
+native response permission/query owner, retained read-only proxies and observed
+contacts. The remote example uses an enabled read-only capsule. Verified builder
+forms/serialization/errors (2 checks), readonly behavior including sweeps and
+missing targets (5 filtered checks), retained BVH (3), static contact (18 plus
+1 intentionally ignored), capsule behavior (34), lower body (37), and multiplayer
+(17). Filters overlap; these are not distinct-test totals. `cargo clippy --lib`
+completes with warnings. A profiled two-peer scene also passes; user-reported
+workstation activity means timing output is exploratory, with no speedup claim.
+See `docs/how_to/avatar-collision-response.md` for the implemented scope; the
+unified support-query redesign remains in the proposal.

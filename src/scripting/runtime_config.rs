@@ -1041,6 +1041,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Collidable" => {
                     no_arg_constructors(component, &["static", "slide"]);
+                    component.builder_call("response", strings(1));
                     component
                         .builder_call("friction", floats(1))
                         .builder_call("movement_target", any(1))
@@ -1284,6 +1285,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         constructor_and_builder(component, method, floats(1));
                     }
                     constructor_and_builder(component, "eye_offset", any(1));
+                    constructor_and_builder(component, "collision_response", strings(1));
                     constructor_and_builder(component, "head_motion_gaze_policy", strings(1));
                     constructor_and_builder(component, "mouth_open_from_amplitude", any(1));
                     constructor_and_builder(component, "mouth_open_rms_center_range", floats(2));

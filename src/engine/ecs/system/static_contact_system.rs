@@ -3,15 +3,27 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::engine::ecs::component::{
-    CollidableComponent, QueryRootMode, TransformComponent, VelocityComponent, ZoneComponent,
-    resolve_component_ref,
+    CollidableComponent, CollisionResponse, QueryRootMode, TransformComponent, VelocityComponent,
+    ZoneComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::{TransformSystem, VelocitySystem, collision_geometry, zone_query};
 use crate::engine::ecs::{ComponentId, World};
 use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
 
+/// A read-only blocking overlap/sweep observed during this contact update. Observation
+/// does not imply that a correction was applied; resting ground uses support queries.
+#[derive(Debug, Clone, Copy)]
+pub struct ContactObservation {
+    pub collidable: ComponentId,
+    pub zone: ComponentId,
+    pub other: ComponentId,
+    pub other_zone: ComponentId,
+    pub separation: [f32; 3],
+}
+
 #[derive(Debug, Default)]
 pub struct StaticContactSystem {
+    contacts: Vec<ContactObservation>,
     previous_centers: HashMap<ComponentId, [f32; 3]>,
     body_offsets: HashMap<ComponentId, [f32; 3]>,
     broad_phase: CollidableBvh,
@@ -33,6 +45,11 @@ pub struct StaticContactSystem {
 }
 
 impl StaticContactSystem {
+    /// Borrow read-only observations from the latest contact pass; no scripting/event allocations.
+    pub fn contacts(&self) -> &[ContactObservation] {
+        &self.contacts
+    }
+
     /// Share the retained index with read-only pose consumers after propagation.
     /// Synchronize once at their phase boundary; never build a per-avatar index.
     pub(crate) fn support_index(&mut self, world: &World) -> &CollidableBvh {
@@ -83,6 +100,7 @@ impl StaticContactSystem {
         mounts: &super::AttachmentSystem,
         apply_friction: bool,
     ) -> Vec<ComponentId> {
+        self.contacts.clear();
         self.candidate_pairs = 0;
         self.narrow_phase_tests = 0;
         self.correction_iterations = 0;
@@ -108,21 +126,44 @@ impl StaticContactSystem {
         let mut changed = Vec::new();
         self.body_offsets.clear();
         for (collidable_id, moving) in movers {
-            let Some(target) = movement_target(world, collidable_id, moving) else {
+            let read_only = world
+                .get_component_by_id_as::<CollidableComponent>(collidable_id)
+                .is_some_and(|c| c.response == CollisionResponse::ReadOnly);
+            // This fallback is only an owner/filter reference for observation.
+            // A read-only body never gains a response target from geometry.
+            let target = movement_target(world, collidable_id, moving).or_else(|| {
+                read_only
+                    .then(|| {
+                        world
+                            .get_component_by_id_as::<ZoneComponent>(moving)
+                            .and_then(|z| zone_query::resolve_zone_frame(world, moving, z).ok())
+                    })
+                    .flatten()
+            });
+            let Some(target) = target else {
                 continue;
             };
+            let owner = world
+                .get_component_by_id_as::<CollidableComponent>(collidable_id)
+                .and_then(|c| c.query_owner)
+                .filter(|id| world.get_component_record(*id).is_some())
+                .unwrap_or(target);
             let Some((cached_center, shape)) = zone_world_shape(world, moving) else {
                 continue;
             };
             // Several contact zones may drive one body. World matrices are
             // propagated after this pass, so account for prior zones' corrections.
-            let offset = self.body_offsets.get(&target).copied().unwrap_or([0.0; 3]);
+            let offset = if read_only {
+                [0.; 3]
+            } else {
+                self.body_offsets.get(&target).copied().unwrap_or([0.0; 3])
+            };
             let center = std::array::from_fn(|i| cached_center[i] + offset[i]);
             let previous = self
                 .previous_centers
                 .insert(moving, center)
                 .unwrap_or(center);
-            if mounts.is_movement_root_mounted(world, target) {
+            if !read_only && mounts.is_movement_root_mounted(world, target) {
                 self.previous_centers.remove(&moving);
                 continue;
             }
@@ -141,7 +182,7 @@ impl StaticContactSystem {
                     let index = candidates[cursor];
                     cursor += 1;
                     let surface = self.broad_phase.surface(index);
-                    if surface.zone == moving || is_body_part(world, surface.zone, target) {
+                    if surface.zone == moving || is_body_part(world, surface.zone, owner) {
                         continue;
                     }
                     self.candidate_pairs += 1;
@@ -166,6 +207,28 @@ impl StaticContactSystem {
                     self.exact_test_time += exact.map(|t| t.elapsed()).unwrap_or_default();
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;
+                    }
+                    if read_only {
+                        self.contacts.push(ContactObservation {
+                            collidable: collidable_id,
+                            zone: moving,
+                            other: surface.collidable,
+                            other_zone: surface.zone,
+                            separation: displacement,
+                        });
+                        continue;
+                    }
+                    if surface.observes_contacts() {
+                        // A correcting mover can also encounter a read-only proxy.
+                        // Report that contact to the observer without indexing all
+                        // correcting movers or enabling slide/slide body response.
+                        self.contacts.push(ContactObservation {
+                            collidable: surface.collidable,
+                            zone: surface.zone,
+                            other: collidable_id,
+                            other_zone: moving,
+                            separation: displacement.map(|v| -v),
+                        });
                     }
                     resolve_contact_velocity(
                         world,
@@ -203,11 +266,14 @@ impl StaticContactSystem {
                     break;
                 }
             }
+            if read_only {
+                continue;
+            }
             self.query_candidates(previous, desired_center, shape, false, &mut candidates);
             let mut remaining = false;
             for &index in &candidates {
                 let surface = self.broad_phase.surface(index);
-                if surface.zone == moving || is_body_part(world, surface.zone, target) {
+                if surface.zone == moving || is_body_part(world, surface.zone, owner) {
                     continue;
                 }
                 self.candidate_pairs += 1;
@@ -265,7 +331,7 @@ impl StaticContactSystem {
             if self.profile_passes == 120 {
                 let times = self.profile_times.map(|t| t.as_secs_f64() * 1000.0 / 120.0);
                 let line = format!(
-                    "[spatial-profile][contact] passes=120 statics={} movers={} avg_ms maintenance={:.4} query={:.4} exact={:.4} total={:.4} nodes={} candidates={} exact_tests={} rebuilds={} refits={}",
+                    "[spatial-profile][contact] passes=120 surfaces={} movers={} avg_ms maintenance={:.4} query={:.4} exact={:.4} total={:.4} nodes={} candidates={} exact_tests={} rebuilds={} refits={}",
                     self.broad_phase.len(),
                     self.broad_phase.movers.len(),
                     times[0],
