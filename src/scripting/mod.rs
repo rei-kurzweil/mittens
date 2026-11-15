@@ -66,8 +66,6 @@ mod tests;
 mod sakura_scene_tests;
 
 #[cfg(test)]
-mod paper_craft_scene_tests;
-#[cfg(test)]
 mod paper_craft_screen_tests;
 
 #[cfg(test)]
