@@ -42,7 +42,21 @@ Narrows the posture table in
   stays upright).
 - The neck bend is still computed against the root, not the pitched chest.
 - While kneeling on a remembered floor the lower body can report `NoSupport`.
-- No crawling gait or lying down yet.
+- No lying down yet.
+
+### Crawling gait and body yaw (2026-11-16)
+
+- **Gait** (`kneel.rs`): each ankle stays planted until its rest spot under
+  the hip is more than 0.12 m away, then swings there over 0.28 s with a
+  0.06 m lift, landing 35% of its travel ahead. One leg at a time,
+  alternating. Holding still takes no steps; turning in place does.
+  `LowerBodyIkSystem::crawl_steps` reports steps per leg. Only the knees
+  step: tracked hands follow the controllers, and planted hands (with a
+  diagonal hand/knee pattern) remain a follow-up.
+- **Body yaw:** in horizontal mode the body solver blends the yaw-follow
+  deadband from the authored `body_yaw_threshold` toward 10°, so the torso
+  tracks the head. Yaw extraction now also uses the head's up axis, so
+  looking straight down no longer makes the heading noisy.
 
 ### Collision detail
 

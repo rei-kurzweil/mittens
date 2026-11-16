@@ -34,6 +34,7 @@ pub(super) struct LowerBodyInstance {
     /// body solver's last known floor when this system has lost its own.
     kneeling: bool,
     kneel_floor: Option<f32>,
+    kneel_gait: super::kneel::KneelGait,
 }
 impl LowerBodyIkSystem {
     pub fn register(&mut self, id: ComponentId) {
@@ -56,8 +57,13 @@ impl LowerBodyIkSystem {
             if kneeling != instance.kneeling {
                 instance.kneeling = kneeling;
                 instance.walking.reset();
+                instance.kneel_gait = Default::default();
             }
         }
+    }
+    /// Completed crawl steps per leg (left, right) since kneeling began.
+    pub fn crawl_steps(&self, id: ComponentId) -> Option<[u64; 2]> {
+        Some(self.avatars.get(&id)?.kneel_gait.steps)
     }
     pub fn walking(&self, id: ComponentId) -> Option<WalkingDiagnostics> {
         Some(self.avatars.get(&id)?.walking.diagnostics())
@@ -157,6 +163,7 @@ impl LowerBodyIkSystem {
                 (Some(rig), None, Ok(config)) => solve_frame(
                     rig,
                     instance.kneeling.then_some(instance.kneel_floor),
+                    &mut instance.kneel_gait,
                     &mut instance.walking,
                     &mut instance.airborne,
                     previous_floor,
@@ -270,6 +277,7 @@ fn walking_settings(
 fn solve_frame(
     rig: &mut LowerBodyRig,
     kneeling: Option<Option<f32>>,
+    kneel_gait: &mut super::kneel::KneelGait,
     walking: &mut WalkingState,
     airborne: &mut super::airborne::AirborneState,
     previous_floor: Option<f32>,
@@ -359,11 +367,13 @@ fn solve_frame(
         walking.reset();
         return super::kneel::solve(
             rig,
+            kneel_gait,
             bases,
             &ground,
             previous_floor.or(kneel_floor),
             body.rotation_quat_xyzw,
             avatar.crouch_knee_limit,
+            dt_sec,
             emit,
         );
     }

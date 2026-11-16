@@ -238,3 +238,59 @@ fn vertical_posture_never_leaves_vertical() {
     assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
     assert_eq!(scene.systems.body_solver.torso_pitch(avatar), 0.0);
 }
+
+#[test]
+fn crawling_forward_steps_the_knees_alternately() {
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    let root = named(&scene, "remote_root");
+    hold_head(&mut scene, head, 1.644, 30);
+    hold_head(&mut scene, head, 0.7, 90);
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+    let settled = scene.systems.lower_body_ik.crawl_steps(avatar).unwrap();
+    hold_head(&mut scene, head, 0.7, 60);
+    assert_eq!(
+        scene.systems.lower_body_ik.crawl_steps(avatar).unwrap(),
+        settled,
+        "holding still takes no steps"
+    );
+
+    // Crawl 0.8 m over 2 s by moving the locomotion root.
+    let start = position(&scene, root);
+    for frame in 1..=120 {
+        let x = start[0] + 0.8 * frame as f32 / 120.0;
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation: [x, start[1], start[2]],
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            },
+        );
+        hold_head(&mut scene, head, 0.7, 1);
+        for slot in [HumanoidSlot::LeftFoot, HumanoidSlot::RightFoot] {
+            let ankle = position(&scene, bone(&scene, avatar, slot));
+            assert!(
+                ankle[1] > ROOF - 0.02 && ankle[1] < ROOF + 0.2,
+                "frame {frame}: ankle stays near the roof: {ankle:?}"
+            );
+        }
+    }
+    let steps = scene.systems.lower_body_ik.crawl_steps(avatar).unwrap();
+    let taken = [steps[0] - settled[0], steps[1] - settled[1]];
+    assert!(
+        taken[0] >= 1 && taken[1] >= 1,
+        "both knees stepped: {taken:?}"
+    );
+    assert!(
+        taken[0].abs_diff(taken[1]) <= 1,
+        "legs alternate: {taken:?}"
+    );
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+}
