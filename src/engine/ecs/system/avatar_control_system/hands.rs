@@ -335,3 +335,85 @@ pub(super) fn hand_alignment_debug_enabled() -> bool {
             .is_some_and(|value| value == "1")
     })
 }
+
+/// A hand ready for IK: validated binding with raw and visual targets, plus
+/// the aim correction. `None` when this side has no usable hand driver.
+pub(super) type PreparedHand = Option<((ArmIkBinding, ComponentId, ComponentId), Option<[f32; 4]>)>;
+
+/// Hand controllers by topology: direct `ControllerXRComponent` children.
+pub(super) fn discover_hand_controllers(
+    world: &World,
+    id: ComponentId,
+) -> (Option<ComponentId>, Option<ComponentId>) {
+    let left_ctrl = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<ControllerXRComponent>(ch)
+            .map(|c| c.hand == ControllerHand::Left)
+            .unwrap_or(false)
+    });
+    let right_ctrl = world.children_of(id).iter().copied().find(|&ch| {
+        world
+            .get_component_by_id_as::<ControllerXRComponent>(ch)
+            .map(|c| c.hand == ControllerHand::Right)
+            .unwrap_or(false)
+    });
+    (left_ctrl, right_ctrl)
+}
+
+/// A mapped arm is only a model capability. Build a target only when this AVC
+/// also owns a usable per-side hand pose driver. `None` means initialization
+/// must wait for the aim correction.
+pub(super) fn prepare_hand(
+    world: &mut World,
+    retargeting: &mut JointBasisRetargetingSystem,
+    humanoid_map: &HumanoidBoneMapReport,
+    model_root_id: ComponentId,
+    eligibility: ArmIkEligibility,
+    left: bool,
+    side: &str,
+) -> Option<PreparedHand> {
+    let ArmIkEligibility::Eligible(binding) = eligibility else {
+        if eligibility == ArmIkEligibility::MalformedHandDriver {
+            eprintln!(
+                "[AVC] {side} arm IK disabled: XRHand must have a direct tracked Transform child"
+            );
+        }
+        return Some(None);
+    };
+    ensure_map_hand_basis(world, retargeting, humanoid_map, left);
+    let correction =
+        derive_hand_aim_correction(world, retargeting, model_root_id, Some(binding.hand), side)?;
+    Some(Some((
+        resolve_hand_target(world, binding, correction),
+        correction,
+    )))
+}
+
+/// Hand helpers that need the cached hand targets: lasers and grab attachments.
+pub(super) fn mount_hand_helpers(
+    world: &mut World,
+    retargeting: &mut JointBasisRetargetingSystem,
+    left: PreparedHand,
+    right: PreparedHand,
+    emit: &mut dyn SignalEmitter,
+) {
+    // Avatar-finger lasers need the final quaternion-corrected hand targets
+    // cached above. Controller registration happens earlier, so retry their
+    // runtime mount now that AVC and the imported skeleton are both ready.
+    for controller in [left, right]
+        .into_iter()
+        .flatten()
+        .map(|((binding, _, _), _)| binding.controller)
+    {
+        crate::engine::ecs::system::pointer_system::ensure_xr_hand_laser(
+            world,
+            retargeting,
+            controller,
+            emit,
+        );
+    }
+
+    for ((binding, _, _), correction) in [left, right].into_iter().flatten() {
+        ensure_hand_grab_attachment(world, binding.controller, binding.hand, correction, emit);
+    }
+}

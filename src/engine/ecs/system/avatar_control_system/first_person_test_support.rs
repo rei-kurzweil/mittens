@@ -1,5 +1,6 @@
 //! CPU-skinned surface probes shared by real first-person regression tests.
 use super::*;
+use crate::utils::math::mat4_mul;
 
 pub(crate) fn body_hit(
     document: &gltf::Gltf,

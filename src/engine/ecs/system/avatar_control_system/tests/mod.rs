@@ -2,8 +2,8 @@
 use super::*;
 use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
 use crate::engine::ecs::component::{
-    AmplitudeComponent, AmplitudeSample, AmplitudeStatus, ComponentRef, EyeRotationLimits,
-    MorphFactorState, MorphTargetInfo, MorphTargetKey, MorphTargetMapComponent,
+    AmplitudeComponent, AmplitudeSample, AmplitudeStatus, BoneRestPoseComponent, ComponentRef,
+    EyeRotationLimits, MorphFactorState, MorphTargetInfo, MorphTargetKey, MorphTargetMapComponent,
     RestAttachmentComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
 };
 use crate::engine::ecs::system::{
@@ -62,7 +62,6 @@ pub(super) fn left_arm_report(
         slots,
     }
 }
-
 
 mod arms;
 mod capsule;

@@ -17,8 +17,7 @@ fn native_head_neck_body_aligns_mapped_eyes_with_xr_view_on_checked_in_rigs() {
         let mut xr = InputXRComponent::on();
         xr.pose_valid = true;
         let input = world.add_component(xr);
-        let driven =
-            world.add_component(TransformComponent::new().with_position(0.0, 1.6, 0.0));
+        let driven = world.add_component(TransformComponent::new().with_position(0.0, 1.6, 0.0));
         let mut config = AvatarControlComponent::new();
         config.collision_enabled = false;
         let avatar = world.add_component(config);
@@ -59,12 +58,11 @@ fn native_head_neck_body_aligns_mapped_eyes_with_xr_view_on_checked_in_rigs() {
         let left = rest_model_relative_to(&world, head, find("J_Adj_L_FaceEye")).unwrap();
         let right = rest_model_relative_to(&world, head, find("J_Adj_R_FaceEye")).unwrap();
         let eye = std::array::from_fn::<_, 3, _>(|i| (left[3][i] + right[3][i]) * 0.5);
-        let anchor = world
-            .add_component(TransformComponent::new().with_position(eye[0], eye[1], eye[2]));
+        let anchor =
+            world.add_component(TransformComponent::new().with_position(eye[0], eye[1], eye[2]));
         world.add_child(head, anchor).unwrap();
         // Same authored wrapper as mitten.mms / mittens-corp.mms.
-        let wrapper =
-            world.add_component(TransformComponent::new().with_position(0.0, 0.08, 0.12));
+        let wrapper = world.add_component(TransformComponent::new().with_position(0.0, 0.08, 0.12));
         let camera = world.add_component(CameraXRComponent::on());
         world.add_child(avatar, wrapper).unwrap();
         world.add_child(wrapper, camera).unwrap();
@@ -177,8 +175,7 @@ fn head_binding_splices_both_desktop_and_xr_before_shared_body_solving() {
     use crate::engine::graphics::VisualWorld;
     for xr in [false, true] {
         let mut world = World::default();
-        let driven =
-            world.add_component(TransformComponent::new().with_position(0.0, 1.42, 0.0));
+        let driven = world.add_component(TransformComponent::new().with_position(0.0, 1.42, 0.0));
         let input = if xr {
             let mut source = InputXRComponent::on();
             source.pose_valid = true;

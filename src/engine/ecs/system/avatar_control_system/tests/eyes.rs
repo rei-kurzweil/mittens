@@ -59,9 +59,8 @@ fn disabled_newer_gaze_does_not_suppress_an_enabled_direct_tracker() {
     let avc = world.add_component(AvatarControlComponent::new());
     let enabled = world
         .add_component(XREyeTrackingComponent::on().with_enable_pupil_direction_tracking(true));
-    let disabled = world.add_component(
-        XREyeTrackingHtcComponent::on().with_enable_pupil_direction_tracking(false),
-    );
+    let disabled = world
+        .add_component(XREyeTrackingHtcComponent::on().with_enable_pupil_direction_tracking(false));
     world.add_child(avc, enabled).unwrap();
     world.add_child(avc, disabled).unwrap();
     world
@@ -90,12 +89,10 @@ fn disabled_newer_gaze_does_not_suppress_an_enabled_direct_tracker() {
 fn blink_routing_chooses_each_eye_and_drives_its_morph_independently() {
     let mut world = World::default();
     let avc = world.add_component(AvatarControlComponent::new());
-    let standard = world.add_component(
-        XREyeTrackingComponent::on().with_enable_pupil_direction_tracking(false),
-    );
-    let htc = world.add_component(
-        XREyeTrackingHtcComponent::on().with_enable_pupil_direction_tracking(false),
-    );
+    let standard = world
+        .add_component(XREyeTrackingComponent::on().with_enable_pupil_direction_tracking(false));
+    let htc = world
+        .add_component(XREyeTrackingHtcComponent::on().with_enable_pupil_direction_tracking(false));
     let descendant = world.add_component(XREyeTrackingComponent::on());
     world.add_child(avc, standard).unwrap();
     world.add_child(avc, htc).unwrap();
@@ -210,8 +207,7 @@ fn shared_rotation_limits_clamp_yaw_and_pitch() {
     });
     assert!((gaze.direction[0].atan2(-gaze.direction[2]) - 0.3).abs() < 1e-5);
     assert!(
-        (gaze.direction[1]
-            .atan2((gaze.direction[0].powi(2) + gaze.direction[2].powi(2)).sqrt())
+        (gaze.direction[1].atan2((gaze.direction[0].powi(2) + gaze.direction[2].powi(2)).sqrt())
             - 0.4)
             .abs()
             < 1e-5
@@ -319,8 +315,7 @@ fn cancel_head_rotation_converts_world_gaze_to_eye_parent_basis() {
 fn freeze_head_motion_policy_holds_last_gaze_during_a_rapid_turn() {
     let mut world = World::default();
     let avc = world.add_component(
-        AvatarControlComponent::new()
-            .with_head_motion_gaze_policy(HeadMotionGazePolicy::Freeze),
+        AvatarControlComponent::new().with_head_motion_gaze_policy(HeadMotionGazePolicy::Freeze),
     );
     let parent = world.add_component(TransformComponent::new());
     let eye = world.add_component(TransformComponent::new());
@@ -380,8 +375,7 @@ fn freeze_head_motion_policy_holds_last_gaze_during_a_rapid_turn() {
 fn freeze_policy_holds_the_already_limited_gaze() {
     let mut world = World::default();
     let avc = world.add_component(
-        AvatarControlComponent::new()
-            .with_head_motion_gaze_policy(HeadMotionGazePolicy::Freeze),
+        AvatarControlComponent::new().with_head_motion_gaze_policy(HeadMotionGazePolicy::Freeze),
     );
     let parent = world.add_component(TransformComponent::new());
     let eye = world.add_component(TransformComponent::new());

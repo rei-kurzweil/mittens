@@ -151,7 +151,11 @@ pub(super) fn uniform_world_scale(world: &World, transform: ComponentId) -> Opti
         .then_some(scale[0])
 }
 
-pub(super) fn ancestor_or_self(world: &World, ancestor: ComponentId, mut descendant: ComponentId) -> bool {
+pub(super) fn ancestor_or_self(
+    world: &World,
+    ancestor: ComponentId,
+    mut descendant: ComponentId,
+) -> bool {
     loop {
         if ancestor == descendant {
             return true;
@@ -163,7 +167,10 @@ pub(super) fn ancestor_or_self(world: &World, ancestor: ComponentId, mut descend
     }
 }
 
-pub(super) fn map_target(report: &HumanoidBoneMapReport, slot: HumanoidSlot) -> Option<ComponentId> {
+pub(super) fn map_target(
+    report: &HumanoidBoneMapReport,
+    slot: HumanoidSlot,
+) -> Option<ComponentId> {
     report.target(slot).map(|target| target.component)
 }
 

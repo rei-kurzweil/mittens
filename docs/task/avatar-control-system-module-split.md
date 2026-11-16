@@ -1,7 +1,7 @@
 # Avatar control system module split
 
-Status: proposed. Prerequisite for the [body solver](body-solver-horizontal-mode.md).
-Implement only when requested or approved.
+Status: steps 1–3 done (2026-11-16). Step 4 lands with the first
+[body solver](body-solver-horizontal-mode.md) slice.
 
 ## Observation
 
@@ -38,28 +38,31 @@ depend on the avatar control system for a generic utility.
 avatar_control_system/
   mod.rs          AvatarControlSystem, tick, tick_one, register/remove
   init.rs         try_init_pose_drivers as an ordered sequence of steps
-  head_mount.rs   head splice, camera bone, eye offset, height calibration,
-                  neck rest, camera re-parenting
+  head_mount.rs   camera discovery, eye offset, model-root height
+                  calibration, neck rest, head mount and constraint binding,
+                  camera re-parenting
   body_operator.rs  body operator creation and model-root re-parenting
+  arm_ik.rs       ArmIkBinding, eligibility, arm chain construction
+                  (moves to ik/upper_body/arms.rs in step 4)
   capsule.rs
-  hands.rs        hand discovery plus everything in the hands row above
+  hands.rs        controller discovery, hand preparation, lasers and grab
+                  attachments, targets, aim correction, pose corrections
   eyes.rs
-  eye_blink.rs    moved from avatar_eye_blink.rs; drop the #[path]
+  eye_blink.rs    moved from avatar_eye_blink.rs; no #[path]
+  eye_blink/tests.rs
   mouth.rs
-  topology.rs     owning-input lookups, ancestry, model root, camera anchor
-  tests/          eyes, mouth, head, hands, arms, capsule
-                  (+ existing first_person_test_support.rs)
+  topology.rs     owning-input lookups, ancestry, model root, camera anchor,
+                  map_target, emit_attach, update_local_rotation
+  first_person_test_support.rs
+  tests/          mod.rs (shared helpers), eyes, mouth, head, hands, arms, capsule
 ik/rest_pose.rs   read_bone_rest_pose, rest_model_relative_to
-ik/upper_body/arms.rs   ArmIkBinding, eligibility, arm chain construction
 ```
-
 Module boundaries follow component families, not individual functions. Keep
 helpers as `pub(super)` free functions: no traits or runtime dispatch.
 
 ## Order
 
-1. **Moves without behavior changes**, one commit per row: tests, eyes and
-   mouth, capsule, hands, topology. The test count must not change.
+1. **Moves without behavior changes**: done as one commit. Same 35 tests.
 2. **`ik/rest_pose.rs`**: move the shared helpers and update the three
    external callers. This removes the IK → avatar control dependency.
 3. **Break up `try_init_pose_drivers`** into `init.rs` steps that pass an

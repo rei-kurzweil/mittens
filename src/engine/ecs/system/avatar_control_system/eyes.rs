@@ -299,7 +299,11 @@ pub(super) fn update_one_eye_tracking(
 /// Convert a world-relative tracker direction into the local coordinates in
 /// which the eye-bone rotation is written.  For head-relative transports the
 /// raw direction remains byte-for-byte unchanged.
-pub(super) fn gaze_in_eye_parent_basis(world: &World, bone: ComponentId, gaze: ResolvedEyeGaze) -> [f32; 3] {
+pub(super) fn gaze_in_eye_parent_basis(
+    world: &World,
+    bone: ComponentId,
+    gaze: ResolvedEyeGaze,
+) -> [f32; 3] {
     if gaze.compensation == HeadRotationCompensation::Off {
         return gaze.direction;
     }

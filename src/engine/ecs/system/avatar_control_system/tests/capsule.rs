@@ -382,12 +382,11 @@ fn xr_capsule_mount_and_dismount_preserve_free_head_y_and_contact_exclusion() {
     f.systems
         .transform_changed(&mut f.world, &mut f.visuals, car);
     for _ in 0..2 {
-        assert!(f.systems.attachment.try_mount_from_hit(
-            &mut f.world,
-            pointer,
-            car,
-            &mut f.queue
-        ));
+        assert!(
+            f.systems
+                .attachment
+                .try_mount_from_hit(&mut f.world, pointer, car, &mut f.queue)
+        );
         f.systems
             .process_commands(&mut f.world, &mut f.visuals, &mut f.assets, &mut f.queue);
         f.tick();
@@ -405,11 +404,11 @@ fn xr_capsule_mount_and_dismount_preserve_free_head_y_and_contact_exclusion() {
             );
             assert!((f.position(f.head)[1] - (mounted_y + 0.2 + height)).abs() < 1e-4);
         }
-        assert!(f.systems.attachment.try_dismount_for_pointer(
-            &mut f.world,
-            pointer,
-            &mut f.queue
-        ));
+        assert!(
+            f.systems
+                .attachment
+                .try_dismount_for_pointer(&mut f.world, pointer, &mut f.queue)
+        );
         f.systems
             .process_commands(&mut f.world, &mut f.visuals, &mut f.assets, &mut f.queue);
         f.tick();
@@ -505,13 +504,12 @@ fn xr_capsule_gates_source_loss_and_recovers_without_duplicate_helpers() {
     let capsule = f.avatar().capsule_transform_id.unwrap();
     let collider = f.avatar().capsule_collidable_id.unwrap();
     let count = f.world.all_components().count();
-    let saved =
-        crate::scripting::component_registry::filtered_roots_to_ce_ast(&f.world, &[f.root])
-            .unwrap()
-            .iter()
-            .map(crate::scripting::unparser::unparse_component)
-            .collect::<Vec<_>>()
-            .join("\n");
+    let saved = crate::scripting::component_registry::filtered_roots_to_ce_ast(&f.world, &[f.root])
+        .unwrap()
+        .iter()
+        .map(crate::scripting::unparser::unparse_component)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         !saved.contains("sample_translation"),
         "generated sample must not survive scene save: {saved}"
@@ -845,8 +843,7 @@ fn disabled_and_delayed_fallback_behave_deterministically() {
     let mut queue = CommandQueue::new();
 
     let mut disabled_world = World::default();
-    let avc =
-        disabled_world.add_component(AvatarControlComponent::new().with_collision_disabled());
+    let avc = disabled_world.add_component(AvatarControlComponent::new().with_collision_disabled());
     let model = disabled_world.add_component(TransformComponent::new());
     attach(&mut disabled_world, avc, model);
     try_init_or_route_capsule(avc, &mut disabled_world, &assets, &mut queue);

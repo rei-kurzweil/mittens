@@ -1,29 +1,22 @@
-mod eye_blink;
 mod arm_ik;
+mod body_operator;
 mod capsule;
+mod eye_blink;
 mod eyes;
 mod hands;
+mod head_mount;
 mod init;
 mod mouth;
 mod topology;
-use eye_blink::*;
-use arm_ik::*;
-use capsule::*;
-use eyes::*;
-use hands::*;
-use init::*;
-use mouth::*;
-use topology::*;
 use super::ik::rest_pose::{read_bone_rest_pose, rest_model_relative_to};
 use crate::engine::ecs::component::HumanoidSlot;
 use crate::engine::ecs::component::{
-    AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    CollidableComponent, CollisionResponse, CollisionShape, ControllerHand, ControllerPoseSource,
-    ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
-    HeadRotationCompensation, IKChainComponent, IKSolver, InputComponent, InputXRComponent,
-    SerializeComponent, TransformComponent, TransformOperatorComponent,
-    VRChatOSCEyeTrackingComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
-    ZoneComponent,
+    AvatarControlComponent, Camera3DComponent, CameraXRComponent, CollidableComponent,
+    CollisionResponse, CollisionShape, ControllerHand, ControllerPoseSource, ControllerXRComponent,
+    EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy, HeadRotationCompensation,
+    IKChainComponent, IKSolver, InputComponent, InputXRComponent, SerializeComponent,
+    TransformComponent, TransformOperatorComponent, VRChatOSCEyeTrackingComponent,
+    XREyeTrackingComponent, XREyeTrackingHtcComponent, ZoneComponent,
 };
 use crate::engine::ecs::component::{
     QueryRootMode, is_level_provider, resolve_component_ref, retained_level_sample,
@@ -39,11 +32,21 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::RenderAssets;
 use crate::engine::user_input::InputState;
 use crate::utils::math::{
-    mat_to_quat, mat4_identity, mat4_mul, mat4_mul_vec4, quat_conjugate, quat_mul,
-    quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
+    mat_to_quat, mat4_identity, mat4_mul_vec4, quat_conjugate, quat_mul, quat_rotate_vec3,
+    quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
 };
+use arm_ik::*;
+use body_operator::*;
+use capsule::*;
+use eye_blink::*;
+use eyes::*;
+use hands::*;
+use head_mount::*;
+use init::*;
+use mouth::*;
 use std::collections::HashSet;
 use std::sync::OnceLock;
+use topology::*;
 
 #[derive(Debug, Default)]
 pub struct AvatarControlSystem {
@@ -140,9 +143,10 @@ impl AvatarControlSystem {
             let enabled = capsule_contact_valid(world, avatar, operators);
             let response = avatar.collision_response;
             let collidable = avatar.capsule_collidable_id;
-            let reset = avatar.capsule_reset_contact_history || collidable
-                .and_then(|id| world.get_component_by_id_as::<CollidableComponent>(id))
-                .is_some_and(|c| c.response != response);
+            let reset = avatar.capsule_reset_contact_history
+                || collidable
+                    .and_then(|id| world.get_component_by_id_as::<CollidableComponent>(id))
+                    .is_some_and(|c| c.response != response);
             if reset {
                 if let Some(zone) = collidable.and_then(|id| world.parent_of(id)) {
                     contact.forget_zone(zone);
