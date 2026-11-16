@@ -506,3 +506,39 @@ fn low_hips_sit_back_behind_the_knees_instead_of_sinking_them() {
         }
     }
 }
+
+#[test]
+fn body_solver_flowchart_example_has_a_card_for_every_note() {
+    let source = std::fs::read_to_string("examples/body-solver-flowchart.mms").unwrap();
+    let notes =
+        std::fs::read_to_string("assets/components/diagrams/body_solver_notes.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/body-solver-flowchart.mms")
+        .unwrap();
+    for _ in 0..3 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let ids: Vec<&str> = notes
+        .lines()
+        .filter_map(|line| line.strip_prefix("        ")?.strip_suffix(" = {"))
+        .filter(|id| !id.starts_with(' '))
+        .collect();
+    assert_eq!(ids.len(), 20, "{ids:?}");
+    for id in ids {
+        let name = format!("body_card_{id}");
+        assert!(
+            scene
+                .world
+                .all_components()
+                .any(|c| scene.world.component_label(c) == Some(name.as_str())),
+            "missing card {name}"
+        );
+    }
+    let arrows = scene
+        .world
+        .all_components()
+        .filter(|&c| scene.world.component_label(c) == Some("body_flow_arrowhead"))
+        .count();
+    assert_eq!(arrows, 16, "every wire has an arrowhead");
+}
