@@ -36,6 +36,9 @@ docs-only design track, not more implementation scope for this branch.
 
 ## Longer-term follow-ups
 
+See [per-client update rates](multiplayer-per-client-update-rates.md) for
+independent outgoing telemetry schedules and the multi-client demo prerequisites.
+
 1. **Interpolation buffer.** Keep ~3 snapshots per remote pose and render
    ~100 ms behind using typed-channel sample timestamps; extrapolate briefly on loss.
    Hook: typed subscription receive bindings. Avoid per-avatar per-frame allocation.
