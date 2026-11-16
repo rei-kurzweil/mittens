@@ -28,6 +28,7 @@ pub(crate) struct Surface {
     frame: Frame,
     axis_shape: Option<AxisShape>,
     yaw_box: Option<YawBox>,
+    oriented_box: Option<super::box_sweep::OrientedBox>,
     bounds: AABB,
     node: usize,
 }
@@ -144,6 +145,27 @@ impl Surface {
             }
         }
         None
+    }
+
+    /// Continuous oriented-box contact against box surfaces. Damaged meshes
+    /// and non-box shapes are not box-swept; they report no contact.
+    pub(crate) fn box_sweep(
+        &self,
+        moving: ComponentId,
+        start: &super::box_sweep::OrientedBox,
+        delta: [f32; 3],
+    ) -> Option<zone_query::ZoneSweepHit> {
+        if self.mesh.is_some() {
+            return None;
+        }
+        let hit = super::box_sweep::sweep(start, delta, self.oriented_box.as_ref()?)?;
+        Some(zone_query::ZoneSweepHit {
+            moving,
+            surface: self.zone,
+            fraction: hit.fraction,
+            point: hit.point,
+            normal: hit.normal,
+        })
     }
 
     pub fn translation(&self, center: [f32; 3], shape: CollisionShape) -> Option<[f32; 3]> {
@@ -378,6 +400,7 @@ impl CollidableBvh {
                 local_mesh,
                 axis_shape: collision_geometry::axis_aligned_world_shape(shape, frame),
                 yaw_box: collision_geometry::yaw_box(shape, frame),
+                oriented_box: super::box_sweep::oriented_box(shape, frame),
                 bounds: bounds(min, max),
                 node: existing.map(|i| self.surfaces[i].node).unwrap_or(0),
             };

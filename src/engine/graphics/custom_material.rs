@@ -514,6 +514,27 @@ mod tests {
     }
 
     #[test]
+    fn rooftop_dusk_sky_validates_its_gradient_schema() {
+        use super::super::materials::{MaterialFieldType as T, MaterialInputField};
+        let fields = [
+            ("ground_color", T::Vec3),
+            ("horizon_point", T::F32),
+            ("horizon_color", T::Vec3),
+            ("lilac_point", T::F32),
+            ("lilac_color", T::Vec3),
+            ("zenith_point", T::F32),
+            ("zenith_color", T::Vec3),
+            ("haze_depth", T::F32),
+        ]
+        .map(|(name, ty)| MaterialInputField {
+            name: name.into(),
+            ty,
+        });
+        let compiled = compile("assets/shaders/rooftop-dusk-sky.frag", &fields).unwrap();
+        assert!(compiled.descriptor_bindings.contains(&(1, 0)));
+    }
+
+    #[test]
     fn pool_materials_validate_reserved_engine_resources_and_named_inputs() {
         for (path, names) in [
             (

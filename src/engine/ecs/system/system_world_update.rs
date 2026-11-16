@@ -246,6 +246,10 @@ impl SystemWorld {
         #[cfg(test)]
         cpu_profile.mark(Phase::ContactBeforeVelocity);
         let velocity_steps = self.velocity.take_steps(dt_sec);
+        self.velocity.set_swept_zone_listeners(
+            self.rx
+                .listener_gate(crate::engine::ecs::SignalKind::ZoneSwept),
+        );
         #[cfg(test)]
         crate::engine::update_cpu_profile::velocity_steps(velocity_steps);
         for _ in 0..velocity_steps {

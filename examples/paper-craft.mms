@@ -124,13 +124,11 @@ fn destroyable_box(position, size, color) {
     }
 }
 
-// Grounded player tower; four shorter neighbors float above the retained city ground.
+// Grounded player tower; two shorter neighbors float above the retained city ground.
 pool_building_with_stairs("paper_craft_rooftop_building", [-18.0, 0.0, 0.0], main_floors, 1.0, tiles, pink)
 let neighborhood_specs = [
     { label = "paper_craft_west_tower_north" position = [-18.0, 0.0, -25.0] floors = 5 lift = 0.25 side = 1.0 color = white },
     { label = "paper_craft_east_tower_center" position = [18.0, 0.0, 0.0] floors = 4 lift = 0.75 side = -1.0 color = blue },
-    { label = "paper_craft_west_tower_south" position = [-18.0, 0.0, 25.0] floors = 5 lift = 1.0 side = 1.0 color = white },
-    { label = "paper_craft_low_annex_west" position = [-39.0, 0.0, -10.0] floors = 2 lift = 0.5 side = 1.0 color = blue },
 ]
 T {
     name = "paper_craft_neighborhood"

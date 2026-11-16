@@ -200,6 +200,18 @@ pub enum EventSignal {
         movement_target: ComponentId,
         movement_target_offset: [f32; 3],
     },
+    /// A velocity-bound collidable's zone swept into static geometry during a
+    /// fixed step. Observational only; scoped to the moving zone.
+    ZoneSwept {
+        zone: ComponentId,
+        collidable: ComponentId,
+        velocity: ComponentId,
+        other_zone: ComponentId,
+        other_collidable: ComponentId,
+        point: [f32; 3],
+        normal: [f32; 3],
+        fraction: f32,
+    },
 
     /// A Rider-to-Mountable attachment transaction committed.
     MountStarted {
@@ -434,6 +446,7 @@ impl EventSignal {
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
+            EventSignal::ZoneSwept { .. } => SignalKind::ZoneSwept,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
             EventSignal::MountEnded { .. } => SignalKind::MountEnded,
             EventSignal::Click { .. } => SignalKind::Click,
@@ -1297,6 +1310,7 @@ pub enum SignalKind {
     ProjectileHit,
     ZoneEntered,
     ZoneExited,
+    ZoneSwept,
     MountStarted,
     MountEnded,
     Click,

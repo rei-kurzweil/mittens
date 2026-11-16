@@ -427,3 +427,168 @@ fn multiplayer_eye_offset_roundtrips_and_rejects_nonfinite_calibration() {
     assert_eq!(restored.eye_offset, original.eye_offset);
     assert_eq!(AvatarControlComponent::new().eye_offset, None);
 }
+
+fn twilight_rooftop_source() -> String {
+    std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap()
+}
+
+#[test]
+fn twilight_rooftop_loads_xr_only_without_a_peer() {
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
+    use crate::engine::ecs::component::{Camera3DComponent, CameraXRComponent};
+    // Default flags: XR-only, solo host still waiting for a peer.
+    let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
+    for _ in 0..10 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let world = &scene.world;
+    let count = |predicate: &dyn Fn(ComponentId) -> bool| world.all_components().filter(|&id| predicate(id)).count();
+    assert_eq!(count(&|id| world.get_component_by_id_as::<CameraXRComponent>(id).is_some()), 1);
+    assert_eq!(count(&|id| world.get_component_by_id_as::<Camera3DComponent>(id).is_some()), 0);
+    for label in ["twilight_rooftop_main", "twilight_rooftop_north", "twilight_rooftop_east",
+        "twilight_rooftop_train", "twilight_rooftop_train_motion", "twilight_rooftop_mirror"] {
+        assert!(named(&scene, label).is_some(), "missing {label}");
+    }
+    for label in ["twilight_rooftop_rail_arc_rails", "twilight_rooftop_rail_arc_wooden_sleepers",
+        "twilight_rooftop_round_hole_wall"] {
+        assert!(named(&scene, label).is_some(), "missing {label}");
+    }
+    let sky = count(&|id| world.get_component_by_id_as::<MaterialComponent>(id)
+        .and_then(|m| world.get_component_by_id_as::<MaterialDefinitionComponent>(m.definition))
+        .is_some_and(|d| d.fragment_uri == "assets/shaders/rooftop-dusk-sky.frag"));
+    assert_eq!(sky, 1);
+    // Both players stand on the main roof (5 floors x 3.2 m).
+    let local = world_position(&scene, "local_root").unwrap();
+    assert!((local[1] - 16.0).abs() < 1e-3 && (local[0] + 19.5).abs() < 1e-3, "{local:?}");
+    assert!(status_text(&scene).contains("remote players: 0"));
+    // A solo session is the host: Mitten locally, the client's Lumae as remote.
+    assert_eq!(model_uri(&scene, "local_model"), "assets/models/mitten.glb");
+    assert_eq!(model_uri(&scene, "remote_model"), LUMAE);
+}
+
+const LUMAE: &str = "assets/components/characters/lumae/lumae.glb";
+
+fn model_uri(scene: &Universe, name: &str) -> String {
+    use crate::engine::ecs::component::GLTFComponent;
+    scene
+        .world
+        .get_component_by_id_as::<GLTFComponent>(named(scene, name).unwrap())
+        .unwrap()
+        .uri
+        .clone()
+}
+
+#[test]
+fn twilight_rooftop_runs_as_host_and_client_on_the_roof() {
+    let source = twilight_rooftop_source()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
+    let host_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let client_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let host_port = host_data.local_addr().unwrap().port();
+    let client_port = client_data.local_addr().unwrap().port();
+    drop((host_data, client_data));
+    let source = source
+        .replace("7011", &host_port.to_string())
+        .replace("7012", &client_port.to_string());
+    let configured = |session: &str| source.replace("MultiplayerSession.from_env()", session);
+    let mut host = load(
+        &configured(r#"MultiplayerSession.host("127.0.0.1:47013").player_name("rei")"#),
+        "examples/twilight_rooftop.mms",
+    );
+    let mut client = load(
+        &configured(r#"MultiplayerSession.join("127.0.0.1:47013").player_name("dan")"#),
+        "examples/twilight_rooftop.mms",
+    );
+    for _ in 0..120 {
+        host.update(1.0 / 60.0, &Default::default());
+        std::thread::sleep(Duration::from_millis(1));
+        client.update(1.0 / 60.0, &Default::default());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    for scene in [&host, &client] {
+        assert!(status_text(scene).contains("remote players: 1"), "{}", status_text(scene));
+    }
+    let near = |a: [f32; 3], b: [f32; 3], tolerance: f32| (0..3).all(|i| (a[i] - b[i]).abs() < tolerance);
+    for (receiver, sender) in [(&host, &client), (&client, &host)] {
+        let remote = world_position(receiver, "remote_root").unwrap();
+        let local = world_position(sender, "local_root").unwrap();
+        assert!(near(remote, local, 1e-3), "remote {remote:?} vs peer local {local:?}");
+        assert!((remote[1] - 16.0).abs() < 0.05, "players stay on the roof: {remote:?}");
+    }
+    // Each side renders the peer with the peer's role-derived avatar.
+    for (scene, local, remote) in [(&host, "assets/models/mitten.glb", LUMAE), (&client, LUMAE, "assets/models/mitten.glb")] {
+        assert_eq!(model_uri(scene, "local_model"), local);
+        assert_eq!(model_uri(scene, "remote_model"), remote);
+        let avatar = scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(
+                named(scene, "remote_avatar").unwrap(),
+            )
+            .unwrap();
+        assert!(avatar.head_mount.is_some() && avatar.left_hand_bone_id.is_some(),
+            "remote {remote} rig was not initialized");
+    }
+}
+
+fn labelled_ancestor(world: &World, id: ComponentId, prefix: &str) -> bool {
+    let mut cursor = Some(id);
+    while let Some(id) = cursor {
+        if world.component_label(id).is_some_and(|label| label.starts_with(prefix)) {
+            return true;
+        }
+        cursor = world.parent_of(id);
+    }
+    false
+}
+
+#[test]
+fn twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole() {
+    use crate::engine::ecs::component::TransformComponent;
+    use crate::engine::ecs::{EventSignal, SignalKind};
+    use std::sync::{Arc, Mutex};
+    let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
+    let contacts = Arc::new(Mutex::new(Vec::new()));
+    let sink = contacts.clone();
+    scene.systems.rx.add_global_handler_closure(SignalKind::ZoneSwept, move |_, _, signal| {
+        if let Some(EventSignal::ZoneSwept { zone, other_zone, .. }) = signal.event {
+            sink.lock().unwrap().push((zone, other_zone));
+        }
+    });
+    let pivot = named(&scene, "twilight_rooftop_train").unwrap();
+    let yaw = |scene: &Universe| {
+        let q = scene.world.get_component_by_id_as::<TransformComponent>(pivot).unwrap().transform.rotation;
+        2.0 * q[1].atan2(q[3])
+    };
+    // (frame, yaw, contacts so far)
+    let mut track = Vec::new();
+    for frame in 0..420 {
+        scene.update(1.0 / 30.0, &Default::default());
+        track.push((frame, yaw(&scene), contacts.lock().unwrap().len()));
+    }
+    let contacts = contacts.lock().unwrap().clone();
+    let world = &scene.world;
+    // Exactly two arrivals in 14 s: the round hole, then the main building.
+    // Crossing the east building's square openings reports nothing.
+    assert_eq!(contacts.len(), 2, "{contacts:?}");
+    let (zone, round) = contacts[0];
+    assert!(labelled_ancestor(world, zone, "twilight_rooftop_train_car_1_sensor"), "leading car");
+    assert!(labelled_ancestor(world, round, "twilight_rooftop_round_hole_wall_ring_"),
+        "blocked by the ring, not the wall around it");
+    let (zone, main) = contacts[1];
+    assert!(labelled_ancestor(world, zone, "twilight_rooftop_train_car_0_sensor"), "leading car");
+    assert!(labelled_ancestor(world, main, "twilight_rooftop_main"));
+    // Turning points match the geometry: the cars' corners meet the ring at
+    // about 1.222 rad and the main balcony railing at about -1.074 rad.
+    let first = track.iter().position(|&(_, _, n)| n == 1).unwrap();
+    let second = track.iter().position(|&(_, _, n)| n == 2).unwrap();
+    let north = track[..second].iter().map(|&(_, y, _)| y).fold(f32::MIN, f32::max);
+    let south = track[first..].iter().map(|&(_, y, _)| y).fold(f32::MAX, f32::min);
+    assert!((north - 1.222).abs() < 0.03, "north turn {north}");
+    assert!((south + 1.074).abs() < 0.03, "south turn {south}");
+    // Both runs pass the east building (yaw 0) with no contact.
+    assert!(track[..first].iter().any(|&(_, y, _)| y > 0.3));
+    assert!(track[first..second].iter().any(|&(_, y, _)| y < -0.3));
+    // After the second reversal the train heads north again.
+    assert!(track.last().unwrap().1 > south + 0.2);
+}
