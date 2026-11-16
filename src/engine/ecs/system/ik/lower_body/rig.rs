@@ -1,7 +1,7 @@
 //! Immutable rig calibration and ownership release, independent of posture policy.
 use crate::engine::ecs::component::{HumanoidSlot, TransformComponent};
 use crate::engine::ecs::system::HumanoidBoneMapReport;
-use crate::engine::ecs::system::avatar_control_system::{
+use crate::engine::ecs::system::ik::rest_pose::{
     read_bone_rest_pose, rest_model_relative_to,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};

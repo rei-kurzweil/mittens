@@ -7,6 +7,7 @@
 pub mod head_neck_body_constraint;
 mod head_pose_body_xz_follow;
 pub mod lower_body;
+pub(crate) mod rest_pose;
 pub(crate) mod two_bone;
 
 pub use head_neck_body_constraint::{HeadNeckBodyConstraint, HeadNeckBodyConstraintSystem};
