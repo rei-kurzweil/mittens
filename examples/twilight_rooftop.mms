@@ -34,7 +34,7 @@ import { pose as lumae_relaxed_pose } from "../assets/components/characters/luma
 // Two-player LAN/loopback rooftop: the multiplayer-basic baseline (typed pose
 // channels, shared cube and gohei) on the main building's roof. Below it, a
 // train runs a crescent of track through all three buildings and reverses on
-// ZoneSwept contact (see the train section). Without a second
+// ZoneContact (see the train section). Without a second
 // player the session waits as host and the scene runs normally.
 //
 //   MITTENS_MULTIPLAYER_ROLE=host   MITTENS_MULTIPLAYER_NAME=rei cargo run --release -- load examples/twilight_rooftop.mms
@@ -100,7 +100,7 @@ T { name = "twilight_rooftop_ground" box([0.0, -0.48, -13.0], [120.0, 0.5, 120.0
 // east building via a 2.7 m square opening in each facade, and ends at a
 // 2.7 m round hole in the north building. The cars' 1.94 x 2.2 m cross-section
 // fits the square, but its 2.93 m diagonal does not fit the circle: same size,
-// different shape. Contacts come from the box-shaped ZoneSwept sweep, and the
+// different shape. Contacts come from the box-shaped ZoneContact sweep, and the
 // handler reverses the train.
 let quarter_turn = 1.57079633
 let floor_y = 2.0 * storey_height
@@ -149,7 +149,7 @@ for car in [0, 1] {
         T.position(arc_radius, 0.0, 0.0) {
             boxcar(label, [0.0, 0.0, 0.0], car_length, car_width, car_height,
                 [0.55, 0.20, 0.22], [0.18, 0.20, 0.25], [0.68, 0.40, 0.24], hardware, false)
-            boxcar_sensor(label + "_sensor", car_length, car_width, car_height, train_motion)
+            boxcar_sensor(label + "_sensor", car_length, car_width, car_height)
         }
     }
     train_pivot.attach(car_mount)
@@ -159,7 +159,7 @@ train_motion.rotate([0.0, train_speed, 0.0])
 // Contacts north of the arc center are the round hole: head back south.
 // Others are the main building: head north. Idempotent, so a second car or a
 // second ring segment reported before the turn takes effect changes nothing.
-on(train_motion, "ZoneSwept", fn(event) {
+on(train_motion, "ZoneContact", fn(event) {
     let heading = train_speed
     if event.point[2] < arc_center[1] { heading = -train_speed }
     let angular = train_motion.angular()

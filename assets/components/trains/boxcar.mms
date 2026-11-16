@@ -132,14 +132,14 @@ export fn boxcar_train(label, car_length, car_width, car_height, gap, body_color
     }
 }
 
-// A moving car's sweep sensor: one box over the body, roof overhang included,
-// bound to `motion` so `ZoneSwept` reports what the car runs into.
-export fn boxcar_sensor(label, length, width, height, motion) {
+// A moving car's contact sensor: one box over the body, roof overhang included.
+// Under a Velocity-driven transform, `ZoneContact` reports what the car runs into.
+export fn boxcar_sensor(label, length, width, height) {
     return T.position(0.0, height / 2.0, 0.0) {
         name = label + "_mount"
         Zone.cube([width / 2.0 + 0.07, height / 2.0, length / 2.0 + 0.06]) {
             name = label
-            Collidable.static().friction(0.0).velocity(motion) {}
+            Collidable.static().friction(0.0) {}
         }
     }
 }

@@ -330,22 +330,30 @@ component identities and captured offset. Disabled or removed participants
 retire their pairs without delivering stale handles. These signals apply no
 contact response. See [Zone observation rules](../../task/zone-enter-events-and-teleport-pits.md).
 
-#### `ZoneSwept`
-<!-- catalog:signal source="ZoneSwept" kind="event" mms="observable-payload" -->
+#### `ZoneContact`
+<!-- catalog:signal source="ZoneContact" kind="event" mms="observable-payload" -->
 
-Emitted when a zone whose `Collidable` is bound to a `Velocity` with
-`Collidable.velocity(ref)` sweeps into static geometry during a fixed velocity
-step. Scoped to the moving zone, so handlers on the zone or any ancestor
+Emitted when a moving zone with a `Collidable` runs into static geometry. A
+zone is moving when a `Velocity` drives a transform above it; nothing else is
+authored. Scoped to the moving zone, so handlers on the zone or any ancestor
 receive it. The sweep is continuous: a thin wall crossed between steps is
-still reported. Linear and angular motion of the bound velocity's target are
-both swept, so a zone carried around a yawing pivot sees what it passes.
+still reported. Linear and angular motion are both swept, so a zone carried
+around a yawing pivot sees what it passes, and an outer `Velocity` carries
+zones below nested ones.
 
-Payload: `zone`, `collidable`, `velocity`, `other_zone`, `other_collidable`,
+`ZoneEntered`/`ZoneExited` answer "is something inside this region?" for
+sensor zones. `ZoneContact` answers "did this moving zone hit something solid?"
+and is a single moment with no matching exit.
+
+Payload: `zone`, `collidable`, `velocity` (the one whose step made contact),
+`other_zone`, `other_collidable`,
 `point` (world contact point on the other surface), `normal` (world, facing
 the mover), and `fraction` (`[0, 1]` along the step).
 
-- **Opt-in and cost.** Nothing is swept unless a `ZoneSwept` handler can
-  observe the moving zone, either scoped to it or an ancestor, or global.
+- **Opt-in and cost.** Nothing is swept unless a `ZoneContact` handler can
+  observe the moving zone, either scoped to it or an ancestor, or global. A
+  global handler sweeps every moving zone. Which zones a Velocity carries is
+  cached and recomputed only when the scene structure changes.
 - **Shapes.** Cube zones sweep as oriented boxes against box surfaces at any
   rotation; flush contact counts as clear. Sphere zones use the sphere sweep.
   Damaged triangle meshes are not box-swept, and capsules are skipped rather
@@ -355,11 +363,12 @@ the mover), and `fraction` (`[0, 1]` along the step).
   contact per mover per step is delivered.
 - **Observational.** The event never stops, truncates, or reverses motion;
   the handler owns the response. Surfaces under the velocity's own target
-  are ignored.
+  are ignored. Only the moving zone hears the event; a static zone that was
+  hit is not notified.
 
 ```mms parse-only
-let motion = Velocity { T { Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().velocity("/[name='motion']") {} } } }
-on(motion, "ZoneSwept", fn(event) { print(event.other_zone) })
+let motion = Velocity { T { Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} } } }
+on(motion, "ZoneContact", fn(event) { print(event.other_zone) })
 motion
 ```
 

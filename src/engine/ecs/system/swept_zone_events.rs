@@ -1,14 +1,15 @@
-//! Generic `ZoneSwept` producer: velocity-bound collidables report the static
-//! geometry their zone sweeps into during a fixed step.
+//! `ZoneContact` producer for moving zones: a collidable zone carried by a
+//! `Velocity` reports the static geometry it sweeps into during a fixed step.
 //!
-//! Opt-in is `Collidable.velocity(ref)`. Nothing is enumerated or queried
-//! unless a `ZoneSwept` handler can observe the moving zone. The producer is
+//! A zone is moving when a `Velocity` drives a transform above it; nothing is
+//! authored beyond the listener. The zone-to-velocity map is rebuilt only when
+//! the world's structure changes, and nothing is enumerated or queried unless a
+//! `ZoneContact` handler can observe the moving zone. The producer is
 //! observational: it never changes motion, and the handler owns the response.
 use super::collidable_bvh::CollidableBvh;
 use super::{TransformSystem, box_sweep, zone_query};
 use crate::engine::ecs::component::{
-    CollidableComponent, CollisionShape, QueryRootMode, VelocityComponent, ZoneComponent,
-    resolve_component_ref,
+    CollidableComponent, CollisionShape, VelocityComponent, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, ListenerGate, SignalEmitter, World};
 use crate::utils::math;
@@ -19,7 +20,8 @@ type Matrix = [[f32; 4]; 4];
 #[derive(Debug, Default)]
 pub(super) struct SweptZoneEvents {
     gate: ListenerGate,
-    /// Velocity id -> bound (collidable, zone), valid for `revision`.
+    /// Velocity id -> (collidable, zone) it carries, valid for `revision`.
+    /// Nested velocities each list the zones beneath them.
     bound: HashMap<ComponentId, Vec<(ComponentId, ComponentId)>>,
     revision: Option<u64>,
     /// Surfaces each mover touched on its latest swept step; a contact is
@@ -37,7 +39,7 @@ impl SweptZoneEvents {
         self.gate = gate;
     }
 
-    /// True when `velocity` drives a bound collidable and a listener exists.
+    /// True when `velocity` carries a collidable zone and a listener exists.
     pub fn observes(&mut self, world: &World, velocity: ComponentId) -> bool {
         if !self.gate.any() {
             return false;
@@ -52,35 +54,31 @@ impl SweptZoneEvents {
         self.revision = Some(world.query_revision());
         self.bound.clear();
         for collidable in world.collidable_ids() {
-            let Some(source) = world
-                .get_component_by_id_as::<CollidableComponent>(collidable)
-                .and_then(|c| c.velocity_source.as_ref())
-            else {
-                continue;
-            };
-            let Some(velocity) =
-                resolve_component_ref(world, source, Some(collidable), QueryRootMode::SelfSubtree)
-                    .filter(|&id| world.get_component_by_id_as::<VelocityComponent>(id).is_some())
-            else {
-                continue;
-            };
             let Some(zone) = world
                 .parent_of(collidable)
                 .filter(|&id| world.get_component_by_id_as::<ZoneComponent>(id).is_some())
             else {
                 continue;
             };
-            self.bound
-                .entry(velocity)
-                .or_default()
-                .push((collidable, zone));
+            // A Velocity moves the zone when its driven transform is on the
+            // zone's ancestor path.
+            let (mut child, mut cursor) = (zone, world.parent_of(zone));
+            while let Some(id) = cursor {
+                if world.get_component_by_id_as::<VelocityComponent>(id).is_some()
+                    && super::VelocitySystem::driven_transform(world, id).ok() == Some(child)
+                {
+                    self.bound.entry(id).or_default().push((collidable, zone));
+                }
+                child = id;
+                cursor = world.parent_of(id);
+            }
         }
         let bound = &self.bound;
         self.touching
             .retain(|id, _| bound.values().flatten().any(|(collidable, _)| collidable == id));
     }
 
-    /// Sweep every observed zone bound to `velocity` across `motion`, the
+    /// Sweep every observed zone carried by `velocity` across `motion`, the
     /// world-space transform this step applies to the driven target.
     pub fn observe(
         &mut self,
@@ -180,7 +178,7 @@ impl SweptZoneEvents {
             if let Some((other_collidable, hit)) = nearest_new {
                 emit.push_event(
                     zone,
-                    EventSignal::ZoneSwept {
+                    EventSignal::ZoneContact {
                         zone,
                         collidable,
                         velocity,
@@ -226,7 +224,7 @@ pub(super) fn step_motion(parent: Matrix, start: Matrix, end: Matrix) -> Option<
 #[cfg(test)]
 mod tests {
     use crate::engine::ecs::component::{
-        CollidableComponent, ComponentRef, TransformComponent, VelocityComponent, ZoneComponent,
+        CollidableComponent, TransformComponent, VelocityComponent, ZoneComponent,
     };
     use crate::engine::ecs::system::{
         CameraSystem, LightSystem, TransformOperatorSystem, TransformSystem, VelocitySystem,
@@ -255,21 +253,23 @@ mod tests {
         );
     }
 
-    /// A unit box sensor 10 m from a thin wall, driven at `linear` m/s.
-    fn fixture(linear: [f32; 3], bind: bool) -> Fixture {
+    /// A unit box sensor 10 m from a thin wall. When `carried`, it rides the
+    /// Velocity's driven transform at `linear` m/s; otherwise the Velocity
+    /// drives an empty transform and the sensor stays put.
+    fn fixture(linear: [f32; 3], carried: bool) -> Fixture {
         let mut world = World::default();
         let mut velocity = VelocityComponent::new();
         velocity.linear_local_mps = linear;
         let owner = world.add_component(velocity);
         let target = world.add_component(TransformComponent::new().with_position(0.0, 0.0, 10.0));
         let zone = world.add_component(ZoneComponent::cube([0.5, 0.5, 0.5]));
-        let guid = world.get_component_record(owner).unwrap().guid;
-        let mut sensor = CollidableComponent::static_();
-        if bind {
-            sensor = sensor.velocity(ComponentRef::Guid(guid));
+        let collidable = world.add_component(CollidableComponent::static_());
+        if carried {
+            world.add_child(owner, target).unwrap();
+        } else {
+            let driven = world.add_component(TransformComponent::new());
+            world.add_child(owner, driven).unwrap();
         }
-        let collidable = world.add_component(sensor);
-        world.add_child(owner, target).unwrap();
         world.add_child(target, zone).unwrap();
         world.add_child(zone, collidable).unwrap();
         let frame = world.add_component(TransformComponent::new());
@@ -296,7 +296,7 @@ mod tests {
         let mut system = VelocitySystem::default();
         let mut events = Vec::new();
         for _ in 0..360 {
-            system.set_swept_zone_listeners(rx.listener_gate(SignalKind::ZoneSwept));
+            system.set_swept_zone_listeners(rx.listener_gate(SignalKind::ZoneContact));
             system.step(&mut f.world, rx);
             propagate(&mut f.world, f.target);
             events.extend(rx.drain_ready_events().into_iter().filter_map(|s| s.event));
@@ -305,7 +305,7 @@ mod tests {
     }
 
     fn listen(rx: &mut RxWorld, scope: ComponentId) {
-        rx.add_handler_closure(SignalKind::ZoneSwept, scope, |_, _, _| {});
+        rx.add_handler_closure(SignalKind::ZoneContact, scope, |_, _, _| {});
     }
 
     #[test]
@@ -317,7 +317,7 @@ mod tests {
         assert!(queries > 0);
         // The sensor keeps pushing through the wall: one event, not one per step.
         assert_eq!(events.len(), 1, "{events:?}");
-        let EventSignal::ZoneSwept {
+        let EventSignal::ZoneContact {
             zone,
             collidable,
             velocity,
@@ -343,7 +343,7 @@ mod tests {
     fn global_listener_observes_every_bound_mover() {
         let mut f = fixture([0.0, 0.0, -6.0], true);
         let mut rx = RxWorld::default();
-        rx.add_global_handler_closure(SignalKind::ZoneSwept, |_, _, _| {});
+        rx.add_global_handler_closure(SignalKind::ZoneContact, |_, _, _| {});
         assert_eq!(run(&mut f, &mut rx).0.len(), 1);
     }
 
@@ -360,12 +360,54 @@ mod tests {
     }
 
     #[test]
-    fn listener_without_velocity_binding_emits_nothing() {
+    fn zone_not_carried_by_a_velocity_is_not_swept() {
         let mut f = fixture([0.0, 0.0, -6.0], false);
         let mut rx = RxWorld::default();
         listen(&mut rx, f.target);
         let (events, queries) = run(&mut f, &mut rx);
         assert!(events.is_empty() && queries == 0, "{events:?} {queries}");
+    }
+
+    #[test]
+    fn zone_beside_the_driven_transform_is_not_carried() {
+        // Velocity { T(driven) Gravity { T { Zone } } }: the zone is below the
+        // Velocity, but not below the transform it moves.
+        let mut f = fixture([0.0, 0.0, -6.0], false);
+        let gravity = f.world.add_component(
+            crate::engine::ecs::component::GravityComponent::new(),
+        );
+        f.world.add_child(f.owner, gravity).unwrap();
+        f.world.add_child(gravity, f.target).unwrap();
+        propagate(&mut f.world, f.target);
+        let mut rx = RxWorld::default();
+        listen(&mut rx, f.owner);
+        let (events, queries) = run(&mut f, &mut rx);
+        assert!(events.is_empty() && queries == 0, "{events:?} {queries}");
+    }
+
+    #[test]
+    fn outer_velocity_carries_zones_below_a_nested_velocity() {
+        // Velocity(outer) { T { Velocity(inner, still) { T(target) { Zone } } } }
+        let mut f = fixture([0.0; 3], true);
+        let mut outer = VelocityComponent::new();
+        outer.linear_local_mps = [0.0, 0.0, -6.0];
+        let outer = f.world.add_component(outer);
+        let carrier = f.world.add_component(TransformComponent::new());
+        f.world.add_child(outer, carrier).unwrap();
+        f.world.add_child(carrier, f.owner).unwrap();
+        propagate(&mut f.world, carrier);
+        let mut rx = RxWorld::default();
+        listen(&mut rx, f.zone);
+        let mut system = VelocitySystem::default();
+        let mut events = Vec::new();
+        for _ in 0..360 {
+            system.set_swept_zone_listeners(rx.listener_gate(SignalKind::ZoneContact));
+            system.step(&mut f.world, &mut rx);
+            propagate(&mut f.world, carrier);
+            events.extend(rx.drain_ready_events().into_iter().filter_map(|s| s.event));
+        }
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert!(matches!(events[0], EventSignal::ZoneContact { velocity, .. } if velocity == outer));
     }
 
     #[test]
