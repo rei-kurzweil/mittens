@@ -39,6 +39,10 @@ pub struct CollidableComponent {
     pub enabled: bool,
     /// Runtime self-filtering owner, independent of any response target.
     pub query_owner: Option<ComponentId>,
+    /// Runtime only: drop the vertical part of this mover's contact
+    /// corrections. Generated torso spheres use it so floor support stays
+    /// with the capsule and a low body never pushes the player up or down.
+    pub horizontal_correction: bool,
     /// Coulomb friction coefficient supplied by a static surface; zero is frictionless.
     pub friction: f32,
     pub movement_target_source: Option<ComponentRef>,
@@ -69,6 +73,7 @@ impl CollidableComponent {
             },
             enabled: true,
             query_owner: None,
+            horizontal_correction: false,
             friction: 0.0,
             movement_target_source: None,
             movement_target_id: None,

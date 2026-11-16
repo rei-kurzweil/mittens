@@ -939,3 +939,50 @@ fn profile_original_scan_against_retained_bvh() {
 
 #[path = "static_contact_read_only_tests.rs"]
 mod read_only;
+
+#[test]
+fn horizontal_correction_never_moves_the_target_vertically() {
+    // A sphere sunk into a thin floor beside a wall: a normal mover is pushed
+    // out of the floor, a horizontal-only mover is pushed only off the wall.
+    for horizontal in [false, true] {
+        let mut world = World::default();
+        add_zone(
+            &mut world,
+            [0.0, -0.05, 0.0],
+            CollisionShape::cube_half_extents([5.0, 0.05, 5.0]),
+            CollidableMode::Static,
+        );
+        add_zone(
+            &mut world,
+            [0.6, 0.5, 0.0],
+            CollisionShape::cube_half_extents([0.2, 0.5, 2.0]),
+            CollidableMode::Static,
+        );
+        let (mover, zone) = add_zone(
+            &mut world,
+            [0.25, -0.02, 0.0],
+            CollisionShape::sphere_radius(0.2),
+            CollidableMode::Slide,
+        );
+        let collider = world.children_of(zone)[0];
+        world
+            .get_component_by_id_as_mut::<CollidableComponent>(collider)
+            .unwrap()
+            .horizontal_correction = horizontal;
+        StaticContactSystem::default().tick(&mut world);
+        let local = world
+            .get_component_by_id_as::<TransformComponent>(mover)
+            .unwrap()
+            .transform
+            .translation;
+        if horizontal {
+            assert_eq!(local[1], -0.02, "no vertical push: {local:?}");
+            assert!(local[0] < 0.25, "still pushed off the wall: {local:?}");
+        } else {
+            assert!(
+                local[1] > 0.1,
+                "a normal mover is lifted out of the floor: {local:?}"
+            );
+        }
+    }
+}

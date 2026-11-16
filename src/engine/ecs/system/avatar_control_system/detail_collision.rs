@@ -74,6 +74,7 @@ pub(super) fn ensure_detail_spheres(
         let mut collider = CollidableComponent::slide().with_runtime_movement_target(target);
         collider.response = response;
         collider.query_owner = Some(id);
+        collider.horizontal_correction = true;
         collider.enabled = false;
         let collidable = world.add_component(collider);
         let _ = world.set_parent(frame, Some(bone));
