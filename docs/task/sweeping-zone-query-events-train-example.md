@@ -2,7 +2,47 @@
 
 Date: 2026-11-12
 
-Status: in progress (slice 1 implemented)
+Status: slices 1-3 implemented. The moving demo lives in
+`examples/twilight_rooftop.mms`; `examples/sweeping-zone-query-events.mms`
+keeps the inert slice 1 scene.
+
+## Implementation status (2026-11-15)
+
+- **Event:** `ZoneSwept` (`src/engine/ecs/system/swept_zone_events.rs`),
+  documented in the [signal guide](../how_to/guide/signals.md#zoneswept). It
+  is observational, scoped to the moving zone, and reported once when a contact
+  begins (nearest new contact per mover per step).
+- **Opt-in and gate:** `Collidable.velocity(ref)` binds the velocity. The
+  `ListenerGate` from the review branch is snapshotted once per frame; with no
+  `ZoneSwept` handler on the zone, an ancestor, or globally, no binding is
+  resolved and no query runs.
+- **Motion:** each step sweeps the zone's world pose from before to after
+  the velocity's linear and angular motion, so a zone on a yawing pivot is
+  swept along its arc (one chord per fixed step, orientation sampled at the
+  step start).
+- **Shapes:** cube zones sweep as oriented boxes against box surfaces at any
+  rotation (`box_sweep.rs`, 15-axis SAT, exact for translation). Spheres reuse
+  the sphere sweep. Damaged meshes are not box-swept; capsules are skipped.
+- **Shared index:** the producer reuses the projectile path's `CollidableBvh`
+  instead of adding another consumer of `World::take_contact_changes`.
+  `ProjectileHit` is deprecated and unchanged.
+- **Scene:** a crescent of track (radius 13 m) from the main building's balcony
+  railing, through 2.7 m square openings in the east building, to a 2.7 m
+  round hole in the north building. The 1.94 x 2.2 m cars fit the square, but
+  their 2.93 m diagonal is blocked by the circle. The MMS handler reverses the
+  train at each end.
+- **Tests:** `box_sweep` (square vs round aperture, clearance, fast
+  crossing, overlap, edge axes), `swept_zone_events` (gate, identities, once
+  per contact, miss, angular sweep), and
+  `twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole`.
+
+### Known gaps
+
+- The static contact system and the projectile/swept index each drain
+  `World::take_contact_changes`, so whichever syncs second can miss refits of
+  moved static surfaces. That predates this work. The train's own sensors are
+  excluded from its sweep, so the demo is unaffected.
+- Moving targets are treated at their current pose, with no relative-motion sweep.
 
 Related:
 

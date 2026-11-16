@@ -64,13 +64,68 @@ fn combined_ceramic(label, parts, count, color, material) {
     }
 }
 
-fn building_columns(data, y, height, width, depth) {
+// Facade opening on `floor`: `axis` "z" is a front/back facade at
+// z = side * depth / 2 spanning X; "x" is a side facade spanning Z. The gap is
+// [center - width / 2, center + width / 2] along the facade and rises `height`
+// from the floor; a header fills the rest of the window band.
+fn facade_opening(openings, floor, axis, side) {
+    let found = null
+    if openings != null {
+        for opening in openings {
+            if opening.floor == floor && opening.axis == axis && opening.side == side { found = opening }
+        }
+    }
+    return found
+}
+
+// One horizontal facade band, split around an opening when present.
+fn facade_band(data, opening, axis, side, offset, span, y, height, trim) {
+    let intervals = [[-span / 2.0, span / 2.0]]
+    if opening != null {
+        intervals = [[-span / 2.0, opening.center - opening.width / 2.0], [opening.center + opening.width / 2.0, span / 2.0]]
+    }
+    for interval in intervals {
+        let length = interval[1] - interval[0]
+        if length > 0.01 {
+            let along = (interval[0] + interval[1]) / 2.0
+            if axis == "z" {
+                building_box(data, [along, y, side * offset], [length, height, 0.24], trim)
+            } else {
+                building_box(data, [side * offset, y, along], [0.24, height, length], trim)
+            }
+        }
+    }
+}
+
+fn opening_header(data, opening, offset, y) {
+    let band_top = 2.8
+    if opening.height < band_top {
+        let height = band_top - opening.height
+        let header_y = y + opening.height + height / 2.0
+        if opening.axis == "z" {
+            building_box(data, [opening.center, header_y, opening.side * offset], [opening.width, height, 0.24], false)
+        } else {
+            building_box(data, [opening.side * offset, header_y, opening.center], [0.24, height, opening.width], false)
+        }
+    }
+}
+
+fn column_clear(opening, along) {
+    if opening == null { return true }
+    return Math.abs(along - opening.center) > opening.width / 2.0 + 0.16
+}
+
+fn building_columns(data, y, height, width, depth, openings, floor) {
     for column in range(4) {
         let x = -width / 2.0 + column * width / 3.0
         let z = -depth / 2.0 + column * depth / 3.0
         for side in [-1.0, 1.0] {
-            building_box(data, [x, y, side * depth / 2.0], [0.32, height, 0.32], false)
-            building_box(data, [side * width / 2.0, y, z], [0.32, height, 0.32], false)
+            if column_clear(facade_opening(openings, floor, "z", side), x) {
+                building_box(data, [x, y, side * depth / 2.0], [0.32, height, 0.32], false)
+            }
+            if column_clear(facade_opening(openings, floor, "x", side), z) {
+                building_box(data, [side * width / 2.0, y, z], [0.32, height, 0.32], false)
+            }
         }
     }
 }
@@ -134,7 +189,7 @@ fn stairwell_flights(data, y, slab) {
     building_box(data, [-3.6, y + 1.6 - slab / 2.0, 5.0], [4.4, slab, 1.2], false)
 }
 
-fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell) {
+fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings) {
     let width = 14.0
     let depth = 12.0
     let storey = 3.2
@@ -176,17 +231,21 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
             // Horizontal spandrels leave 1.95 m of open window height.
             for side in [-1.0, 1.0] {
                 // Front/back facades along Z; columns are emitted separately.
-                building_box(floor_data, [0.0, y + 0.45, side * depth / 2.0], [width, 0.9, 0.24], false)
+                let front_opening = facade_opening(openings, floor, "z", side)
+                facade_band(floor_data, front_opening, "z", side, depth / 2.0, width, y + 0.45, 0.9, false)
                 building_box(floor_data, [0.0, y + 3.0, side * depth / 2.0], [width, 0.4, 0.24], true)
+                if front_opening != null { opening_header(floor_data, front_opening, depth / 2.0, y) }
                 // Street-facing facade has a door-sized opening on the ground floor.
+                let side_opening = facade_opening(openings, floor, "x", side)
                 if floor == 0 && side == street_side {
                     for end in [-1.0, 1.0] {
                         building_box(floor_data, [side * width / 2.0, y + 0.45, end * 4.0], [0.24, 0.9, 4.0], false)
                     }
                 } else {
-                    building_box(floor_data, [side * width / 2.0, y + 0.45, 0.0], [0.24, 0.9, depth], false)
+                    facade_band(floor_data, side_opening, "x", side, width / 2.0, depth, y + 0.45, 0.9, false)
                 }
                 building_box(floor_data, [side * width / 2.0, y + 3.0, 0.0], [0.24, 0.4, depth], true)
+                if side_opening != null { opening_header(floor_data, side_opening, width / 2.0, y) }
             }
             if floor > 0 {
                 // One continuous balcony per storey, facing the street.
@@ -197,12 +256,12 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
                     building_box(floor_data, [x, y + 0.48, end * 5.45], [1.9, 0.96, 0.14], false)
                 }
             }
-            if per_floor { building_columns(floor_data, y + storey / 2.0, storey, width, depth) }
+            if per_floor { building_columns(floor_data, y + storey / 2.0, storey, width, depth, openings, floor) }
         }
     }
     // Distant buildings keep continuous columns and one combined pair overall.
     if !per_floor {
-        building_columns(data, (height + first_floor * storey) / 2.0, height - first_floor * storey, width, depth)
+        building_columns(data, (height + first_floor * storey) / 2.0, height - first_floor * storey, width, depth, null, -1)
     }
     let roof_data = data
     let stair_data = data
@@ -251,11 +310,17 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
 }
 
 export fn pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor) {
-    return build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, false)
+    return build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, false, null)
+}
+
+// Full-detail, floor-batched building with facade openings (see facade_opening).
+// Openings exist in the collision boxes too, not only in the visuals.
+export fn pool_building_with_openings(label, origin, floors, street_side, tiles, trim_color, openings) {
+    return build_pool_building(label, origin, floors, street_side, false, tiles, trim_color, true, true, false, openings)
 }
 
 // Full-detail, floor-batched variant with a continuous ground-to-roof stairwell.
 // Existing pool_building callers retain their original slabs and top-floor stairs.
 export fn pool_building_with_stairs(label, origin, floors, street_side, tiles, trim_color) {
-    return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true)
+    return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true, null)
 }
