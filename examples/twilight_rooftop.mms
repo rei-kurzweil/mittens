@@ -168,8 +168,16 @@ on(train_motion, "ZoneContact", fn(event) {
 })
 
 // The roof faces west over open air, so the reflected side stays clear.
-T.position(roof_x - 7.6, roof_height + 2.0, 0.0).rotation(0.0, quarter_turn, 0.0).scale(6.0, 2.8, 1.0) {
-    R.plane() { Mirror.quality(1024) { name = "twilight_rooftop_mirror" } }
+// Grab it (XR grip or desktop left mouse) to move it; it keeps its world pose.
+T.position(roof_x - 7.6, roof_height + 2.0, 0.0).rotation(0.0, quarter_turn, 0.0) {
+    name = "twilight_rooftop_mirror_frame"
+    Grabbable {}
+    T.scale(6.0, 2.8, 1.0) {
+        R.plane() {
+            Raycastable.enabled()
+            Mirror.quality(1024) { name = "twilight_rooftop_mirror" }
+        }
+    }
 }
 
 // Status board.
