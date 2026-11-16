@@ -1,7 +1,6 @@
 //! Normalized eyelid closure and opt-in provider-independent idle blinking.
 use super::*;
 #[cfg(test)]
-#[path = "avatar_eye_blink_tests.rs"]
 mod tests;
 /// The newest normalized closure for each eye owns its mapped blink target
 /// while present. The base value is never overwritten, so removing/loss of a

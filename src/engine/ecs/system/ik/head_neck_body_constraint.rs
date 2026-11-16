@@ -10,7 +10,7 @@ use crate::engine::ecs::component::{
     AvatarControlComponent, InputComponent, InputXRComponent, TransformComponent,
 };
 use crate::engine::ecs::system::AttachmentSystem;
-use crate::engine::ecs::system::avatar_control_system::{
+use crate::engine::ecs::system::ik::rest_pose::{
     read_bone_rest_pose, rest_model_relative_to,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
