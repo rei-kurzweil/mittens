@@ -247,6 +247,8 @@ fn make_player(prefix, local_player, avatar) {
         // Match camera-bearing and camera-free rigs' eye-to-head calibration.
         eye_offset([0.0, 0.08, 0.12])
         crouch_enabled(true)
+        // Get low enough and crouching gives way to hands and knees.
+        posture("auto")
         crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
         WalkingIK { step_scale(1.3) }
         if !local_player { collision_response("read_only") }

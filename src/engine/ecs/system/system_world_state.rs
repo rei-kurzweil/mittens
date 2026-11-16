@@ -70,6 +70,8 @@ pub struct SystemWorld {
     pub avatar_control: AvatarControlSystem,
     pub head_neck_body_constraint: HeadNeckBodyConstraintSystem,
     pub lower_body_ik: crate::engine::ecs::system::LowerBodyIkSystem,
+    pub upper_body_ik: crate::engine::ecs::system::ik::UpperBodyIkSystem,
+    pub body_solver: crate::engine::ecs::system::ik::BodySolverSystem,
     pub ik: IKSystem,
     pub secondary_motion: SecondaryMotionSystem,
     pub secondary_motion_constraint: SecondaryMotionConstraintSystem,

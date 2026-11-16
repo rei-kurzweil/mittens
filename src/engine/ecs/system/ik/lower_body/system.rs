@@ -30,6 +30,10 @@ pub(super) struct LowerBodyInstance {
     walking: WalkingState,
     airborne: super::airborne::AirborneState,
     sole_offsets: Option<[[f32; 3]; 2]>,
+    /// Set from the body solver: kneel instead of standing/crouching, on the
+    /// body solver's last known floor when this system has lost its own.
+    kneeling: bool,
+    kneel_floor: Option<f32>,
 }
 impl LowerBodyIkSystem {
     pub fn register(&mut self, id: ComponentId) {
@@ -43,6 +47,17 @@ impl LowerBodyIkSystem {
     }
     pub fn feet(&self, id: ComponentId) -> Option<&[FootState; 2]> {
         self.avatars.get(&id)?.feet.as_ref()
+    }
+    /// Kneel each avatar the body solver has mostly blended into horizontal.
+    pub fn sync_modes(&mut self, body: &crate::engine::ecs::system::ik::body::BodySolverSystem) {
+        for (&id, instance) in &mut self.avatars {
+            let kneeling = body.weight(id) >= 0.5;
+            instance.kneel_floor = body.floor(id);
+            if kneeling != instance.kneeling {
+                instance.kneeling = kneeling;
+                instance.walking.reset();
+            }
+        }
     }
     pub fn walking(&self, id: ComponentId) -> Option<WalkingDiagnostics> {
         Some(self.avatars.get(&id)?.walking.diagnostics())
@@ -141,6 +156,7 @@ impl LowerBodyIkSystem {
                 (_, Some(status), _) => Err(status),
                 (Some(rig), None, Ok(config)) => solve_frame(
                     rig,
+                    instance.kneeling.then_some(instance.kneel_floor),
                     &mut instance.walking,
                     &mut instance.airborne,
                     previous_floor,
@@ -253,6 +269,7 @@ fn walking_settings(
 
 fn solve_frame(
     rig: &mut LowerBodyRig,
+    kneeling: Option<Option<f32>>,
     walking: &mut WalkingState,
     airborne: &mut super::airborne::AirborneState,
     previous_floor: Option<f32>,
@@ -338,6 +355,18 @@ fn solve_frame(
         candidates,
     )?;
     let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
+    if let Some(kneel_floor) = kneeling.filter(|_| !flying) {
+        walking.reset();
+        return super::kneel::solve(
+            rig,
+            bases,
+            &ground,
+            previous_floor.or(kneel_floor),
+            body.rotation_quat_xyzw,
+            avatar.crouch_knee_limit,
+            emit,
+        );
+    }
     let rest = std::array::from_fn::<_, 2, _>(|i| {
         crouch::evaluate(
             FootGoal {

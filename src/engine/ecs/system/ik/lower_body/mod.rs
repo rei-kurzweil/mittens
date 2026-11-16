@@ -1,6 +1,7 @@
 //! Shared lower-body ownership. Policies produce goals; one system writes legs.
 mod airborne;
 mod crouch;
+mod kneel;
 mod leg;
 mod rig;
 mod support;

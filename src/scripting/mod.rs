@@ -74,6 +74,9 @@ mod paper_craft_screen_tests;
 mod display_car_tests;
 
 #[cfg(test)]
+mod body_solver_scene_tests;
+
+#[cfg(test)]
 mod lumae_pacing_tests;
 
 #[cfg(test)]

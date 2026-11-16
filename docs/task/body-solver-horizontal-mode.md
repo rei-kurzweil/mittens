@@ -1,9 +1,48 @@
 # Body solver: vertical and horizontal modes
 
-Status: proposed. Depends on the
-[avatar control system split](avatar-control-system-module-split.md).
+Status: first slice implemented (hands and knees, holding still). Builds on
+the [avatar control system split](avatar-control-system-module-split.md).
 Narrows the posture table in
 [avatar posture tracking inventory](avatar-posture-tracking-inventory.md).
+
+## Implementation status (2026-11-16)
+
+- **Opt-in:** `AVC.posture("vertical" | "auto" | "horizontal")`, default
+  `"vertical"`, so existing scenes are unchanged. `examples/twilight_rooftop.mms`
+  uses `"auto"`.
+- **Body solver** (`ik/body/`): picks the mode with hysteresis (enter below
+  0.42 of standing head height, or below 0.55 once the lower body reports
+  `Limited`; exit above 0.6; 0.4 s minimum per mode) and blends over 0.35 s.
+  It finds the torso pitch by bisection so the hip joints sit one thigh length
+  plus knee clearance above the floor, clamped to 100°. It keeps the last
+  known floor across lost support.
+- **Upper body solver** (`ik/upper_body/`): binds the spine rig (hips, spine,
+  chest, upper chest) and writes the pitch, half at the pelvis and the rest
+  split evenly over the three spine bones, all about the avatar's left axis.
+  It is the only torso writer; the body solver decides, it applies.
+- **No change to the head/neck closure:** it already reads the neck parent's
+  live pose, so a pitched torso written before it runs makes it place the
+  root under the head.
+- **Lower body** (`ik/lower_body/kneel.rs`): at blend weight ≥ 0.5, knees go
+  on the floor under the hip joints, shins lie flat behind, and feet turn over
+  to point back. The floor carries over from standing (or the body solver's
+  memory); a fresh query only replaces it within 0.3 m.
+- **VRoid map:** spine, chest, upper chest and shoulders are now mapped.
+- **Test:** `body_solver_scene_tests` lowers the twilight remote avatar's head
+  target to 0.7 m and checks horizontal mode, knees and ankles on the roof, a
+  near-horizontal torso, and a clean return to vertical.
+
+### Not yet
+
+- Hands are not planted. Tracked VR hands follow the controllers as before;
+  untracked hands do nothing special. The arm binding stays in
+  `avatar_control_system/arm_ik.rs` until planted hands need it.
+- Desktop has no way to lower the head, so horizontal mode is only reachable
+  in XR (`"horizontal"` forces the mode, but with a standing head the torso
+  stays upright).
+- The neck bend is still computed against the root, not the pitched chest.
+- While kneeling on a remembered floor the lower body can report `NoSupport`.
+- No crawling gait, lying down, or torso collider yet.
 
 ## Terminology
 
