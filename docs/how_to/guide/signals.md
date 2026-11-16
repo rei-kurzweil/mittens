@@ -377,6 +377,23 @@ on(motion, "ZoneContact", fn(event) { print(event.other_zone) })
 motion
 ```
 
+#### `PostureChanged`
+<!-- catalog:signal source="PostureChanged" kind="event" mms="observable-payload" -->
+
+Emitted when the body solver switches an avatar's posture, scoped to its
+`AvatarControl`. Payload: `avatar`, `mode` and `previous` (`"vertical"` or
+`"horizontal"`), `pose` (`"standing"` or `"hands_and_knees"`; lying poses
+will join horizontal later), and `reason` (`"head_height"`,
+`"crouch_exhausted"`, or `"forced"` by `AVC.posture(...)`). It fires when the
+switch is decided; the visible blend takes about 0.35 s after it. The solvers
+themselves share mode state directly and do not depend on this event.
+
+```mms parse-only
+let avatar = AVC.posture("auto") {}
+on(avatar, "PostureChanged", fn(e) { print(e.pose) })
+avatar
+```
+
 #### `MountStarted`
 <!-- catalog:signal source="MountStarted" kind="event" mms="observable-payload" -->
 **Event.** `AttachmentSystem` committed a Rider-to-Mountable relationship. The

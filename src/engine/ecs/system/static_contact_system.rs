@@ -129,6 +129,9 @@ impl StaticContactSystem {
             let read_only = world
                 .get_component_by_id_as::<CollidableComponent>(collidable_id)
                 .is_some_and(|c| c.response == CollisionResponse::ReadOnly);
+            let horizontal_only = world
+                .get_component_by_id_as::<CollidableComponent>(collidable_id)
+                .is_some_and(|c| c.horizontal_correction);
             // This fallback is only an owner/filter reference for observation.
             // A read-only body never gains a response target from geometry.
             let target = movement_target(world, collidable_id, moving).or_else(|| {
@@ -193,7 +196,7 @@ impl StaticContactSystem {
                     } else {
                         None
                     };
-                    let displacement = if let Some(hit) = sweep {
+                    let mut displacement = if let Some(hit) = sweep {
                         let motion: [f32; 3] =
                             std::array::from_fn(|i| desired_center[i] - previous[i]);
                         let remaining: [f32; 3] = motion.map(|v| v * (1.0 - hit.fraction));
@@ -204,6 +207,9 @@ impl StaticContactSystem {
                             .translation(desired_center, shape)
                             .unwrap_or([0.0; 3])
                     };
+                    if horizontal_only {
+                        displacement[1] = 0.0;
+                    }
                     self.exact_test_time += exact.map(|t| t.elapsed()).unwrap_or_default();
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;

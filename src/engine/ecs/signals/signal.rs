@@ -218,6 +218,18 @@ pub enum EventSignal {
         rider: ComponentId,
         mountable: ComponentId,
     },
+    /// The body solver switched an avatar's posture. Scoped to the AVC.
+    /// Outward-facing only: solvers share mode state directly.
+    PostureChanged {
+        avatar: ComponentId,
+        /// "vertical" | "horizontal"
+        mode: &'static str,
+        previous: &'static str,
+        /// "standing" | "hands_and_knees"
+        pose: &'static str,
+        /// "head_height" | "crouch_exhausted" | "forced"
+        reason: &'static str,
+    },
 
     /// A previously active Rider-to-Mountable attachment ended.
     MountEnded {
@@ -448,6 +460,7 @@ impl EventSignal {
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
             EventSignal::ZoneContact { .. } => SignalKind::ZoneContact,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
+            EventSignal::PostureChanged { .. } => SignalKind::PostureChanged,
             EventSignal::MountEnded { .. } => SignalKind::MountEnded,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::ToggleChanged { .. } => SignalKind::ToggleChanged,
@@ -1313,6 +1326,7 @@ pub enum SignalKind {
     ZoneContact,
     MountStarted,
     MountEnded,
+    PostureChanged,
     Click,
     ToggleChanged,
     SliderChanged,

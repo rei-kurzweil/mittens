@@ -938,6 +938,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "ZoneEntered" => SignalKind::ZoneEntered,
         "ZoneExited" => SignalKind::ZoneExited,
         "ZoneContact" => SignalKind::ZoneContact,
+        "PostureChanged" => SignalKind::PostureChanged,
         "MountStarted" => SignalKind::MountStarted,
         "MountEnded" => SignalKind::MountEnded,
         "DragMove" => SignalKind::DragMove,

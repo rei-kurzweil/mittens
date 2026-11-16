@@ -801,6 +801,31 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             payload.insert("fraction".into(), Value::Number(*fraction as f64));
             Value::Map(payload)
         }
+        Some(crate::engine::ecs::EventSignal::PostureChanged {
+            avatar,
+            mode,
+            previous,
+            pose,
+            reason,
+        }) => {
+            let mut payload: HashMap<String, Value> = [
+                ("mode", *mode),
+                ("previous", *previous),
+                ("pose", *pose),
+                ("reason", *reason),
+            ]
+            .into_iter()
+            .map(|(key, text)| (key.into(), Value::String(text.into())))
+            .collect();
+            payload.insert(
+                "avatar".into(),
+                Value::ComponentObject {
+                    id: *avatar,
+                    component_type: "AvatarControl".into(),
+                },
+            );
+            Value::Map(payload)
+        }
         Some(crate::engine::ecs::EventSignal::MountStarted { rider, mountable })
         | Some(crate::engine::ecs::EventSignal::MountEnded { rider, mountable }) => {
             Value::Map(HashMap::from([
