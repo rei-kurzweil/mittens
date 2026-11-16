@@ -13,9 +13,10 @@ keeps the inert slice 1 scene.
   is observational, scoped to the moving zone, and reported once when a contact
   begins (nearest new contact per mover per step).
 - **Opt-in and gate:** a zone is moving when a `Velocity` drives a transform
-  above it; the map is cached per world structure revision. (The first version
-  used an explicit `Collidable.velocity(ref)` binding and the name `ZoneSwept`;
-  both were replaced before release.) The `ListenerGate` is snapshotted once
+  above it; `Collidable.velocity(ref)` optionally overrides that with one
+  specific Velocity. The map is cached per world structure revision. (The first
+  version required the binding and was named `ZoneSwept`; both changed before
+  release.) The `ListenerGate` is snapshotted once
   per frame; with no `ZoneContact` handler on the zone, an ancestor, or
   globally, nothing is enumerated and no query runs.
 - **Motion:** each step sweeps the zone's world pose from before to after

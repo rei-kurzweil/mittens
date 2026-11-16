@@ -2,14 +2,16 @@
 //! `Velocity` reports the static geometry it sweeps into during a fixed step.
 //!
 //! A zone is moving when a `Velocity` drives a transform above it; nothing is
-//! authored beyond the listener. The zone-to-velocity map is rebuilt only when
+//! authored beyond the listener. `Collidable.velocity(ref)` overrides that with
+//! one specific Velocity. The zone-to-velocity map is rebuilt only when
 //! the world's structure changes, and nothing is enumerated or queried unless a
 //! `ZoneContact` handler can observe the moving zone. The producer is
 //! observational: it never changes motion, and the handler owns the response.
 use super::collidable_bvh::CollidableBvh;
 use super::{TransformSystem, box_sweep, zone_query};
 use crate::engine::ecs::component::{
-    CollidableComponent, CollisionShape, VelocityComponent, ZoneComponent,
+    CollidableComponent, CollisionShape, QueryRootMode, VelocityComponent, ZoneComponent,
+    resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, ListenerGate, SignalEmitter, World};
 use crate::utils::math;
@@ -60,8 +62,25 @@ impl SweptZoneEvents {
             else {
                 continue;
             };
-            // A Velocity moves the zone when its driven transform is on the
-            // zone's ancestor path.
+            // An explicit binding names the one Velocity that moves the zone.
+            // It never falls back to inference: an unresolved reference sweeps
+            // nothing.
+            if let Some(source) = world
+                .get_component_by_id_as::<CollidableComponent>(collidable)
+                .and_then(|c| c.velocity_source.as_ref())
+            {
+                if let Some(velocity) =
+                    resolve_component_ref(world, source, Some(collidable), QueryRootMode::SelfSubtree)
+                        .filter(|&id| {
+                            world.get_component_by_id_as::<VelocityComponent>(id).is_some()
+                        })
+                {
+                    self.bound.entry(velocity).or_default().push((collidable, zone));
+                }
+                continue;
+            }
+            // Otherwise a Velocity moves the zone when its driven transform is
+            // on the zone's ancestor path.
             let (mut child, mut cursor) = (zone, world.parent_of(zone));
             while let Some(id) = cursor {
                 if world.get_component_by_id_as::<VelocityComponent>(id).is_some()
@@ -408,6 +427,54 @@ mod tests {
         }
         assert_eq!(events.len(), 1, "{events:?}");
         assert!(matches!(events[0], EventSignal::ZoneContact { velocity, .. } if velocity == outer));
+    }
+
+    fn bind(f: &mut Fixture, source: crate::engine::ecs::component::ComponentRef) {
+        f.world
+            .get_component_by_id_as_mut::<CollidableComponent>(f.collidable)
+            .unwrap()
+            .velocity_source = Some(source);
+    }
+
+    #[test]
+    fn binding_overrides_inference_among_nested_velocities() {
+        // The outer Velocity moves the zone into the wall, but the binding
+        // names the still inner one, so no contact is reported.
+        let mut f = fixture([0.0; 3], true);
+        let mut outer = VelocityComponent::new();
+        outer.linear_local_mps = [0.0, 0.0, -6.0];
+        let outer = f.world.add_component(outer);
+        let carrier = f.world.add_component(TransformComponent::new());
+        f.world.add_child(outer, carrier).unwrap();
+        f.world.add_child(carrier, f.owner).unwrap();
+        propagate(&mut f.world, carrier);
+        let inner = f.world.get_component_record(f.owner).unwrap().guid;
+        bind(&mut f, crate::engine::ecs::component::ComponentRef::Guid(inner));
+        let mut rx = RxWorld::default();
+        listen(&mut rx, f.zone);
+        let mut system = VelocitySystem::default();
+        let mut events = Vec::new();
+        for _ in 0..360 {
+            system.set_swept_zone_listeners(rx.listener_gate(SignalKind::ZoneContact));
+            system.step(&mut f.world, &mut rx);
+            propagate(&mut f.world, carrier);
+            events.extend(rx.drain_ready_events().into_iter().filter_map(|s| s.event));
+        }
+        assert!(events.is_empty(), "{events:?}");
+        assert_eq!(system.swept_zone_queries(), 0, "the inner velocity never moves");
+    }
+
+    #[test]
+    fn unresolved_binding_sweeps_nothing_instead_of_inferring() {
+        let mut f = fixture([0.0, 0.0, -6.0], true);
+        bind(
+            &mut f,
+            crate::engine::ecs::component::ComponentRef::Query("/[name='missing']".into()),
+        );
+        let mut rx = RxWorld::default();
+        listen(&mut rx, f.zone);
+        let (events, queries) = run(&mut f, &mut rx);
+        assert!(events.is_empty() && queries == 0, "{events:?} {queries}");
     }
 
     #[test]

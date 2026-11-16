@@ -354,6 +354,11 @@ the mover), and `fraction` (`[0, 1]` along the step).
   observe the moving zone, either scoped to it or an ancestor, or global. A
   global handler sweeps every moving zone. Which zones a Velocity carries is
   cached and recomputed only when the scene structure changes.
+- **Override.** `Collidable.velocity(ref)` (a handle, selector, or `@uuid:`)
+  names the one `Velocity` that moves the zone, instead of every Velocity
+  above it. Use it for a zone moved by a Velocity elsewhere in the tree, or to
+  pick one of several nested Velocities. An unresolved reference sweeps
+  nothing; it does not fall back to inference.
 - **Shapes.** Cube zones sweep as oriented boxes against box surfaces at any
   rotation; flush contact counts as clear. Sphere zones use the sphere sweep.
   Damaged triangle meshes are not box-swept, and capsules are skipped rather
