@@ -937,7 +937,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "ProjectileHit" => SignalKind::ProjectileHit,
         "ZoneEntered" => SignalKind::ZoneEntered,
         "ZoneExited" => SignalKind::ZoneExited,
-        "ZoneSwept" => SignalKind::ZoneSwept,
+        "ZoneContact" => SignalKind::ZoneContact,
         "MountStarted" => SignalKind::MountStarted,
         "MountEnded" => SignalKind::MountEnded,
         "DragMove" => SignalKind::DragMove,

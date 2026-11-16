@@ -248,7 +248,7 @@ impl SystemWorld {
         let velocity_steps = self.velocity.take_steps(dt_sec);
         self.velocity.set_swept_zone_listeners(
             self.rx
-                .listener_gate(crate::engine::ecs::SignalKind::ZoneSwept),
+                .listener_gate(crate::engine::ecs::SignalKind::ZoneContact),
         );
         #[cfg(test)]
         crate::engine::update_cpu_profile::velocity_steps(velocity_steps);

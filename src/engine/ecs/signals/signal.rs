@@ -202,7 +202,7 @@ pub enum EventSignal {
     },
     /// A velocity-bound collidable's zone swept into static geometry during a
     /// fixed step. Observational only; scoped to the moving zone.
-    ZoneSwept {
+    ZoneContact {
         zone: ComponentId,
         collidable: ComponentId,
         velocity: ComponentId,
@@ -446,7 +446,7 @@ impl EventSignal {
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
-            EventSignal::ZoneSwept { .. } => SignalKind::ZoneSwept,
+            EventSignal::ZoneContact { .. } => SignalKind::ZoneContact,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
             EventSignal::MountEnded { .. } => SignalKind::MountEnded,
             EventSignal::Click { .. } => SignalKind::Click,
@@ -1310,7 +1310,7 @@ pub enum SignalKind {
     ProjectileHit,
     ZoneEntered,
     ZoneExited,
-    ZoneSwept,
+    ZoneContact,
     MountStarted,
     MountEnded,
     Click,

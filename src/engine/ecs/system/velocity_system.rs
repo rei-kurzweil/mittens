@@ -767,7 +767,7 @@ impl VelocitySystem {
         }
     }
 
-    /// Listener snapshot for `ZoneSwept`; without one no sweep work runs.
+    /// Listener snapshot for `ZoneContact`; without one no sweep work runs.
     pub(crate) fn set_swept_zone_listeners(&mut self, gate: crate::engine::ecs::ListenerGate) {
         self.swept_zones.set_gate(gate);
     }

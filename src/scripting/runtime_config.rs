@@ -1327,7 +1327,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",
-        "ZoneSwept",
+        "ZoneContact",
         "MountStarted",
         "MountEnded",
         "ParentChanged",

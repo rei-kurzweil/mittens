@@ -764,7 +764,7 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             );
             Value::Map(payload)
         }
-        Some(crate::engine::ecs::EventSignal::ZoneSwept {
+        Some(crate::engine::ecs::EventSignal::ZoneContact {
             zone,
             collidable,
             velocity,

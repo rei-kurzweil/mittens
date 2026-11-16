@@ -44,9 +44,9 @@ pub struct CollidableComponent {
     pub movement_target_source: Option<ComponentRef>,
     pub movement_target_id: Option<ComponentId>,
     pub movement_target_required: bool,
-    /// Motion provider for the generic sweeping-zone query. Binding a
-    /// `Velocity` opts this collidable into velocity-aware sweeps; the event
-    /// remains scoped to the parent zone.
+    /// Overrides which `Velocity` moves this collidable's zone for
+    /// `ZoneContact` sweeps. Unset, every Velocity driving a transform above
+    /// the zone carries it.
     pub velocity_source: Option<ComponentRef>,
 }
 

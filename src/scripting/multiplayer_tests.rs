@@ -550,8 +550,8 @@ fn twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole() {
     let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
     let contacts = Arc::new(Mutex::new(Vec::new()));
     let sink = contacts.clone();
-    scene.systems.rx.add_global_handler_closure(SignalKind::ZoneSwept, move |_, _, signal| {
-        if let Some(EventSignal::ZoneSwept { zone, other_zone, .. }) = signal.event {
+    scene.systems.rx.add_global_handler_closure(SignalKind::ZoneContact, move |_, _, signal| {
+        if let Some(EventSignal::ZoneContact { zone, other_zone, .. }) = signal.event {
             sink.lock().unwrap().push((zone, other_zone));
         }
     });

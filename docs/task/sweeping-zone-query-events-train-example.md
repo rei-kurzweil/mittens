@@ -8,14 +8,17 @@ keeps the inert slice 1 scene.
 
 ## Implementation status (2026-11-15)
 
-- **Event:** `ZoneSwept` (`src/engine/ecs/system/swept_zone_events.rs`),
-  documented in the [signal guide](../how_to/guide/signals.md#zoneswept). It
+- **Event:** `ZoneContact` (`src/engine/ecs/system/swept_zone_events.rs`),
+  documented in the [signal guide](../how_to/guide/signals.md#zonecontact). It
   is observational, scoped to the moving zone, and reported once when a contact
   begins (nearest new contact per mover per step).
-- **Opt-in and gate:** `Collidable.velocity(ref)` binds the velocity. The
-  `ListenerGate` from the review branch is snapshotted once per frame; with no
-  `ZoneSwept` handler on the zone, an ancestor, or globally, no binding is
-  resolved and no query runs.
+- **Opt-in and gate:** a zone is moving when a `Velocity` drives a transform
+  above it; `Collidable.velocity(ref)` optionally overrides that with one
+  specific Velocity. The map is cached per world structure revision. (The first
+  version required the binding and was named `ZoneSwept`; both changed before
+  release.) The `ListenerGate` is snapshotted once
+  per frame; with no `ZoneContact` handler on the zone, an ancestor, or
+  globally, nothing is enumerated and no query runs.
 - **Motion:** each step sweeps the zone's world pose from before to after
   the velocity's linear and angular motion, so a zone on a yawing pivot is
   swept along its arc (one chord per fixed step, orientation sampled at the
