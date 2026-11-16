@@ -21,6 +21,36 @@ impl HeadMotionGazePolicy {
     }
 }
 
+/// Which body mode the body solver may use. `Vertical` is everything an
+/// upright avatar does (standing, walking, crouching); `Horizontal` is on
+/// hands and knees. `Auto` switches when crouching runs out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BodyPosture {
+    #[default]
+    Vertical,
+    Auto,
+    Horizontal,
+}
+
+impl BodyPosture {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "vertical" => Some(Self::Vertical),
+            "auto" => Some(Self::Auto),
+            "horizontal" => Some(Self::Horizontal),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Vertical => "vertical",
+            Self::Auto => "auto",
+            Self::Horizontal => "horizontal",
+        }
+    }
+}
+
 /// Settings applied to one AVC-generated two-bone arm chain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArmTwoBoneIkConfig {
@@ -267,6 +297,8 @@ pub struct AvatarControlComponent {
         Option<crate::engine::ecs::system::ik::HeadNeckBodyConstraint>,
     pub(crate) head_neck_body_bind_error: Option<&'static str>,
 
+    /// Body solver mode policy; see `BodyPosture`.
+    pub posture: BodyPosture,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
     pub crouch_enabled: bool,
     pub crouch_sole_offsets: Option<[[f32; 3]; 2]>,
@@ -343,6 +375,10 @@ impl AvatarControlComponent {
         }
         self.walking_step_height = metres;
         Ok(self)
+    }
+    pub fn with_posture(mut self, posture: BodyPosture) -> Self {
+        self.posture = posture;
+        self
     }
     pub fn with_crouch_enabled(mut self, enabled: bool) -> Self {
         self.crouch_enabled = enabled;
@@ -685,6 +721,7 @@ impl Default for AvatarControlComponent {
             neck_lateral_limit: 25.0_f32.to_radians(),
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
+            posture: BodyPosture::Vertical,
             crouch_enabled: true,
             crouch_sole_offsets: None,
             crouch_knee_pole: [0.0, 0.0, 1.0],
@@ -857,6 +894,9 @@ impl Component for AvatarControlComponent {
                     num(self.neck_lateral_limit as f64),
                 ],
             );
+        }
+        if self.posture != BodyPosture::Vertical {
+            c = c.with_call("posture", vec![s(self.posture.as_str())]);
         }
         if !self.crouch_enabled {
             c = c.with_call("crouch_enabled", vec![b(false)]);

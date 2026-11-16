@@ -1284,6 +1284,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "head_neck_body_enabled", booleans(1));
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
+                    constructor_and_builder(component, "posture", strings(1));
                     constructor_and_builder(component, "crouch_enabled", booleans(1));
                     walking_ik_binding::register_legacy(component);
                     constructor_and_builder(

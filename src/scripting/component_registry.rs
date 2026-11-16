@@ -4005,6 +4005,15 @@ fn apply_call(
                 )
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
+            "posture" => {
+                *avc = avc.clone().with_posture(
+                    crate::engine::ecs::component::BodyPosture::parse(arg_str(args, 0)?)
+                        .ok_or_else(|| {
+                            "AvatarControl.posture expects 'vertical', 'auto', or 'horizontal'"
+                                .to_string()
+                        })?,
+                )
+            }
             "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
             "crouch_sole_offsets" => {
                 *avc = avc
