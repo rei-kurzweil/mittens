@@ -120,6 +120,10 @@ fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
         run > rise.abs(),
         "torso closer to horizontal than vertical: rise {rise}, run {run}"
     );
+    assert!(
+        (yaw_threshold(&scene, avatar) - 10f32.to_radians()).abs() < 1e-4,
+        "body yaw deadband tightens on hands and knees"
+    );
 
     // Stand back up: blends out to vertical and the torso returns to rest.
     hold_head(&mut scene, head, 1.644, 90);
@@ -131,6 +135,28 @@ fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
         chest[1] - hips[1] > 0.2,
         "upright again: {chest:?} {hips:?}"
     );
+    assert_eq!(yaw_threshold(&scene, avatar), std::f32::consts::FRAC_PI_4);
+}
+
+fn yaw_threshold(scene: &Universe, avatar: ComponentId) -> f32 {
+    use crate::engine::ecs::component::TransformOperatorComponent;
+    use crate::engine::ecs::component::transform_operator::TransformQuatOp;
+    let operator = scene
+        .world
+        .get_component_by_id_as::<AvatarControlComponent>(avatar)
+        .and_then(|avc| avc.body_operator_id)
+        .unwrap();
+    scene
+        .world
+        .get_component_by_id_as::<TransformOperatorComponent>(operator)
+        .and_then(|o| o.fork_trs_settings())
+        .and_then(|settings| {
+            settings.rotation_ops.iter().find_map(|op| match op {
+                TransformQuatOp::YawFollow { threshold, .. } => Some(*threshold),
+                _ => None,
+            })
+        })
+        .unwrap()
 }
 
 #[test]

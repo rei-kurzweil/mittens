@@ -402,6 +402,7 @@ impl SystemWorld {
         // body solver writes the torso before head/neck placement reads it.
         self.body_solver
             .tick(world, &self.upper_body_ik, &self.lower_body_ik, dt_sec);
+        self.body_solver.apply_body_yaw(world);
         self.upper_body_ik.tick(world, queue, &self.body_solver);
         self.lower_body_ik.sync_modes(&self.body_solver);
         queue.flush(world, self, visuals, render_assets);

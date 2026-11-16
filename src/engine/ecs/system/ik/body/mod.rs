@@ -32,6 +32,8 @@ const BLEND_SEC: f32 = 0.35;
 /// Knee contact clearance above the floor, in model units.
 pub(crate) const KNEE_RADIUS: f32 = 0.06;
 const MAX_PITCH: f32 = 1.75;
+/// Body yaw deadband on hands and knees: the torso tracks the head closely.
+const HORIZONTAL_YAW_THRESHOLD: f32 = 10.0 * std::f32::consts::PI / 180.0;
 
 #[derive(Debug, Default)]
 pub struct BodySolverSystem {
@@ -74,6 +76,37 @@ impl BodySolverSystem {
     /// Forward torso pitch in radians, already blended.
     pub fn torso_pitch(&self, id: ComponentId) -> f32 {
         self.avatars.get(&id).map(|a| a.pitch).unwrap_or(0.0)
+    }
+
+    /// Tighten each avatar's body yaw-follow deadband as it blends into
+    /// horizontal, from its authored `body_yaw_threshold` toward 10 degrees.
+    pub fn apply_body_yaw(&self, world: &mut World) {
+        use crate::engine::ecs::component::TransformOperatorComponent;
+        use crate::engine::ecs::component::transform_operator::TransformQuatOp;
+        for (&id, instance) in &self.avatars {
+            let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
+                continue;
+            };
+            let Some(operator) = avatar.body_operator_id else {
+                continue;
+            };
+            let authored = avatar.body_yaw_threshold;
+            let wanted =
+                authored + (HORIZONTAL_YAW_THRESHOLD.min(authored) - authored) * instance.weight;
+            let Some(settings) = world
+                .get_component_by_id_as_mut::<TransformOperatorComponent>(operator)
+                .and_then(|o| o.fork_trs_settings_mut())
+            else {
+                continue;
+            };
+            for op in &mut settings.rotation_ops {
+                if let TransformQuatOp::YawFollow { threshold, .. } = op
+                    && *threshold != wanted
+                {
+                    *threshold = wanted;
+                }
+            }
+        }
     }
 
     pub fn tick(
