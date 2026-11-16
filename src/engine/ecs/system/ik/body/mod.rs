@@ -47,6 +47,8 @@ struct BodyInstance {
     weight: f32,
     dwell: f32,
     support: Option<f32>,
+    /// Last pitch solved in horizontal mode, faded out by `weight`.
+    held_pitch: f32,
     pitch: f32,
 }
 
@@ -180,12 +182,18 @@ impl BodySolverSystem {
             };
             let step = if BLEND_SEC > 0.0 { dt / BLEND_SEC } else { 1.0 };
             instance.weight += (goal - instance.weight).clamp(-step, step);
-            instance.pitch = match instance.support {
-                Some(floor) if instance.weight > 0.0 => {
-                    instance.weight * solve_pitch(spine, root, head[3][1], floor, scale)
-                }
-                _ => 0.0,
-            };
+            // Solve while horizontal. Blending out keeps the last solved
+            // pitch and fades it with the weight: re-solving against a rising
+            // head would drop it to zero at once while the legs still kneel.
+            if instance.mode == BodyMode::Horizontal
+                && let Some(floor) = instance.support
+            {
+                instance.held_pitch = solve_pitch(spine, root, head[3][1], floor, scale);
+            }
+            if instance.weight <= 0.0 {
+                instance.held_pitch = 0.0;
+            }
+            instance.pitch = instance.weight * instance.held_pitch;
         }
     }
 }

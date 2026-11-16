@@ -294,3 +294,122 @@ fn crawling_forward_steps_the_knees_alternately() {
     );
     assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
 }
+
+#[test]
+fn standing_up_fades_the_torso_with_the_legs_and_regrounds_the_feet() {
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 60);
+    // Head nearly on the floor: as low as lying down gets.
+    hold_head(&mut scene, head, 0.15, 120);
+    let lying = scene.systems.body_solver.torso_pitch(avatar);
+    assert!(lying > 1.0, "{lying}");
+    // While the blend runs out, the torso pitch fades with the weight
+    // instead of snapping upright under still-kneeling legs.
+    let mut previous = lying;
+    for _ in 0..30 {
+        hold_head(&mut scene, head, 1.644, 1);
+        let weight = scene.systems.body_solver.weight(avatar);
+        let pitch = scene.systems.body_solver.torso_pitch(avatar);
+        assert!(
+            pitch <= previous + 1e-4,
+            "pitch only falls: {pitch} after {previous}"
+        );
+        if weight >= 0.5 {
+            assert!(
+                pitch > 0.4 * lying,
+                "still pitched while kneeling: {pitch} at {weight}"
+            );
+        }
+        previous = pitch;
+    }
+    assert_eq!(scene.systems.body_solver.torso_pitch(avatar), 0.0);
+    hold_head(&mut scene, head, 1.644, 60);
+    for slot in [HumanoidSlot::LeftFoot, HumanoidSlot::RightFoot] {
+        let ankle = position(&scene, bone(&scene, avatar, slot));
+        assert!(
+            ankle[1] > ROOF,
+            "ankle above the roof after standing: {ankle:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn measure_knee_depth_while_crawling() {
+    for head_height in [0.6f32, 0.7, 0.8, 0.9] {
+        let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+        let mut scene = Universe::new(World::default());
+        scene
+            .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+            .unwrap();
+        let avatar = named(&scene, "remote_avatar");
+        let head = named(&scene, "remote_head_target");
+        let root = named(&scene, "remote_root");
+        hold_head(&mut scene, head, 1.644, 30);
+        hold_head(&mut scene, head, head_height, 90);
+        let thigh = scene
+            .systems
+            .upper_body_ik
+            .spine(avatar)
+            .unwrap()
+            .thigh_length;
+        let start = position(&scene, root);
+        let (mut still_knee, mut still_hip) = (f32::MAX, f32::MAX);
+        let (mut min_knee, mut max_knee, mut min_hip, mut max_hip) =
+            (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        let mut swing_min_knee = f32::MAX;
+        let mut planted_min_knee = f32::MAX;
+        for frame in 0..=180 {
+            if frame > 30 {
+                let x = start[0] + 0.6 * (frame - 30) as f32 / 150.0;
+                scene.systems.rx.push_intent_now(
+                    root,
+                    IntentValue::UpdateTransform {
+                        component_id: root,
+                        translation: [x, start[1], start[2]],
+                        rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                        scale: [1.0; 3],
+                    },
+                );
+            }
+            hold_head(&mut scene, head, head_height, 1);
+            let feet = scene.systems.lower_body_ik.feet(avatar).unwrap();
+            for (i, (hip_slot, knee_slot)) in [
+                (HumanoidSlot::LeftUpperLeg, HumanoidSlot::LeftLowerLeg),
+                (HumanoidSlot::RightUpperLeg, HumanoidSlot::RightLowerLeg),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let knee = position(&scene, bone(&scene, avatar, knee_slot))[1] - ROOF;
+                let hip = position(&scene, bone(&scene, avatar, hip_slot))[1] - ROOF;
+                if frame <= 30 {
+                    still_knee = still_knee.min(knee);
+                    still_hip = still_hip.min(hip);
+                } else {
+                    min_knee = min_knee.min(knee);
+                    max_knee = max_knee.max(knee);
+                    min_hip = min_hip.min(hip);
+                    max_hip = max_hip.max(hip);
+                    if feet[i].phase == crate::engine::ecs::system::ik::lower_body::FootPhase::Swing
+                    {
+                        swing_min_knee = swing_min_knee.min(knee);
+                    } else {
+                        planted_min_knee = planted_min_knee.min(knee);
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "MEASURE head {head_height:.2} pitch {:.2} | hip target {:.3} | still: hip {still_hip:.3} knee {still_knee:.3} | crawl: hip {min_hip:.3}..{max_hip:.3} knee {min_knee:.3}..{max_knee:.3} (planted min {planted_min_knee:.3}, swing min {swing_min_knee:.3})",
+            scene.systems.body_solver.torso_pitch(avatar),
+            thigh + 0.06,
+        );
+    }
+}
