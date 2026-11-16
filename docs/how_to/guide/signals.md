@@ -330,6 +330,39 @@ component identities and captured offset. Disabled or removed participants
 retire their pairs without delivering stale handles. These signals apply no
 contact response. See [Zone observation rules](../../task/zone-enter-events-and-teleport-pits.md).
 
+#### `ZoneSwept`
+<!-- catalog:signal source="ZoneSwept" kind="event" mms="observable-payload" -->
+
+Emitted when a zone whose `Collidable` is bound to a `Velocity` with
+`Collidable.velocity(ref)` sweeps into static geometry during a fixed velocity
+step. Scoped to the moving zone, so handlers on the zone or any ancestor
+receive it. The sweep is continuous: a thin wall crossed between steps is
+still reported. Linear and angular motion of the bound velocity's target are
+both swept, so a zone carried around a yawing pivot sees what it passes.
+
+Payload: `zone`, `collidable`, `velocity`, `other_zone`, `other_collidable`,
+`point` (world contact point on the other surface), `normal` (world, facing
+the mover), and `fraction` (`[0, 1]` along the step).
+
+- **Opt-in and cost.** Nothing is swept unless a `ZoneSwept` handler can
+  observe the moving zone, either scoped to it or an ancestor, or global.
+- **Shapes.** Cube zones sweep as oriented boxes against box surfaces at any
+  rotation; flush contact counts as clear. Sphere zones use the sphere sweep.
+  Damaged triangle meshes are not box-swept, and capsules are skipped rather
+  than approximated.
+- **Once per contact.** A contact is reported when it begins, and again only
+  after the mover has separated from that surface. Only the nearest new
+  contact per mover per step is delivered.
+- **Observational.** The event never stops, truncates, or reverses motion;
+  the handler owns the response. Surfaces under the velocity's own target
+  are ignored.
+
+```mms parse-only
+let motion = Velocity { T { Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().velocity("/[name='motion']") {} } } }
+on(motion, "ZoneSwept", fn(event) { print(event.other_zone) })
+motion
+```
+
 #### `MountStarted`
 <!-- catalog:signal source="MountStarted" kind="event" mms="observable-payload" -->
 **Event.** `AttachmentSystem` committed a Rider-to-Mountable relationship. The
