@@ -45,6 +45,12 @@ import { pose as lumae_relaxed_pose } from "../assets/components/characters/luma
 // Desktop: WASD + right-drag to move/look. XR: tracked head/hands
 // and gamepad locomotion. XR-only mode creates no winit window or Camera3D.
 
+// Local voice drives the local avatar's mouth. Stays neutral without a
+// microphone. Client side only: mouth and fingers are not sent to peers yet.
+let microphone = AudioInput {}
+let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
+let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
+
 let net = MultiplayerSession.from_env() {}
 net
 
@@ -211,9 +217,11 @@ let avatar_specs = {
         sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
-fn avatar_model(prefix, avatar) {
+fn avatar_model(prefix, avatar, local_player) {
     return GLTF.new(avatar_specs[avatar].uri) {
         name = prefix + "_model"
+        // Articulated fingers from OpenXR hand tracking, local XR player only.
+        if local_player && use_xr { HandTracking.new().source("openxr") }
         bisket_anime_shading()
         vroid_humanoid_bone_map()
         MorphTargetMap.new()
@@ -234,7 +242,7 @@ fn avatar_model(prefix, avatar) {
 
 fn make_player(prefix, local_player, avatar) {
     let spec = avatar_specs[avatar]
-    let model = avatar_model(prefix, avatar)
+    let model = avatar_model(prefix, avatar, local_player)
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
         if local_player && use_xr { Pointer { name = "local_left_pointer" } }
@@ -262,6 +270,13 @@ fn make_player(prefix, local_player, avatar) {
         crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
         WalkingIK { step_scale(1.3) }
         if !local_player { collision_response("read_only") }
+        if local_player {
+            mouth_open_from_amplitude(voice_level)
+            mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+            mouth_open_amount(mouth_tuning.amount)
+            mouth_open_smoothing(16.0)
+            voice_level
+        }
         initial_yaw(3.14159)
         arm_ik(vroid_arm_ik_bend_plane_prototype())
         hand_rotation_smoothing(220.0)
