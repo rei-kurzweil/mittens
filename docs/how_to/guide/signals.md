@@ -265,6 +265,28 @@ on(world, "KeyPress", fn(event) { print("press " + event.key) })
 on(world, "KeyUp", fn(event) { print("up " + event.key) })
 ```
 
+#### `MouseWheel`, `MouseLook`, `MouseButtonDown`, and `MouseButtonUp`
+<!-- catalog:signal source="MouseWheel" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseLook" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseButtonDown" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseButtonUp" kind="event" mms="observable-payload" -->
+**Events.** Scene-wide mouse input, available through `on(world, ...)` (or `on_global`) without an
+`Input` component, and suppressed like the key events while a text input owns keyboard focus.
+`MouseWheel` reports this frame's wheel motion as `{ delta_x, delta_y }` (positive `delta_y`
+scrolls up). `MouseLook` reports this frame's right-button drag in pixels as `{ delta_x,
+delta_y }`: the movement the desktop `Input` turns with, so a script that has switched the Input's
+rotation off can take the look itself. `MouseButtonDown` and `MouseButtonUp` fire when a button
+goes down or up wherever the cursor is, unlike `Click`, which only reports a press and release that
+land on something clickable; the callback receives `{ button }`, one of `"left"`, `"right"`,
+`"middle"`, `"back"`, `"forward"` or `"other"`.
+
+```mms parse-only
+on(world, "MouseWheel", fn(event) { print("wheel " + event.delta_y) })
+on(world, "MouseLook", fn(event) { print("look " + event.delta_x + ", " + event.delta_y) })
+on(world, "MouseButtonDown", fn(event) { if event.button == "middle" { print("middle down") } })
+on(world, "MouseButtonUp", fn(event) { print(event.button + " up") })
+```
+
 #### `DataEvent`
 <!-- catalog:signal source="DataEvent" kind="event" mms="observable-partial-payload" -->
 **Event.** User code emitted a named cross-subtree data event. The runtime and routing subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with partial payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).

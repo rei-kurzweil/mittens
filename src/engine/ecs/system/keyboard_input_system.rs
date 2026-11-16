@@ -76,6 +76,33 @@ impl KeyboardInputSystem {
                 }
             }
         }
+
+        // The wheel is gameplay input too, and text entry captures it the same way.
+        let (delta_x, delta_y) = input.wheel_delta;
+        if !captured_by_text_input && (delta_x != 0.0 || delta_y != 0.0) {
+            emit.push_event(ComponentId::default(), EventSignal::MouseWheel { delta_x, delta_y });
+        }
+        let (delta_x, delta_y) = input.mouse_drag_delta_button(crate::engine::user_input::MouseButton::Right);
+        if !captured_by_text_input && (delta_x != 0.0 || delta_y != 0.0) {
+            emit.push_event(ComponentId::default(), EventSignal::MouseLook { delta_x, delta_y });
+        }
+        if !captured_by_text_input {
+            use crate::engine::user_input::MouseButton;
+            let name = |button: &MouseButton| match button {
+                MouseButton::Left => "left",
+                MouseButton::Right => "right",
+                MouseButton::Middle => "middle",
+                MouseButton::Back => "back",
+                MouseButton::Forward => "forward",
+                MouseButton::Other(_) => "other",
+            };
+            for button in &input.mouse_pressed {
+                emit.push_event(ComponentId::default(), EventSignal::MouseButtonDown { button: name(button).into() });
+            }
+            for button in &input.mouse_released {
+                emit.push_event(ComponentId::default(), EventSignal::MouseButtonUp { button: name(button).into() });
+            }
+        }
     }
 }
 
@@ -196,5 +223,77 @@ mod tests {
         reloaded_system.process_input(&held_repeat, false, &mut events);
 
         assert!(events.0.is_empty());
+    }
+
+    #[test]
+    fn wheel_motion_is_a_scene_event_unless_text_entry_captures_it() {
+        let mut scrolled = InputState::default();
+        scrolled.wheel_delta = (0.0, -2.0);
+        let mut system = KeyboardInputSystem::new();
+        let mut events = Events::default();
+        system.process_input(&InputState::default(), false, &mut events);
+        system.process_input(&scrolled, true, &mut events);
+        assert!(events.0.is_empty());
+
+        system.process_input(&scrolled, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseWheel { delta_x, delta_y }] if *delta_x == 0.0 && *delta_y == -2.0
+        ));
+    }
+
+    #[test]
+    fn right_drag_is_a_mouse_look_event_unless_text_entry_captures_it() {
+        use crate::engine::user_input::MouseButton;
+        let mut dragged = InputState::default();
+        dragged.cursor_pos = Some((10.0, 10.0));
+        dragged.start_frame();
+        dragged.cursor_pos = Some((15.0, 7.0));
+        dragged.mouse_down.insert(MouseButton::Right);
+        dragged.start_frame();
+        let mut system = KeyboardInputSystem::new();
+        let mut events = Events::default();
+        system.process_input(&dragged, true, &mut events);
+        assert!(events.0.is_empty());
+
+        system.process_input(&dragged, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseLook { delta_x, delta_y }] if *delta_x == 5.0 && *delta_y == -3.0
+        ));
+
+        // Moving with only the left button held is not a look.
+        let mut left = dragged.clone();
+        left.mouse_down.clear();
+        left.mouse_down.insert(MouseButton::Left);
+        let mut events = Events::default();
+        system.process_input(&left, false, &mut events);
+        assert!(!events.0.iter().any(|event| matches!(event, EventSignal::MouseLook { .. })));
+    }
+
+    #[test]
+    fn mouse_buttons_are_scene_events_named_by_button_unless_text_entry_captures_them() {
+        use crate::engine::user_input::MouseButton;
+        let mut pressed = InputState::default();
+        pressed.mouse_pressed.insert(MouseButton::Middle);
+        let mut system = KeyboardInputSystem::new();
+        let mut events = Events::default();
+        system.process_input(&pressed, true, &mut events);
+        assert!(events.0.is_empty());
+
+        system.process_input(&pressed, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseButtonDown { button }] if button == "middle"
+        ));
+
+        let mut released = InputState::default();
+        released.mouse_released.insert(MouseButton::Left);
+        let mut events = Events::default();
+        system.process_input(&released, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseButtonUp { button }] if button == "left"
+        ));
     }
 }
