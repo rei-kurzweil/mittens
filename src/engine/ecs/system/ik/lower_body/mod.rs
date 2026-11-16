@@ -32,6 +32,8 @@ pub struct FootState {
     pub solved_sole: [f32; 3],
     pub penetration: f32,
     pub knee_flexion: f32,
+    /// Knee joint in world space after solving (or at rest when unsolved).
+    pub knee: [f32; 3],
     pub residual: f32,
     /// Desired world-space sole; remains fixed during stance.
     pub target_sole: [f32; 3],

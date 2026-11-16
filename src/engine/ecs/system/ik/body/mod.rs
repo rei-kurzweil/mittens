@@ -5,7 +5,7 @@
 use super::lower_body::{LowerBodyIkSystem, LowerBodyStatus};
 use super::upper_body::{SpineRig, UpperBodyIkSystem};
 use crate::engine::ecs::component::{AvatarControlComponent, BodyPosture, TransformComponent};
-use crate::engine::ecs::{ComponentId, World};
+use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
 use std::collections::HashMap;
@@ -17,6 +17,24 @@ pub enum BodyMode {
     #[default]
     Vertical,
     Horizontal,
+}
+
+impl BodyMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Vertical => "vertical",
+            Self::Horizontal => "horizontal",
+        }
+    }
+
+    /// The pose each mode currently produces. Horizontal will gain lying
+    /// poses (stomach, back) beside hands and knees.
+    pub fn pose(self) -> &'static str {
+        match self {
+            Self::Vertical => "standing",
+            Self::Horizontal => "hands_and_knees",
+        }
+    }
 }
 
 /// Auto mode enters horizontal below this fraction of standing head height...
@@ -114,6 +132,7 @@ impl BodySolverSystem {
     pub fn tick(
         &mut self,
         world: &World,
+        emit: &mut dyn SignalEmitter,
         upper: &UpperBodyIkSystem,
         lower: &LowerBodyIkSystem,
         dt_sec: f32,
@@ -146,32 +165,42 @@ impl BodySolverSystem {
             let scale = (0..3).map(|r| root[0][r] * root[0][r]).sum::<f32>().sqrt();
             let head_above = instance.support.map(|floor| head[3][1] - floor);
             let standing = spine.head_rest_height * scale;
-            let next = match avatar.posture {
-                BodyPosture::Vertical => BodyMode::Vertical,
-                BodyPosture::Horizontal => BodyMode::Horizontal,
+            let (next, reason) = match avatar.posture {
+                BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
+                BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
                 BodyPosture::Auto => match (instance.mode, head_above) {
-                    (_, None) => instance.mode,
-                    _ if instance.dwell < MIN_DWELL_SEC => instance.mode,
+                    (_, None) => (instance.mode, ""),
+                    _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, ""),
                     (BodyMode::Vertical, Some(above)) => {
                         let limited = lower.status(id) == LowerBodyStatus::Limited;
-                        if above < ENTER_HEAD_FRACTION * standing
-                            || (limited && above < ENTER_LIMITED_HEAD_FRACTION * standing)
-                        {
-                            BodyMode::Horizontal
+                        if above < ENTER_HEAD_FRACTION * standing {
+                            (BodyMode::Horizontal, "head_height")
+                        } else if limited && above < ENTER_LIMITED_HEAD_FRACTION * standing {
+                            (BodyMode::Horizontal, "crouch_exhausted")
                         } else {
-                            BodyMode::Vertical
+                            (BodyMode::Vertical, "")
                         }
                     }
                     (BodyMode::Horizontal, Some(above)) => {
                         if above > EXIT_HEAD_FRACTION * standing {
-                            BodyMode::Vertical
+                            (BodyMode::Vertical, "head_height")
                         } else {
-                            BodyMode::Horizontal
+                            (BodyMode::Horizontal, "")
                         }
                     }
                 },
             };
             if next != instance.mode {
+                emit.push_event(
+                    id,
+                    EventSignal::PostureChanged {
+                        avatar: id,
+                        mode: next.as_str(),
+                        previous: instance.mode.as_str(),
+                        pose: next.pose(),
+                        reason,
+                    },
+                );
                 instance.mode = next;
                 instance.dwell = 0.0;
             }

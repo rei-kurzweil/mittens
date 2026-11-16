@@ -1330,6 +1330,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ZoneEntered",
         "ZoneExited",
         "ZoneContact",
+        "PostureChanged",
         "MountStarted",
         "MountEnded",
         "ParentChanged",

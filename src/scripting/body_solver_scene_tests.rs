@@ -413,3 +413,53 @@ fn measure_knee_depth_while_crawling() {
         );
     }
 }
+
+#[test]
+fn posture_changes_are_observable_events() {
+    use crate::engine::ecs::{EventSignal, SignalKind};
+    use std::sync::{Arc, Mutex};
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    scene.systems.rx.add_handler_closure(
+        SignalKind::PostureChanged,
+        avatar,
+        move |_, _, signal| {
+            if let Some(EventSignal::PostureChanged {
+                avatar,
+                mode,
+                previous,
+                pose,
+                reason,
+            }) = &signal.event
+            {
+                sink.lock()
+                    .unwrap()
+                    .push((*avatar, *mode, *previous, *pose, *reason));
+            }
+        },
+    );
+    hold_head(&mut scene, head, 1.644, 30);
+    hold_head(&mut scene, head, 0.7, 90);
+    hold_head(&mut scene, head, 1.644, 90);
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![
+            (
+                avatar,
+                "horizontal",
+                "vertical",
+                "hands_and_knees",
+                "head_height"
+            ),
+            (avatar, "vertical", "horizontal", "standing", "head_height"),
+        ]
+    );
+}

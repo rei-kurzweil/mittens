@@ -190,6 +190,7 @@ pub(super) fn solve(
             solved_sole: solution.sole,
             penetration: 0.0,
             knee_flexion: solution.flexion,
+            knee: solution.knee,
             residual: 0.0,
             target_sole: goal.sole,
             target_rotation: goal.rotation,
