@@ -58,6 +58,31 @@ Narrows the posture table in
   tracks the head. Yaw extraction now also uses the head's up axis, so
   looking straight down no longer makes the heading noisy.
 
+### Knee contacts (2026-11-16)
+
+The gait plants knees, not ankles. Each knee's spot is where the thigh
+reaches the floor: straight below the hip when the hips sit a thigh length
+up, and forward of it when they are lower, so low hips sit back behind the
+knees. Each frame the planted spot sets the direction from the hip and the
+thigh length sets the distance, so the knee stays on the floor while the hips
+move. A knee steps once its hip has moved 0.12 m since it landed. The shin
+lies flat behind the knee.
+
+Measured on the twilight remote avatar: with the head target at 0.6 m (pitch
+clamped, hips about 10 cm below target) knees used to sit 4 cm under the
+roof; they now hold 6 cm above it while still and while crawling.
+
+### Known issue: remote crouch loses support
+
+A remote (read-only, non-XR) avatar's capsule follows its body down when
+crouching, so the floor search anchored at the capsule bottom finds nothing
+and the legs stop solving (`NoSupport`). Other players would see a crouching
+peer's legs through the floor. The local XR avatar is unaffected: its capsule
+height comes from the floor-level locomotion root. Likely fix: give a capsule
+without an XR locomotion source its height from the AVC movement target.
+Earlier "knees 15-25 cm under the roof in deep crouch" measurements came from
+this unsolved state, not from the crouch solver.
+
 ### Collision detail
 
 `AVC.collision_detail("simple" | "detailed")`, default `"simple"` (the single

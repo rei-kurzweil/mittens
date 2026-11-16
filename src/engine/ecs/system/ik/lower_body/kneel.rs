@@ -1,12 +1,13 @@
 //! Kneeling leg goals for the body solver's horizontal mode: knees on the
 //! support under the hip joints, shins flat behind them, feet pointing back.
-//! A crawling gait keeps each ankle planted until the body moves away from
-//! it, then steps it, one leg at a time.
+//! A crawling gait keeps each knee planted on the floor until the body moves
+//! away from it, then steps it, one leg at a time.
 use super::leg::solve_leg;
 use super::rig::{LowerBodyRig, emit_pose, uniform};
 use super::support::SupportQuery;
 use super::{FootGoal, FootPhase, FootState, LowerBodyStatus};
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::system::ik::body::KNEE_RADIUS;
 use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{
     quat_from_axis_angle, quat_mul, vec3_cross, vec3_len, vec3_normalize, vec3_sub,
@@ -16,7 +17,7 @@ use crate::utils::math::{
 const ANKLE_RADIUS: f32 = 0.05;
 /// Largest floor change accepted while kneeling, in model units.
 const MAX_STEP: f32 = 0.3;
-/// A planted ankle steps once its rest spot is this far away, in model units.
+/// A planted knee steps once its rest spot is this far away, in model units.
 const STEP_TRIGGER: f32 = 0.12;
 const SWING_SEC: f32 = 0.28;
 /// Swing lift at mid-step, in model units.
@@ -27,12 +28,19 @@ const OVERSHOOT: f32 = 0.35;
 /// Crawl stepping state for one avatar. Reset when kneeling starts or stops.
 #[derive(Debug, Default)]
 pub(super) struct KneelGait {
-    planted: [Option<[f32; 3]>; 2],
+    planted: [Option<Plant>; 2],
     swing: Option<Swing>,
     /// Side to prefer for the next step, so legs alternate.
     next: usize,
     /// Completed steps per leg, for diagnostics.
     pub(super) steps: [u64; 2],
+}
+
+/// A planted knee: its floor spot and where its hip was when it landed.
+#[derive(Debug, Clone, Copy)]
+struct Plant {
+    spot: [f32; 3],
+    hip: [f32; 3],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,21 +56,26 @@ fn horizontal_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
 }
 
 impl KneelGait {
-    /// Ankle goals for this frame from each leg's rest spot under the hip.
+    /// Knee contact goals for this frame. A knee steps once its hip has moved
+    /// `STEP_TRIGGER` since that knee landed; `rest` is where it would land.
     fn advance(
         &mut self,
         rest: [[f32; 3]; 2],
+        hips: [[f32; 3]; 2],
         scale: f32,
         dt: f32,
     ) -> ([[f32; 3]; 2], [FootPhase; 2]) {
         for i in 0..2 {
-            // Planted ankles keep their spot but follow floor height changes.
-            let planted = self.planted[i].get_or_insert(rest[i]);
-            planted[1] = rest[i][1];
+            // Planted knees keep their spot but follow floor height changes.
+            let plant = self.planted[i].get_or_insert(Plant {
+                spot: rest[i],
+                hip: hips[i],
+            });
+            plant.spot[1] = rest[i][1];
         }
         if self.swing.is_none() {
             let far: [bool; 2] = std::array::from_fn(|i| {
-                horizontal_distance(self.planted[i].unwrap(), rest[i]) > STEP_TRIGGER * scale
+                horizontal_distance(self.planted[i].unwrap().hip, hips[i]) > STEP_TRIGGER * scale
             });
             let side = if far[self.next] {
                 Some(self.next)
@@ -72,8 +85,8 @@ impl KneelGait {
                 None
             };
             if let Some(side) = side {
-                let from = self.planted[side].unwrap();
-                let travel = vec3_sub(rest[side], from);
+                let plant = self.planted[side].unwrap();
+                let travel = vec3_sub(hips[side], plant.hip);
                 let to = [
                     rest[side][0] + travel[0] * OVERSHOOT,
                     rest[side][1],
@@ -81,14 +94,14 @@ impl KneelGait {
                 ];
                 self.swing = Some(Swing {
                     side,
-                    from,
+                    from: plant.spot,
                     to,
                     progress: 0.0,
                 });
                 self.next = 1 - side;
             }
         }
-        let mut goals = [self.planted[0].unwrap(), self.planted[1].unwrap()];
+        let mut goals = [self.planted[0].unwrap().spot, self.planted[1].unwrap().spot];
         let mut phases = [FootPhase::Planted; 2];
         if let Some(swing) = &mut self.swing {
             swing.progress = (swing.progress + dt / SWING_SEC).min(1.0);
@@ -103,7 +116,10 @@ impl KneelGait {
             });
             phases[swing.side] = FootPhase::Swing;
             if t >= 1.0 {
-                self.planted[swing.side] = Some(swing.to);
+                self.planted[swing.side] = Some(Plant {
+                    spot: swing.to,
+                    hip: hips[swing.side],
+                });
                 self.steps[swing.side] += 1;
                 goals[swing.side] = swing.to;
                 self.swing = None;
@@ -145,16 +161,29 @@ pub(super) fn solve(
     let scale = uniform(bases[0]).map_err(UnsupportedRig)?.scale[0];
     let mut supports = [None, None];
     let mut floors = [previous; 2];
+    // Knee contact spots: where the thigh reaches the floor. Straight below
+    // the hip when the hips sit a thigh length up; forward of it when they are
+    // lower, so low hips sit back behind the knees instead of sinking them.
+    let mut reach = [0.0f32; 2];
     let rest: [[f32; 3]; 2] = std::array::from_fn(|i| {
-        let shin = vec3_len(rig.legs[i].rest[2].translation) * scale;
+        let thigh = vec3_len(rig.legs[i].rest[1].translation) * scale;
         supports[i] = ground
             .at(hips[i])
             .filter(|s| (s.height - previous).abs() <= MAX_STEP * scale);
         floors[i] = supports[i].map(|s| s.height).unwrap_or(previous);
+        let knee_height = floors[i] + KNEE_RADIUS * scale;
+        let drop = hips[i][1] - knee_height;
+        let (ahead, height) = if drop >= thigh {
+            // Hips too high to reach the floor: the knee hangs below the hip.
+            (0.0, hips[i][1] - thigh)
+        } else {
+            ((thigh * thigh - drop * drop).max(0.0).sqrt(), knee_height)
+        };
+        reach[i] = ahead;
         [
-            hips[i][0] - forward[0] * shin,
-            floors[i] + ANKLE_RADIUS * scale,
-            hips[i][2] - forward[2] * shin,
+            hips[i][0] + forward[0] * ahead,
+            height,
+            hips[i][2] + forward[2] * ahead,
         ]
     });
     let dt = if dt_sec.is_finite() {
@@ -162,17 +191,54 @@ pub(super) fn solve(
     } else {
         0.0
     };
-    let (ankles, phases) = gait.advance(rest, scale, dt);
+    let (spots, phases) = gait.advance(rest, hips, scale, dt);
+    // Keep each knee where the thigh can reach: the planted spot sets the
+    // direction from the hip, the thigh sets the distance. A spot directly
+    // under the hip stays there.
+    let knees: [[f32; 3]; 2] = std::array::from_fn(|i| {
+        let offset = [spots[i][0] - hips[i][0], 0.0, spots[i][2] - hips[i][2]];
+        let length = vec3_len(offset);
+        let lift = spots[i][1] - rest[i][1];
+        let (x, z) = if length > 1e-4 * scale {
+            (
+                hips[i][0] + offset[0] / length * reach[i],
+                hips[i][2] + offset[2] / length * reach[i],
+            )
+        } else {
+            (rest[i][0], rest[i][2])
+        };
+        [x, rest[i][1] + lift, z]
+    });
     let mut solved = [None, None];
     for i in 0..2 {
         let leg = &rig.legs[i];
+        let shin = vec3_len(leg.rest[2].translation) * scale;
+        // The shin lies flat behind the knee; a swinging knee lifts the ankle
+        // with it.
+        let lift = knees[i][1] - rest[i][1];
+        let ankle = [
+            knees[i][0] - forward[0] * shin,
+            floors[i] + ANKLE_RADIUS * scale + lift.max(0.0),
+            knees[i][2] - forward[2] * shin,
+        ];
         let rotation = quat_mul(turn_over, quat_mul(body_rotation, leg.foot_in_root));
         let goal = FootGoal {
-            sole: ankles[i],
+            sole: ankle,
             rotation,
         };
+        // Bend toward the knee spot: away from the hip-to-ankle chord.
+        let chord = vec3_sub(ankle, hips[i]);
+        let to_knee = vec3_sub(knees[i], hips[i]);
+        let along = crate::utils::math::vec3_dot(to_knee, chord)
+            / crate::utils::math::vec3_dot(chord, chord).max(1e-9);
+        let off = vec3_sub(to_knee, chord.map(|v| v * along));
+        let bend = if vec3_len(off) > 1e-4 * scale {
+            vec3_normalize(off)
+        } else {
+            pole
+        };
         let solution =
-            solve_leg(leg, bases[i], [0.0; 3], goal, pole, knee_limit).map_err(UnsupportedRig)?;
+            solve_leg(leg, bases[i], [0.0; 3], goal, bend, knee_limit).map_err(UnsupportedRig)?;
         solved[i] = Some((goal, solution));
     }
     // Both legs validated: emit them together.
@@ -186,7 +252,7 @@ pub(super) fn solve(
         FootState {
             support: supports[i].map(|s| s.zone),
             support_height: Some(floors[i]),
-            base_sole: rest[i],
+            base_sole: goal.sole,
             solved_sole: solution.sole,
             penetration: 0.0,
             knee_flexion: solution.flexion,
@@ -212,7 +278,7 @@ mod tests {
     fn still_body_never_steps() {
         let mut gait = KneelGait::default();
         for _ in 0..120 {
-            let (goals, phases) = gait.advance(rest_at(0.0), 1.0, 1.0 / 60.0);
+            let (goals, phases) = gait.advance(rest_at(0.0), rest_at(0.0), 1.0, 1.0 / 60.0);
             assert_eq!(goals, rest_at(0.0));
             assert_eq!(phases, [FootPhase::Planted; 2]);
         }
@@ -226,11 +292,11 @@ mod tests {
         let mut swinging = Vec::new();
         for _ in 0..240 {
             x += 0.4 / 60.0; // 0.4 m/s crawl
-            let (goals, phases) = gait.advance(rest_at(x), 1.0, 1.0 / 60.0);
+            let (goals, phases) = gait.advance(rest_at(x), rest_at(x), 1.0, 1.0 / 60.0);
             for i in 0..2 {
                 assert!(
                     goals[i][1] >= 0.05 - 1e-6,
-                    "ankle stays at or above the floor"
+                    "knee stays at or above the floor"
                 );
                 if phases[i] == FootPhase::Swing && swinging.last() != Some(&i) {
                     swinging.push(i);
@@ -246,10 +312,11 @@ mod tests {
             swinging.windows(2).all(|w| w[0] != w[1]),
             "legs alternate: {swinging:?}"
         );
-        // A completed step lands ahead of where the rest spot was when it started.
-        let planted = gait.planted[0].unwrap()[0];
+        // Planted knees trail the body by at most about two step triggers plus
+        // the distance covered during the other leg's swing.
+        let planted = gait.planted[0].unwrap().spot[0];
         assert!(
-            planted > x - STEP_TRIGGER - 0.05,
+            planted > x - 2.0 * STEP_TRIGGER - 0.15,
             "planted near the body: {planted} vs {x}"
         );
     }
@@ -264,7 +331,7 @@ mod tests {
                 [0.1 * s, 0.05, 0.1 * c],
                 [-0.3 * c - 0.1 * s, 0.05, 0.3 * s - 0.1 * c],
             ];
-            gait.advance(rest, 1.0, 1.0 / 60.0);
+            gait.advance(rest, rest, 1.0, 1.0 / 60.0);
         }
         assert!(gait.steps.iter().sum::<u64>() > 0);
     }

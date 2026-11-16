@@ -463,3 +463,46 @@ fn posture_changes_are_observable_events() {
         ]
     );
 }
+
+#[test]
+fn low_hips_sit_back_behind_the_knees_instead_of_sinking_them() {
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    let root = named(&scene, "remote_root");
+    hold_head(&mut scene, head, 1.644, 30);
+    // 0.6 m: the torso pitch is clamped and the hips sit about 10 cm below
+    // one thigh length.
+    hold_head(&mut scene, head, 0.6, 90);
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+    let start = position(&scene, root);
+    for frame in 0..=150 {
+        let x = start[0] + 0.6 * frame as f32 / 150.0;
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation: [x, start[1], start[2]],
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            },
+        );
+        hold_head(&mut scene, head, 0.6, 1);
+        for (hip_slot, knee_slot) in [
+            (HumanoidSlot::LeftUpperLeg, HumanoidSlot::LeftLowerLeg),
+            (HumanoidSlot::RightUpperLeg, HumanoidSlot::RightLowerLeg),
+        ] {
+            let knee = position(&scene, bone(&scene, avatar, knee_slot));
+            let hip = position(&scene, bone(&scene, avatar, hip_slot));
+            assert!(
+                knee[1] > ROOF + 0.03,
+                "frame {frame}: knee above the roof: {knee:?}"
+            );
+            assert!(hip[1] < ROOF + 0.45, "hips really are low: {hip:?}");
+        }
+    }
+}
