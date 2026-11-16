@@ -134,6 +134,70 @@ fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
 }
 
 #[test]
+fn detailed_collision_adds_torso_spheres_that_mirror_the_capsule() {
+    use crate::engine::ecs::component::{CollidableComponent, ZoneComponent};
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 30);
+    let world = &scene.world;
+    let avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avatar)
+        .unwrap();
+    let capsule = world
+        .get_component_by_id_as::<CollidableComponent>(avc.capsule_collidable_id.unwrap())
+        .unwrap();
+    assert_eq!(avc.detail_collidable_ids.len(), 3);
+    for (&sphere, slot) in avc.detail_collidable_ids.iter().zip([
+        HumanoidSlot::Hips,
+        HumanoidSlot::Chest,
+        HumanoidSlot::UpperChest,
+    ]) {
+        let collider = world
+            .get_component_by_id_as::<CollidableComponent>(sphere)
+            .unwrap();
+        assert_eq!(collider.movement_target_id, capsule.movement_target_id);
+        assert_eq!(collider.response, capsule.response);
+        assert_eq!(collider.enabled, capsule.enabled);
+        assert_eq!(collider.query_owner, Some(avatar));
+        let zone = world.parent_of(sphere).unwrap();
+        assert!(matches!(
+            world.get_component_by_id_as::<ZoneComponent>(zone).unwrap().shape,
+            crate::engine::ecs::component::CollisionShape::Sphere { radius } if radius > 0.05 && radius < 0.3
+        ));
+        let frame = world.parent_of(zone).unwrap();
+        assert_eq!(world.parent_of(frame), Some(bone(&scene, avatar, slot)));
+    }
+}
+
+#[test]
+fn simple_collision_adds_no_spheres() {
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms")
+        .unwrap()
+        .replace(
+            "collision_detail(\"detailed\")",
+            "collision_detail(\"simple\")",
+        );
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 30);
+    let avc = scene
+        .world
+        .get_component_by_id_as::<AvatarControlComponent>(avatar)
+        .unwrap();
+    assert!(avc.capsule_collidable_id.is_some());
+    assert!(avc.detail_collidable_ids.is_empty());
+}
+
+#[test]
 fn vertical_posture_never_leaves_vertical() {
     let source = std::fs::read_to_string("examples/twilight_rooftop.mms")
         .unwrap()

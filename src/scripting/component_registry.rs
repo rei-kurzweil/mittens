@@ -4005,6 +4005,15 @@ fn apply_call(
                 )
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
+            "collision_detail" => {
+                *avc = avc.clone().with_collision_detail(
+                    crate::engine::ecs::component::CollisionDetail::parse(arg_str(args, 0)?)
+                        .ok_or_else(|| {
+                            "AvatarControl.collision_detail expects 'simple' or 'detailed'"
+                                .to_string()
+                        })?,
+                )
+            }
             "posture" => {
                 *avc = avc.clone().with_posture(
                     crate::engine::ecs::component::BodyPosture::parse(arg_str(args, 0)?)

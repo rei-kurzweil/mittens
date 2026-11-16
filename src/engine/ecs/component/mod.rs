@@ -240,7 +240,8 @@ pub use audio_oscillator::{AudioOscillator, AudioOscillatorComponent, Oscillator
 pub use audio_output::AudioOutputComponent;
 pub use avatar_body_yaw::AvatarBodyYawComponent;
 pub use avatar_control::{
-    ArmTwoBoneIkConfig, AvatarControlComponent, BodyPosture, HeadMotionGazePolicy,
+    ArmTwoBoneIkConfig, AvatarControlComponent, BodyPosture, CollisionDetail,
+    HeadMotionGazePolicy,
 };
 pub use background::BackgroundComponent;
 pub use background_color::BackgroundColorComponent;

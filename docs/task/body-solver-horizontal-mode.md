@@ -42,7 +42,17 @@ Narrows the posture table in
   stays upright).
 - The neck bend is still computed against the root, not the pitched chest.
 - While kneeling on a remembered floor the lower body can report `NoSupport`.
-- No crawling gait, lying down, or torso collider yet.
+- No crawling gait or lying down yet.
+
+### Collision detail
+
+`AVC.collision_detail("simple" | "detailed")`, default `"simple"` (the single
+upright capsule). `"detailed"` adds a sphere on the hips, chest, and upper
+chest (radius 0.65 × hip-joint spacing), each a slide collider that mirrors
+the capsule's movement target, response, and enabled state, so they only push
+once the capsule is live. They follow the pitched bones. Corrections are not
+yet horizontal-only: fine on hands and knees, where the torso stays well
+above the floor, but lying down will need floor-safe torso contact.
 
 ## Terminology
 

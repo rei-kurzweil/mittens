@@ -51,6 +51,26 @@ impl BodyPosture {
     }
 }
 
+/// How finely AVC approximates the body for static contact. `Simple` is the
+/// single upright capsule. `Detailed` adds spheres along the torso so a
+/// pitched body (hands and knees) still collides.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CollisionDetail {
+    #[default]
+    Simple,
+    Detailed,
+}
+
+impl CollisionDetail {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "simple" => Some(Self::Simple),
+            "detailed" => Some(Self::Detailed),
+            _ => None,
+        }
+    }
+}
+
 /// Settings applied to one AVC-generated two-bone arm chain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArmTwoBoneIkConfig {
@@ -299,6 +319,8 @@ pub struct AvatarControlComponent {
 
     /// Body solver mode policy; see `BodyPosture`.
     pub posture: BodyPosture,
+    /// Collision fidelity; see `CollisionDetail`.
+    pub collision_detail: CollisionDetail,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
     pub crouch_enabled: bool,
     pub crouch_sole_offsets: Option<[[f32; 3]; 2]>,
@@ -337,6 +359,8 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_collidable_id: Option<ComponentId>,
     /// XR-only Y sampler and retained routing/calibration metadata.
     pub(crate) capsule_sample_id: Option<ComponentId>,
+    /// Torso sphere colliders generated for `CollisionDetail::Detailed`.
+    pub(crate) detail_collidable_ids: Vec<ComponentId>,
     pub(crate) capsule_vertical_source: Option<ComponentId>,
     pub(crate) capsule_routing_revision: u64,
     pub(crate) capsule_route_ref: Option<ComponentRef>,
@@ -375,6 +399,10 @@ impl AvatarControlComponent {
         }
         self.walking_step_height = metres;
         Ok(self)
+    }
+    pub fn with_collision_detail(mut self, detail: CollisionDetail) -> Self {
+        self.collision_detail = detail;
+        self
     }
     pub fn with_posture(mut self, posture: BodyPosture) -> Self {
         self.posture = posture;
@@ -722,6 +750,7 @@ impl Default for AvatarControlComponent {
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
             posture: BodyPosture::Vertical,
+            collision_detail: CollisionDetail::Simple,
             crouch_enabled: true,
             crouch_sole_offsets: None,
             crouch_knee_pole: [0.0, 0.0, 1.0],
@@ -734,6 +763,7 @@ impl Default for AvatarControlComponent {
             capsule_transform_id: None,
             capsule_collidable_id: None,
             capsule_sample_id: None,
+            detail_collidable_ids: Vec::new(),
             capsule_vertical_source: None,
             capsule_routing_revision: 0,
             capsule_route_ref: None,
@@ -894,6 +924,9 @@ impl Component for AvatarControlComponent {
                     num(self.neck_lateral_limit as f64),
                 ],
             );
+        }
+        if self.collision_detail == CollisionDetail::Detailed {
+            c = c.with_call("collision_detail", vec![s("detailed")]);
         }
         if self.posture != BodyPosture::Vertical {
             c = c.with_call("posture", vec![s(self.posture.as_str())]);

@@ -249,6 +249,8 @@ fn make_player(prefix, local_player, avatar) {
         crouch_enabled(true)
         // Get low enough and crouching gives way to hands and knees.
         posture("auto")
+        // Torso spheres keep the pitched body colliding on hands and knees.
+        collision_detail("detailed")
         crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
         WalkingIK { step_scale(1.3) }
         if !local_player { collision_response("read_only") }

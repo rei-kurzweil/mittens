@@ -1,6 +1,7 @@
 mod arm_ik;
 mod body_operator;
 mod capsule;
+mod detail_collision;
 mod eye_blink;
 mod eyes;
 mod hands;
@@ -38,6 +39,7 @@ use crate::utils::math::{
 use arm_ik::*;
 use body_operator::*;
 use capsule::*;
+use detail_collision::*;
 use eye_blink::*;
 use eyes::*;
 use hands::*;
@@ -164,6 +166,7 @@ impl AvatarControlSystem {
                 // when route preparation occurs in a later avatar phase.
                 collidable.response = response;
             }
+            sync_detail_spheres(id, world, Some(&mut *contact), reset);
         }
     }
 
@@ -223,6 +226,7 @@ fn tick_one(
     refresh_map_camera_anchor(id, world, humanoid_maps, emit);
 
     try_init_or_route_capsule(id, world, render_assets, emit);
+    ensure_detail_spheres(id, world, humanoid_maps);
 
     // Keep the displaced head bone anchored under head_mount. This prevents
     // animation/FK from reintroducing a local head translation that would move

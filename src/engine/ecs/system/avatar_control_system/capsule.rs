@@ -55,6 +55,7 @@ pub(super) fn refresh_capsule_routing(avc_id: ComponentId, world: &mut World) {
             || previous_target != target
             || previous_response != Some(response);
     }
+    super::detail_collision::sync_detail_spheres(avc_id, world, None, false);
 }
 
 pub(super) fn capsule_contact_valid(
