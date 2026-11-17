@@ -1,7 +1,7 @@
 //! Immutable rig calibration and ownership release, independent of posture policy.
 use crate::engine::ecs::component::{HumanoidSlot, TransformComponent};
 use crate::engine::ecs::system::HumanoidBoneMapReport;
-use crate::engine::ecs::system::avatar_control_system::{
+use crate::engine::ecs::system::ik::rest_pose::{
     read_bone_rest_pose, rest_model_relative_to,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -14,6 +14,8 @@ pub(super) struct Leg {
     pub(super) parent: ComponentId,
     pub(super) rest: [TransformTrs; 3],
     pub(super) rest_flexion: f32,
+    /// Foot rest rotation in the model-root frame, for kneeling foot goals.
+    pub(super) foot_in_root: [f32; 4],
     pub(super) active: bool,
 }
 
@@ -112,6 +114,11 @@ impl LowerBodyRig {
             if vec3_len(rest[1].translation) < 1e-4 || vec3_len(rest[2].translation) < 1e-4 {
                 return Err("zero leg segment");
             }
+            let foot_in_root = TransformTrs::from_matrix(
+                rest_model_relative_to(world, root, joints[2]).ok_or("foot outside model root")?,
+            )
+            .map_err(|_| "invalid foot rest pose")?
+            .rotation_quat_xyzw;
             let mut node = joints[2];
             while node != root {
                 let parent = world.parent_of(node);
@@ -131,6 +138,7 @@ impl LowerBodyRig {
                 )
                 .clamp(-1.0, 1.0)
                 .acos(),
+                foot_in_root,
                 active: false,
             })
         };

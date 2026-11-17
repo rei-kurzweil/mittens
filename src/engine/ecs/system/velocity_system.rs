@@ -15,6 +15,7 @@ const MAX_STEPS: usize = 8;
 #[derive(Debug, Default)]
 pub struct VelocitySystem {
     projectile_motion: super::projectile_motion::ProjectileMotion,
+    swept_zones: super::swept_zone_events::SweptZoneEvents,
     accumulator_sec: f64,
     dropped_since_report_sec: f64,
     reported_bad_target: HashSet<ComponentId>,
@@ -766,6 +767,16 @@ impl VelocitySystem {
         }
     }
 
+    /// Listener snapshot for `ZoneContact`; without one no sweep work runs.
+    pub(crate) fn set_swept_zone_listeners(&mut self, gate: crate::engine::ecs::ListenerGate) {
+        self.swept_zones.set_gate(gate);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn swept_zone_queries(&self) -> u64 {
+        self.swept_zones.queries
+    }
+
     pub(crate) fn take_steps(&mut self, dt_sec: f32) -> usize {
         if !dt_sec.is_finite() || dt_sec < 0.0 {
             return 0;
@@ -899,6 +910,37 @@ impl VelocitySystem {
             if !delta_local.iter().all(|v| v.is_finite()) {
                 continue;
             }
+            let speed = math::vec3_len(angular);
+            let rotation_delta = (speed > 1e-6 && speed.is_finite()).then(|| {
+                math::quat_from_axis_angle(math::vec3_scale(angular, 1.0 / speed), speed * elapsed)
+            });
+            if self.swept_zones.observes(world, id)
+                && let Some(start) = world
+                    .get_component_by_id_as::<TransformComponent>(target)
+                    .map(|t| t.transform)
+            {
+                let mut end = start;
+                for (position, delta) in end.translation.iter_mut().zip(delta_local) {
+                    *position += delta;
+                }
+                if let Some(delta) = rotation_delta {
+                    end.rotation = math::quat_mul(delta, end.rotation);
+                }
+                end.recompute_model();
+                let parent = parent_world.unwrap_or_else(math::mat4_identity);
+                if let Some(motion) =
+                    super::swept_zone_events::step_motion(parent, start.model, end.model)
+                {
+                    self.swept_zones.observe(
+                        world,
+                        &mut self.projectile_motion.index,
+                        id,
+                        target,
+                        motion,
+                        emit,
+                    );
+                }
+            }
             world
                 .get_component_by_id_as_mut::<VelocityComponent>(id)
                 .unwrap()
@@ -911,12 +953,7 @@ impl VelocitySystem {
             for (position, delta) in transform.transform.translation.iter_mut().zip(delta_local) {
                 *position += delta;
             }
-            let speed = math::vec3_len(angular);
-            if speed > 1e-6 && speed.is_finite() {
-                let delta = math::quat_from_axis_angle(
-                    math::vec3_scale(angular, 1.0 / speed),
-                    speed * elapsed,
-                );
+            if let Some(delta) = rotation_delta {
                 transform.transform.rotation = math::quat_mul(delta, transform.transform.rotation);
             }
             transform.transform.recompute_model();

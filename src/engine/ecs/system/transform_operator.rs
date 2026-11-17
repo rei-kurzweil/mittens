@@ -932,13 +932,18 @@ impl TransformOperatorSystem {
         Self::quat_normalize(current)
     }
 
-    fn extract_yaw_from_quat(q: [f32; 4], forward_plus_z: bool) -> f32 {
-        let z = math::quat_rotate_vec3(q, [0.0, 0.0, 1.0]);
-        if forward_plus_z {
-            z[0].atan2(z[2])
-        } else {
-            (-z[0]).atan2(-z[2])
-        }
+    /// Heading of a possibly pitched head. The forward axis alone degenerates
+    /// when looking straight down or up (as on hands and knees), so the up axis
+    /// fills in: it points forward when looking down and backward when looking
+    /// up. For pure pitch both terms share a direction and the yaw is unchanged.
+    pub(crate) fn extract_yaw_from_quat(q: [f32; 4], forward_plus_z: bool) -> f32 {
+        let local_forward = if forward_plus_z { [0.0, 0.0, 1.0] } else { [0.0, 0.0, -1.0] };
+        let forward = math::quat_rotate_vec3(q, local_forward);
+        let up = math::quat_rotate_vec3(q, [0.0, 1.0, 0.0]);
+        // heading = forward_xz - forward_y * up_xz
+        let x = forward[0] - forward[1] * up[0];
+        let z = forward[2] - forward[1] * up[2];
+        x.atan2(z)
     }
 
     fn quat_rotation_y(yaw: f32) -> [f32; 4] {
@@ -1149,6 +1154,26 @@ impl System for TransformOperatorSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yaw_extraction_survives_looking_straight_down_or_up() {
+        let yaw = 0.7f32;
+        let yawed = math::quat_from_axis_angle([0.0, 1.0, 0.0], yaw);
+        for forward_plus_z in [true, false] {
+            // Pitch about the head's own right axis, as nodding does.
+            for pitch in [-1.5707, -1.2, -0.5, 0.0, 0.5, 1.2, 1.5707] {
+                let nod = math::quat_from_axis_angle([1.0, 0.0, 0.0], pitch);
+                let head = math::quat_mul(yawed, nod);
+                let base = TransformOperatorSystem::extract_yaw_from_quat(yawed, forward_plus_z);
+                let got = TransformOperatorSystem::extract_yaw_from_quat(head, forward_plus_z);
+                let diff = (got - base + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+                    - std::f32::consts::PI;
+                assert!(diff.abs() < 1e-3, "plus_z={forward_plus_z} pitch={pitch}: {got} vs {base}");
+            }
+        }
+        // The level-head convention is unchanged: +Z forward at yaw 0 is 0.
+        assert!(TransformOperatorSystem::extract_yaw_from_quat([0.0, 0.0, 0.0, 1.0], true).abs() < 1e-6);
+    }
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::ComponentRef;
 

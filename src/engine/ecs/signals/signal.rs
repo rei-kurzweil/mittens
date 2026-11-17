@@ -71,6 +71,28 @@ pub enum EventSignal {
     KeyUp(KeyboardEvent),
     /// Initial presses and OS repeats; this is not committed text input.
     KeyPress(KeyboardEvent),
+    /// Mouse wheel motion this frame, scene-wide. Positive `delta_y` scrolls up.
+    MouseWheel {
+        delta_x: f32,
+        delta_y: f32,
+    },
+    /// Right-button drag this frame, scene-wide, in pixels: the movement the
+    /// desktop Input turns with. Lets a script take the look when it has
+    /// switched the Input's rotation off.
+    MouseLook {
+        delta_x: f32,
+        delta_y: f32,
+    },
+    /// A mouse button went down this frame, scene-wide, wherever the cursor is
+    /// (Click only reports presses that land on something clickable).
+    /// `button` is "left", "right", "middle", "back", "forward" or "other".
+    MouseButtonDown {
+        button: String,
+    },
+    /// A mouse button was released this frame, scene-wide; see `MouseButtonDown`.
+    MouseButtonUp {
+        button: String,
+    },
 
     /// A glTF asset finished spawning and its runtime node metadata is queryable.
     /// Scoped to `gltf`.
@@ -200,11 +222,35 @@ pub enum EventSignal {
         movement_target: ComponentId,
         movement_target_offset: [f32; 3],
     },
+    /// A velocity-bound collidable's zone swept into static geometry during a
+    /// fixed step. Observational only; scoped to the moving zone.
+    ZoneContact {
+        zone: ComponentId,
+        collidable: ComponentId,
+        velocity: ComponentId,
+        other_zone: ComponentId,
+        other_collidable: ComponentId,
+        point: [f32; 3],
+        normal: [f32; 3],
+        fraction: f32,
+    },
 
     /// A Rider-to-Mountable attachment transaction committed.
     MountStarted {
         rider: ComponentId,
         mountable: ComponentId,
+    },
+    /// The body solver switched an avatar's posture. Scoped to the AVC.
+    /// Outward-facing only: solvers share mode state directly.
+    PostureChanged {
+        avatar: ComponentId,
+        /// "vertical" | "horizontal"
+        mode: &'static str,
+        previous: &'static str,
+        /// "standing" | "hands_and_knees"
+        pose: &'static str,
+        /// "head_height" | "crouch_exhausted" | "forced"
+        reason: &'static str,
     },
 
     /// A previously active Rider-to-Mountable attachment ended.
@@ -420,6 +466,10 @@ impl EventSignal {
             EventSignal::KeyDown(_) => SignalKind::KeyDown,
             EventSignal::KeyUp(_) => SignalKind::KeyUp,
             EventSignal::KeyPress(_) => SignalKind::KeyPress,
+            EventSignal::MouseWheel { .. } => SignalKind::MouseWheel,
+            EventSignal::MouseLook { .. } => SignalKind::MouseLook,
+            EventSignal::MouseButtonDown { .. } => SignalKind::MouseButtonDown,
+            EventSignal::MouseButtonUp { .. } => SignalKind::MouseButtonUp,
             EventSignal::GltfInitialized { .. } => SignalKind::GltfInitialized,
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::AttachmentChanged { .. } => SignalKind::AttachmentChanged,
@@ -434,7 +484,9 @@ impl EventSignal {
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
+            EventSignal::ZoneContact { .. } => SignalKind::ZoneContact,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
+            EventSignal::PostureChanged { .. } => SignalKind::PostureChanged,
             EventSignal::MountEnded { .. } => SignalKind::MountEnded,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::ToggleChanged { .. } => SignalKind::ToggleChanged,
@@ -1283,6 +1335,10 @@ pub enum SignalKind {
     KeyDown,
     KeyUp,
     KeyPress,
+    MouseWheel,
+    MouseLook,
+    MouseButtonDown,
+    MouseButtonUp,
     GltfInitialized,
     ParentChanged,
     AttachmentChanged,
@@ -1297,8 +1353,10 @@ pub enum SignalKind {
     ProjectileHit,
     ZoneEntered,
     ZoneExited,
+    ZoneContact,
     MountStarted,
     MountEnded,
+    PostureChanged,
     Click,
     ToggleChanged,
     SliderChanged,

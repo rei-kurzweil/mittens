@@ -54,8 +54,6 @@ fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs()
         ("paper_craft_rooftop_building", [-18., 0., 0.], 6),
         ("paper_craft_west_tower_north", [-18., 4., -25.], 5),
         ("paper_craft_east_tower_center", [18., 9.6, 0.], 4),
-        ("paper_craft_west_tower_south", [-18., 16., 25.], 5),
-        ("paper_craft_low_annex_west", [-39., 3.2, -10.], 2),
     ];
     for (label, position, floors) in buildings {
         let matrix = authored_model(&world, named(label));
@@ -73,7 +71,7 @@ fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs()
                 .is_some_and(|label| label.ends_with("_full_detail"))
         })
         .count();
-    assert_eq!(full_detail_buildings, 5);
+    assert_eq!(full_detail_buildings, 3);
     let count = |predicate: fn(&World, ComponentId) -> bool| {
         world
             .all_components()

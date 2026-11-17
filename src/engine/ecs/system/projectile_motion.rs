@@ -32,7 +32,8 @@ pub(super) fn accelerate(world: &World, velocity: ComponentId, linear: &mut [f32
 
 #[derive(Debug, Default)]
 pub(super) struct ProjectileMotion {
-    index: CollidableBvh,
+    /// Shared with the generic swept-zone producer: one draining consumer.
+    pub(super) index: CollidableBvh,
     stack: Vec<usize>,
     candidates: Vec<usize>,
 }

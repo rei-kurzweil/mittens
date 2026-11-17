@@ -1005,6 +1005,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component
                         .builder_call("friction", floats(1))
                         .builder_call("movement_target", any(1))
+                        .builder_call("velocity", any(1))
                         .builder_call("enabled", booleans(1));
                 }
                 "RaycastableShape" => {
@@ -1283,6 +1284,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "head_neck_body_enabled", booleans(1));
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
+                    constructor_and_builder(component, "posture", strings(1));
+                    constructor_and_builder(component, "collision_detail", strings(1));
                     constructor_and_builder(component, "crouch_enabled", booleans(1));
                     walking_ik_binding::register_legacy(component);
                     constructor_and_builder(
@@ -1310,6 +1313,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "KeyDown",
         "KeyUp",
         "KeyPress",
+        "MouseWheel",
+        "MouseLook",
+        "MouseButtonDown",
+        "MouseButtonUp",
         "GLTFInitialized",
         "Click",
         "ToggleChanged",
@@ -1326,6 +1333,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",
+        "ZoneContact",
+        "PostureChanged",
         "MountStarted",
         "MountEnded",
         "ParentChanged",
@@ -1512,6 +1521,20 @@ mod tests {
                 configured.runtime().materialize_component(invalid).is_err(),
                 "invalid post-processing declaration was accepted: {invalid}"
             );
+        }
+    }
+
+    #[test]
+    fn collidable_velocity_builder_accepts_component_references() {
+        let configured = build_mittens_runtime().unwrap();
+        for source in [
+            "Collidable.slide().velocity(\"/[name='motion']\") {}",
+            "Collidable.slide().velocity(\"@uuid:00000000-0000-0000-0000-000000000001\") {}",
+        ] {
+            configured
+                .runtime()
+                .materialize_component(source)
+                .unwrap_or_else(|error| panic!("Collidable.velocity rejected {source}: {error}"));
         }
     }
 

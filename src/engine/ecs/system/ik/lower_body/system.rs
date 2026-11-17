@@ -30,6 +30,11 @@ pub(super) struct LowerBodyInstance {
     walking: WalkingState,
     airborne: super::airborne::AirborneState,
     sole_offsets: Option<[[f32; 3]; 2]>,
+    /// Set from the body solver: kneel instead of standing/crouching, on the
+    /// body solver's last known floor when this system has lost its own.
+    kneeling: bool,
+    kneel_floor: Option<f32>,
+    kneel_gait: super::kneel::KneelGait,
 }
 impl LowerBodyIkSystem {
     pub fn register(&mut self, id: ComponentId) {
@@ -43,6 +48,33 @@ impl LowerBodyIkSystem {
     }
     pub fn feet(&self, id: ComponentId) -> Option<&[FootState; 2]> {
         self.avatars.get(&id)?.feet.as_ref()
+    }
+    /// Kneel each avatar the body solver has mostly blended into horizontal.
+    pub fn sync_modes(&mut self, body: &crate::engine::ecs::system::ik::body::BodySolverSystem) {
+        for (&id, instance) in &mut self.avatars {
+            let kneeling = body.weight(id) >= 0.5;
+            instance.kneel_floor = body.floor(id);
+            if kneeling != instance.kneeling {
+                instance.kneeling = kneeling;
+                instance.walking.reset();
+                instance.kneel_gait = Default::default();
+            }
+        }
+    }
+    /// Lowest solved knee joint height above its foot's support, or `None`
+    /// without support. Negative means a knee is below the floor.
+    pub fn knee_clearance(&self, id: ComponentId) -> Option<f32> {
+        self.avatars
+            .get(&id)?
+            .feet
+            .as_ref()?
+            .iter()
+            .filter_map(|f| f.support_height.map(|floor| f.knee[1] - floor))
+            .min_by(f32::total_cmp)
+    }
+    /// Completed crawl steps per leg (left, right) since kneeling began.
+    pub fn crawl_steps(&self, id: ComponentId) -> Option<[u64; 2]> {
+        Some(self.avatars.get(&id)?.kneel_gait.steps)
     }
     pub fn walking(&self, id: ComponentId) -> Option<WalkingDiagnostics> {
         Some(self.avatars.get(&id)?.walking.diagnostics())
@@ -141,6 +173,8 @@ impl LowerBodyIkSystem {
                 (_, Some(status), _) => Err(status),
                 (Some(rig), None, Ok(config)) => solve_frame(
                     rig,
+                    instance.kneeling.then_some(instance.kneel_floor),
+                    &mut instance.kneel_gait,
                     &mut instance.walking,
                     &mut instance.airborne,
                     previous_floor,
@@ -253,6 +287,8 @@ fn walking_settings(
 
 fn solve_frame(
     rig: &mut LowerBodyRig,
+    kneeling: Option<Option<f32>>,
+    kneel_gait: &mut super::kneel::KneelGait,
     walking: &mut WalkingState,
     airborne: &mut super::airborne::AirborneState,
     previous_floor: Option<f32>,
@@ -338,6 +374,20 @@ fn solve_frame(
         candidates,
     )?;
     let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
+    if let Some(kneel_floor) = kneeling.filter(|_| !flying) {
+        walking.reset();
+        return super::kneel::solve(
+            rig,
+            kneel_gait,
+            bases,
+            &ground,
+            previous_floor.or(kneel_floor),
+            body.rotation_quat_xyzw,
+            avatar.crouch_knee_limit,
+            dt_sec,
+            emit,
+        );
+    }
     let rest = std::array::from_fn::<_, 2, _>(|i| {
         crouch::evaluate(
             FootGoal {
@@ -402,12 +452,12 @@ fn solve_frame(
         let support = supports[i];
         let penetration = rest[i].penetration;
         let solution = results[i].take().unwrap();
-        let (solved_sole, flexion) = if let Some(solution) = solution {
+        let (solved_sole, flexion, knee) = if let Some(solution) = solution {
             for (joint, local) in leg.joints.into_iter().zip(solution.local) {
                 emit_pose(emit, joint, local);
             }
             leg.active = true;
-            (solution.sole, solution.flexion)
+            (solution.sole, solution.flexion, solution.knee)
         } else {
             // Supported standing legs also own their base pose; animation
             // must not move the real soles away from the predicted rest FK.
@@ -417,7 +467,8 @@ fn solve_frame(
                 }
             }
             leg.active = support.is_some();
-            (soles[i], leg.rest_flexion)
+            let knee = mat4_mul(bases[i], leg.rest[1].to_matrix().unwrap());
+            (soles[i], leg.rest_flexion, [knee[3][0], knee[3][1], knee[3][2]])
         };
         FootState {
             support: support.map(|s| s.zone),
@@ -426,6 +477,7 @@ fn solve_frame(
             solved_sole,
             penetration,
             knee_flexion: flexion,
+            knee,
             target_sole: goals[i].sole,
             target_rotation: goals[i].rotation,
             target_error: vec3_len(vec3_sub(goals[i].sole, solved_sole)),

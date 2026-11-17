@@ -1414,6 +1414,8 @@ impl SystemWorld {
                 self.avatar_control.remove(n);
                 self.head_neck_body_constraint.remove(n);
                 self.lower_body_ik.remove(n);
+                self.upper_body_ik.remove(n);
+                self.body_solver.remove(n);
             }
             if world
                 .get_component_by_id_as::<AvatarBodyYawComponent>(n)
@@ -1518,6 +1520,8 @@ impl SystemWorld {
         self.avatar_control.register(component);
         self.head_neck_body_constraint.register(component);
         self.lower_body_ik.register(component);
+        self.upper_body_ik.register(component);
+        self.body_solver.register(component);
     }
 
     pub fn register_eye_tracking(&mut self, world: &World, component: ComponentId) {

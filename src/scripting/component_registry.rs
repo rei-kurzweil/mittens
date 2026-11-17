@@ -644,10 +644,18 @@ fn collect_referenced_guids_filtered(
         {
             out.insert(*guid);
         }
-        if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
-            && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
-        {
-            out.insert(*guid);
+        if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node) {
+            for source in [
+                &collidable.movement_target_source,
+                &collidable.velocity_source,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if let ComponentRef::Guid(guid) = source {
+                    out.insert(*guid);
+                }
+            }
         }
         if let Some(rider) = world.get_component_by_id_as::<RiderComponent>(node) {
             for source in [
@@ -835,10 +843,18 @@ fn collect_referenced_guids_limited(
     {
         out.insert(*guid);
     }
-    if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
-        && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
-    {
-        out.insert(*guid);
+    if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node) {
+        for source in [
+            &collidable.movement_target_source,
+            &collidable.velocity_source,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let ComponentRef::Guid(guid) = source {
+                out.insert(*guid);
+            }
+        }
     }
     if let Some(rider) = world.get_component_by_id_as::<RiderComponent>(node) {
         for source in [
@@ -3502,6 +3518,7 @@ fn apply_call(
             .clone();
         let updated = match method {
             "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
+            "velocity" => current.velocity(arg_component_ref(world, args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             "friction" => current.with_friction(arg_f32(args, 0)?)?,
             "response" => current.with_response(crate::engine::ecs::component::CollisionResponse::parse(arg_str(args, 0)?)?)?,
@@ -3988,6 +4005,24 @@ fn apply_call(
                 )
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
+            "collision_detail" => {
+                *avc = avc.clone().with_collision_detail(
+                    crate::engine::ecs::component::CollisionDetail::parse(arg_str(args, 0)?)
+                        .ok_or_else(|| {
+                            "AvatarControl.collision_detail expects 'simple' or 'detailed'"
+                                .to_string()
+                        })?,
+                )
+            }
+            "posture" => {
+                *avc = avc.clone().with_posture(
+                    crate::engine::ecs::component::BodyPosture::parse(arg_str(args, 0)?)
+                        .ok_or_else(|| {
+                            "AvatarControl.posture expects 'vertical', 'auto', or 'horizontal'"
+                                .to_string()
+                        })?,
+                )
+            }
             "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
             "crouch_sole_offsets" => {
                 *avc = avc

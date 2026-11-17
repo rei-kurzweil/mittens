@@ -77,7 +77,9 @@ A hand holding a weapon is not automatically available as a planted support hand
 Sitting/mounted vehicle ownership remains compatible with the existing attachment
 system; do not infer a seated mode solely from height or release mounted ownership.
 
-A shared posture coordinator is a proposed responsibility, not a new component:
+A shared posture coordinator is a proposed responsibility, not a new component.
+It is now called the **body solver**; its first slice (vertical vs horizontal,
+hands and knees) is planned in [body-solver-horizontal-mode.md](body-solver-horizontal-mode.md).
 
 1. Select posture/contact intent and read currently authoritative observations.
 2. Negotiate one feasible pelvis/root-relative target between upper and lower

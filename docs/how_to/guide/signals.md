@@ -265,6 +265,28 @@ on(world, "KeyPress", fn(event) { print("press " + event.key) })
 on(world, "KeyUp", fn(event) { print("up " + event.key) })
 ```
 
+#### `MouseWheel`, `MouseLook`, `MouseButtonDown`, and `MouseButtonUp`
+<!-- catalog:signal source="MouseWheel" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseLook" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseButtonDown" kind="event" mms="observable-payload" -->
+<!-- catalog:signal source="MouseButtonUp" kind="event" mms="observable-payload" -->
+**Events.** Scene-wide mouse input, available through `on(world, ...)` (or `on_global`) without an
+`Input` component, and suppressed like the key events while a text input owns keyboard focus.
+`MouseWheel` reports this frame's wheel motion as `{ delta_x, delta_y }` (positive `delta_y`
+scrolls up). `MouseLook` reports this frame's right-button drag in pixels as `{ delta_x,
+delta_y }`: the movement the desktop `Input` turns with, so a script that has switched the Input's
+rotation off can take the look itself. `MouseButtonDown` and `MouseButtonUp` fire when a button
+goes down or up wherever the cursor is, unlike `Click`, which only reports a press and release that
+land on something clickable; the callback receives `{ button }`, one of `"left"`, `"right"`,
+`"middle"`, `"back"`, `"forward"` or `"other"`.
+
+```mms parse-only
+on(world, "MouseWheel", fn(event) { print("wheel " + event.delta_y) })
+on(world, "MouseLook", fn(event) { print("look " + event.delta_x + ", " + event.delta_y) })
+on(world, "MouseButtonDown", fn(event) { if event.button == "middle" { print("middle down") } })
+on(world, "MouseButtonUp", fn(event) { print(event.button + " up") })
+```
+
 #### `DataEvent`
 <!-- catalog:signal source="DataEvent" kind="event" mms="observable-partial-payload" -->
 **Event.** User code emitted a named cross-subtree data event. The runtime and routing subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with partial payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
@@ -329,6 +351,70 @@ Emitted once when a previously observed live pair separates, with the same
 component identities and captured offset. Disabled or removed participants
 retire their pairs without delivering stale handles. These signals apply no
 contact response. See [Zone observation rules](../../task/zone-enter-events-and-teleport-pits.md).
+
+#### `ZoneContact`
+<!-- catalog:signal source="ZoneContact" kind="event" mms="observable-payload" -->
+
+Emitted when a moving zone with a `Collidable` runs into static geometry. A
+zone is moving when a `Velocity` drives a transform above it; nothing else is
+authored. Scoped to the moving zone, so handlers on the zone or any ancestor
+receive it. The sweep is continuous: a thin wall crossed between steps is
+still reported. Linear and angular motion are both swept, so a zone carried
+around a yawing pivot sees what it passes, and an outer `Velocity` carries
+zones below nested ones.
+
+`ZoneEntered`/`ZoneExited` answer "is something inside this region?" for
+sensor zones. `ZoneContact` answers "did this moving zone hit something solid?"
+and is a single moment with no matching exit.
+
+Payload: `zone`, `collidable`, `velocity` (the one whose step made contact),
+`other_zone`, `other_collidable`,
+`point` (world contact point on the other surface), `normal` (world, facing
+the mover), and `fraction` (`[0, 1]` along the step).
+
+- **Opt-in and cost.** Nothing is swept unless a `ZoneContact` handler can
+  observe the moving zone, either scoped to it or an ancestor, or global. A
+  global handler sweeps every moving zone. Which zones a Velocity carries is
+  cached and recomputed only when the scene structure changes.
+- **Override.** `Collidable.velocity(ref)` (a handle, selector, or `@uuid:`)
+  names the one `Velocity` that moves the zone, instead of every Velocity
+  above it. Use it for a zone moved by a Velocity elsewhere in the tree, or to
+  pick one of several nested Velocities. An unresolved reference sweeps
+  nothing; it does not fall back to inference.
+- **Shapes.** Cube zones sweep as oriented boxes against box surfaces at any
+  rotation; flush contact counts as clear. Sphere zones use the sphere sweep.
+  Damaged triangle meshes are not box-swept, and capsules are skipped rather
+  than approximated.
+- **Once per contact.** A contact is reported when it begins, and again only
+  after the mover has separated from that surface. Only the nearest new
+  contact per mover per step is delivered.
+- **Observational.** The event never stops, truncates, or reverses motion;
+  the handler owns the response. Surfaces under the velocity's own target
+  are ignored. Only the moving zone hears the event; a static zone that was
+  hit is not notified.
+
+```mms parse-only
+let motion = Velocity { T { Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} } } }
+on(motion, "ZoneContact", fn(event) { print(event.other_zone) })
+motion
+```
+
+#### `PostureChanged`
+<!-- catalog:signal source="PostureChanged" kind="event" mms="observable-payload" -->
+
+Emitted when the body solver switches an avatar's posture, scoped to its
+`AvatarControl`. Payload: `avatar`, `mode` and `previous` (`"vertical"` or
+`"horizontal"`), `pose` (`"standing"` or `"hands_and_knees"`; lying poses
+will join horizontal later), and `reason` (`"head_height"`,
+`"crouch_exhausted"`, or `"forced"` by `AVC.posture(...)`). It fires when the
+switch is decided; the visible blend takes about 0.35 s after it. The solvers
+themselves share mode state directly and do not depend on this event.
+
+```mms parse-only
+let avatar = AVC.posture("auto") {}
+on(avatar, "PostureChanged", fn(e) { print(e.pose) })
+avatar
+```
 
 #### `MountStarted`
 <!-- catalog:signal source="MountStarted" kind="event" mms="observable-payload" -->

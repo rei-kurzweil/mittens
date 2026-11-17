@@ -26,7 +26,9 @@ fn door_leaf(x, z, y, height, leaf_length, direction, angle, color, material) {
     }
 }
 
-export fn boxcar(label, position, length, width, height, body_color, roof_color, door_color, material) {
+// `doors_open` swings the leaves outward; closed leaves fold flat against the
+// car so a moving car's sensor covers everything visible.
+export fn boxcar(label, position, length, width, height, body_color, roof_color, door_color, material, doors_open) {
     let wall = 0.10
     let floor_bottom = 0.12
     let floor_thickness = 0.16
@@ -39,7 +41,8 @@ export fn boxcar(label, position, length, width, height, body_color, roof_color,
     let door_length = 1.00
     let door_height = 1.70
     let door_leaf_length = 0.48
-    let door_leaf_angle = 0.92
+    let door_leaf_angle = 0.0
+    if doors_open { door_leaf_angle = 0.92 }
     let door_center_y = floor_top + door_height / 2.0
     let door_lintel_height = wall_height - door_height
     let door_lintel_y = floor_top + door_height + door_lintel_height / 2.0
@@ -109,9 +112,9 @@ export fn boxcar_train(label, car_length, car_width, car_height, gap, body_color
         name = label
 
         boxcar(label + "_car_0", [0.0, 0.0, -car_offset],
-            car_length, car_width, car_height, body_color, roof_color, door_color, material)
+            car_length, car_width, car_height, body_color, roof_color, door_color, material, true)
         boxcar(label + "_car_1", [0.0, 0.0, car_offset],
-            car_length, car_width, car_height, body_color, roof_color, door_color, material)
+            car_length, car_width, car_height, body_color, roof_color, door_color, material, true)
 
         // A short coupler bridges the visible gap and the two underframes.
         shell_part([0.0, 0.10, 0.0], [0.18, 0.14, gap + 0.50], roof_color, material)
@@ -125,6 +128,18 @@ export fn boxcar_train(label, car_length, car_width, car_height, gap, body_color
                 name = label + "_sweep_sensor"
                 Collidable.static().friction(0.0) {}
             }
+        }
+    }
+}
+
+// A moving car's contact sensor: one box over the body, roof overhang included.
+// Under a Velocity-driven transform, `ZoneContact` reports what the car runs into.
+export fn boxcar_sensor(label, length, width, height) {
+    return T.position(0.0, height / 2.0, 0.0) {
+        name = label + "_mount"
+        Zone.cube([width / 2.0 + 0.07, height / 2.0, length / 2.0 + 0.06]) {
+            name = label
+            Collidable.static().friction(0.0) {}
         }
     }
 }

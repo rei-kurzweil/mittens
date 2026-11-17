@@ -9,6 +9,8 @@ use crate::utils::math::{
 
 pub(super) struct LegSolution {
     pub(super) local: [TransformTrs; 3],
+    /// Solved knee joint in world space.
+    pub(super) knee: [f32; 3],
     pub(super) sole: [f32; 3],
     pub(super) flexion: f32,
 }
@@ -104,6 +106,7 @@ pub(super) fn solve_leg(
         .acos();
     Ok(LegSolution {
         local,
+        knee,
         sole,
         flexion,
     })

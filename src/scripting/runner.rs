@@ -611,6 +611,17 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             ),
             ("key".to_string(), Value::String(event.key.clone())),
         ])),
+        Some(crate::engine::ecs::EventSignal::MouseWheel { delta_x, delta_y })
+        | Some(crate::engine::ecs::EventSignal::MouseLook { delta_x, delta_y }) => {
+            Value::Map(HashMap::from([
+                ("delta_x".to_string(), Value::Number(*delta_x as f64)),
+                ("delta_y".to_string(), Value::Number(*delta_y as f64)),
+            ]))
+        }
+        Some(crate::engine::ecs::EventSignal::MouseButtonDown { button })
+        | Some(crate::engine::ecs::EventSignal::MouseButtonUp { button }) => {
+            Value::Map(HashMap::from([("button".to_string(), Value::String(button.clone()))]))
+        }
         Some(crate::engine::ecs::EventSignal::UdpSample { value }) => {
             Value::Map(HashMap::from([(
                 "value".into(),
@@ -761,6 +772,68 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                         .map(|v| Value::Number(*v as f64))
                         .collect(),
                 ),
+            );
+            Value::Map(payload)
+        }
+        Some(crate::engine::ecs::EventSignal::ZoneContact {
+            zone,
+            collidable,
+            velocity,
+            other_zone,
+            other_collidable,
+            point,
+            normal,
+            fraction,
+        }) => {
+            let mut payload: HashMap<String, Value> = [
+                ("zone", *zone, "Zone"),
+                ("collidable", *collidable, "Collidable"),
+                ("velocity", *velocity, "Velocity"),
+                ("other_zone", *other_zone, "Zone"),
+                ("other_collidable", *other_collidable, "Collidable"),
+            ]
+            .into_iter()
+            .map(|(key, id, kind)| {
+                (
+                    key.into(),
+                    Value::ComponentObject {
+                        id,
+                        component_type: kind.into(),
+                    },
+                )
+            })
+            .collect();
+            for (key, vector) in [("point", point), ("normal", normal)] {
+                payload.insert(
+                    key.into(),
+                    Value::Array(vector.iter().map(|v| Value::Number(*v as f64)).collect()),
+                );
+            }
+            payload.insert("fraction".into(), Value::Number(*fraction as f64));
+            Value::Map(payload)
+        }
+        Some(crate::engine::ecs::EventSignal::PostureChanged {
+            avatar,
+            mode,
+            previous,
+            pose,
+            reason,
+        }) => {
+            let mut payload: HashMap<String, Value> = [
+                ("mode", *mode),
+                ("previous", *previous),
+                ("pose", *pose),
+                ("reason", *reason),
+            ]
+            .into_iter()
+            .map(|(key, text)| (key.into(), Value::String(text.into())))
+            .collect();
+            payload.insert(
+                "avatar".into(),
+                Value::ComponentObject {
+                    id: *avatar,
+                    component_type: "AvatarControl".into(),
+                },
             );
             Value::Map(payload)
         }
