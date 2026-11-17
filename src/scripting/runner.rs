@@ -611,6 +611,17 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             ),
             ("key".to_string(), Value::String(event.key.clone())),
         ])),
+        Some(crate::engine::ecs::EventSignal::MouseWheel { delta_x, delta_y })
+        | Some(crate::engine::ecs::EventSignal::MouseLook { delta_x, delta_y }) => {
+            Value::Map(HashMap::from([
+                ("delta_x".to_string(), Value::Number(*delta_x as f64)),
+                ("delta_y".to_string(), Value::Number(*delta_y as f64)),
+            ]))
+        }
+        Some(crate::engine::ecs::EventSignal::MouseButtonDown { button })
+        | Some(crate::engine::ecs::EventSignal::MouseButtonUp { button }) => {
+            Value::Map(HashMap::from([("button".to_string(), Value::String(button.clone()))]))
+        }
         Some(crate::engine::ecs::EventSignal::UdpSample { value }) => {
             Value::Map(HashMap::from([(
                 "value".into(),
