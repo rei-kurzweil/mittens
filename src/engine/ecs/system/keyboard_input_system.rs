@@ -96,11 +96,18 @@ impl KeyboardInputSystem {
                 MouseButton::Forward => "forward",
                 MouseButton::Other(_) => "other",
             };
+            // The sets carry no order, so `mouse_down` decides it for a button that was both
+            // pressed and released this frame: still held means it was released and pressed
+            // again (Up, Down); not held means a click inside one frame (Down, Up).
+            let up = |button: &MouseButton| EventSignal::MouseButtonUp { button: name(button).into() };
+            for button in input.mouse_released.iter().filter(|b| input.mouse_down.contains(b)) {
+                emit.push_event(ComponentId::default(), up(button));
+            }
             for button in &input.mouse_pressed {
                 emit.push_event(ComponentId::default(), EventSignal::MouseButtonDown { button: name(button).into() });
             }
-            for button in &input.mouse_released {
-                emit.push_event(ComponentId::default(), EventSignal::MouseButtonUp { button: name(button).into() });
+            for button in input.mouse_released.iter().filter(|b| !input.mouse_down.contains(b)) {
+                emit.push_event(ComponentId::default(), up(button));
             }
         }
     }
@@ -294,6 +301,34 @@ mod tests {
         assert!(matches!(
             events.0.as_slice(),
             [EventSignal::MouseButtonUp { button }] if button == "left"
+        ));
+    }
+
+    #[test]
+    fn mouse_button_pressed_and_released_in_one_frame_follows_mouse_down() {
+        use crate::engine::user_input::MouseButton;
+        let mut system = KeyboardInputSystem::new();
+
+        // Released, then pressed again before the frame ended: still held.
+        let mut repressed = InputState::default();
+        repressed.mouse_pressed.insert(MouseButton::Left);
+        repressed.mouse_released.insert(MouseButton::Left);
+        repressed.mouse_down.insert(MouseButton::Left);
+        let mut events = Events::default();
+        system.process_input(&repressed, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseButtonUp { .. }, EventSignal::MouseButtonDown { .. }]
+        ));
+
+        // Pressed and released inside one frame: a click, no longer held.
+        let mut clicked = repressed.clone();
+        clicked.mouse_down.clear();
+        let mut events = Events::default();
+        system.process_input(&clicked, false, &mut events);
+        assert!(matches!(
+            events.0.as_slice(),
+            [EventSignal::MouseButtonDown { .. }, EventSignal::MouseButtonUp { .. }]
         ));
     }
 }
