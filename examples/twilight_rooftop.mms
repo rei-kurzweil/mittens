@@ -202,8 +202,7 @@ socket
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 let grab_rank = 2
 if net.is_host() { grab_rank = 1 }
-// The rooftop is flat. Keep the parked chassis at slab height.
-let pickup = pickup_truck(null, null, false, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
+let pickup = pickup_truck(null, null, true, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
 let pistol = ship_machine_pistol("rooftop_machine_pistol", {
     socket = socket weapon_id = "arena.pistol.1" rank = grab_rank

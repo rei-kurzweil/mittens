@@ -6,9 +6,10 @@ fn avatar_button(choice, on_select) {
         Style {
             display("flex") width(6.5) height(2.0)
             align_items("center") justify_content("center")
-            background_color([0.88, 0.81, 0.66, 1.0]) background_z(0.01)
+            font_size(0.68)
+            background_color([0.88, 0.81, 0.66, 1.0]) background_z(-0.01)
         }
-        Text { choice.label }
+        T.position(0.0, 0.0, 0.03) { Text { choice.label } }
     }
     on(button, "Click", fn(event) { on_select(choice.id) })
     return button
@@ -21,16 +22,22 @@ export fn avatar_picker_panel(options) {
     let content = T {
         Style {
             display("flex") flex_direction("column") width(panel_width)
-            padding(0.8) row_gap(0.55) font_size(0.68)
+            padding(0.8) row_gap(0.55)
             background_color([0.98, 0.95, 0.84, 1.0]) background_z(-0.02)
             color([0.12, 0.10, 0.16, 1.0])
         }
-        Text { "Your avatar" }
+        T {
+            Style { display("block") width(100%) height(1.25) font_size(0.82) }
+            T.position(0.0, 0.0, 0.03) { Text { "Your avatar" } }
+        }
         T {
             Style { display("flex") flex_direction("row") width(100%) gap(0.45) }
             for choice in options.choices { avatar_button(choice, options.on_select) }
         }
-        status
+        T {
+            Style { display("block") width(100%) height(1.45) font_size(0.60) }
+            T.position(0.0, 0.0, 0.03) { status }
+        }
     }
     let panel = T {
         name = options.root_name
