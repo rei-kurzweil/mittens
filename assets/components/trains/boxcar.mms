@@ -143,3 +143,15 @@ export fn boxcar_sensor(label, length, width, height) {
         }
     }
 }
+
+export fn passenger_mount(label, car) {
+    let door = T.position(1.10, 1.0, 0.0) {}
+    let entry = Zone.cube([0.92, 1.10, 0.72]).at(door).role("vehicle_entry") { name = label + "_entry" }
+    let seat = T.position(0.0, 1.68, 0.0) { name = label + "_seat" }
+    let exit = T.position(1.60, 1.42, 0.0) { name = label + "_exit" }
+    return T {
+        name = label + "_passenger"
+        car door entry seat exit
+        Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
+    }
+}

@@ -18,10 +18,12 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building_with_openings, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
 import { round_aperture_wall } from "../assets/components/buildings/round_aperture.mms"
-import { railroad_arc } from "../assets/components/trains/railroad_track.mms"
-import { boxcar, boxcar_sensor } from "../assets/components/trains/boxcar.mms"
+import { train_station } from "../assets/components/trains/train_station.mms"
+import { railroad_arc, railroad_walkway } from "../assets/components/trains/railroad_track.mms"
+import { boxcar, boxcar_sensor, passenger_mount } from "../assets/components/trains/boxcar.mms"
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
+import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
 import { rooftop_dusk_sky } from "../assets/components/backgrounds/rooftop_dusk_sky.mms"
 
@@ -132,6 +134,7 @@ T.position(-11.0, floor_y, -26.1).rotation(0.0, quarter_turn, 0.0) {
 }
 T.position(arc_center[0], 0.0, arc_center[1]) {
     name = "twilight_rooftop_rails"
+    railroad_walkway(arc_radius, track_start, track_end, rail_top, hardware)
     railroad_arc("twilight_rooftop_rail_arc", arc_radius, track_start, track_end, 1.40, 0.85,
         rail_top, [0.30, 0.20, 0.12], [0.36, 0.38, 0.44], hardware)
 }
@@ -148,25 +151,18 @@ for car in [0, 1] {
     let label = "twilight_rooftop_train_car_" + car
     let car_mount = T.rotation(0.0, (car * 2.0 - 1.0) * car_angle, 0.0) {
         T.position(arc_radius, 0.0, 0.0) {
-            boxcar(label, [0.0, 0.0, 0.0], car_length, car_width, car_height,
-                [0.55, 0.20, 0.22], [0.18, 0.20, 0.25], [0.68, 0.40, 0.24], hardware, false)
+            let shell = boxcar(label, [0.0, 0.0, 0.0], car_length, car_width, car_height,
+                [0.55, 0.20, 0.22], [0.18, 0.20, 0.25], [0.68, 0.40, 0.24], hardware, true)
+            passenger_mount(label, shell)
             boxcar_sensor(label + "_sensor", car_length, car_width, car_height)
         }
     }
     train_pivot.attach(car_mount)
 }
 train_motion
-train_motion.rotate([0.0, train_speed, 0.0])
-// Contacts north of the arc center are the round hole: head back south.
-// Others are the main building: head north. Idempotent, so a second car or a
-// second ring segment reported before the turn takes effect changes nothing.
-on(train_motion, "ZoneContact", fn(event) {
-    let heading = train_speed
-    if event.point[2] < arc_center[1] { heading = -train_speed }
-    let angular = train_motion.angular()
-    let turn = heading - angular[1]
-    if turn != 0.0 { train_motion.rotate([0.0, turn, 0.0]) }
-})
+let station = train_station(train_pivot, train_motion, train_speed, arc_center[1], net.is_host())
+// Third storey of the east building, across the walkway from the outer doors.
+T.position(5.2, floor_y, -13.0).rotation(0.0, -quarter_turn, 0.0) { station.root }
 
 // The roof faces west over open air, so the reflected side stays clear.
 // Grab it (XR grip or desktop left mouse) to move it; it keeps its world pose.
@@ -204,13 +200,23 @@ let grab_rank = 2
 if net.is_host() { grab_rank = 1 }
 let pickup = pickup_truck(null, null, true, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
-let pistol = ship_machine_pistol("rooftop_machine_pistol", {
-    socket = socket weapon_id = "arena.pistol.1" rank = grab_rank
-    left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
-})
-T.position(roof_x - 0.25, roof_height + 1.04, -1.1) { pistol }
-box([roof_x - 0.25, roof_height + 0.48, -1.1], [0.55, 0.96, 0.55], pink)
-ship_input_controller(false, [pistol.grip])
+fn weapon_options(id) {
+    return { socket = socket weapon_id = id rank = grab_rank
+        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
+}
+let pistol = ship_machine_pistol("rooftop_machine_pistol", weapon_options("arena.pistol.1"))
+let second_pistol = ship_machine_pistol("rooftop_machine_pistol_2", weapon_options("arena.pistol.2"))
+let launcher = shared_sta_launcher("rooftop_sta_launcher", weapon_options("arena.sta.1"))
+fn weapon_stand(x, weapon) {
+    return T.position(x, roof_height, -1.1) {
+        T.position(0.0, 1.04, 0.0) { weapon }
+        box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
+    }
+}
+weapon_stand(roof_x - 0.25, pistol)
+weapon_stand(roof_x + 0.65, second_pistol)
+weapon_stand(roof_x + 1.55, launcher.root)
+ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip])
 
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
@@ -218,8 +224,12 @@ if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
 let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop voice_level = voice_level mouth_tuning = mouth_tuning })
 let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop })
 let picker_status = { update = null }
-fn report_avatar_status(message) { picker_status.update(message) }
-fn select_local_avatar(choice) { local.select_avatar(choice, report_avatar_status) }
+fn report_avatar_status(message) {
+    picker_status.update(message)
+}
+fn select_local_avatar(choice) {
+    local.select_avatar(choice, report_avatar_status)
+}
 let avatar_picker = avatar_picker_panel({
     root_name = "twilight_rooftop_avatar_picker"
     status = local_avatar + " is active"
@@ -269,7 +279,7 @@ let gohei = gohei_black_spring("shared_gohei")
 gohei.update_transform([roof_x + 1.1, roof_height + 1.1, 0.0])
 let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank })
 shared_gohei.root
-let shared_objects = [shared, shared_gohei, pistol]
+let shared_objects = [shared, shared_gohei, pistol, second_pistol, launcher]
 for item in shared_objects {
     if use_desktop { item.bind_pointer(query("[name='local_desktop_pointer']")) }
     if use_xr {
@@ -341,6 +351,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.peer_avatar = null
     channel_state.sent_avatar = null
     for item in shared_objects { item.connect(group, address) }
+    station.connect(socket, group, address)
     pickup.connect(group, address)
     hand_curls.connect(group, address)
     links.root = publish("root", address, pose_type)
@@ -374,6 +385,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
+    station.disconnect()
     pickup.disconnect()
     hand_curls.disconnect()
     remote.cancel_avatar_load()
@@ -386,6 +398,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
 on(net, "MultiplayerError", fn(event) { show_status("session " + event.phase + ": " + event.message) })
 on_global("UdpState", fn(event) { if event.message != "" { show_status("channel: " + event.message) } })
 on_global("FrameTick", fn(event) {
+    station.tick(event.dt_sec)
     channel_state.ticks = channel_state.ticks + event.dt_sec
     if !use_xr {
         // Scripted hand targets exercise receiving-side arm IK without tracking hardware.

@@ -98,3 +98,21 @@ export fn railroad_arc(label, radius, start_angle, end_angle, gauge, sleeper_spa
         }
     }
 }
+
+// A continuous deck just below the sleepers with an exposed walking strip on
+// the outside of the curve. Its top stays below the cars' sweep sensors.
+export fn railroad_walkway(radius, start, end, base_height, material) {
+    let count = Math.floor(Math.abs(end - start) * radius / 1.5) + 1
+    let step = (end - start) / count
+    let length = 2.0 * (radius + 2.1) * Math.sin(Math.abs(step) / 2.0) + 0.02
+    return T.position(0.0, base_height - 0.32, 0.0) {
+        for index in range(count) {
+            T.rotation(0.0, start + (index + 0.5) * step, 0.0) {
+                T.position((radius + 0.5) * Math.cos(step / 2.0), 0.0, 0.0).scale(3.2, 0.12, length) {
+                    R.cube() { material C.rgba(0.33, 0.30, 0.29, 1.0) }
+                    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+                }
+            }
+        }
+    }
+}

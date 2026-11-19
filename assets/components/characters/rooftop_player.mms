@@ -230,7 +230,7 @@ export fn make_rooftop_player(options) {
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
-        if held.mounted { report("Exit the truck to switch avatars") return false }
+        if held.mounted { report("Dismount to switch avatars") return false }
         if holding_item() { report("Release held items first") return false }
         return true
     }
@@ -243,7 +243,10 @@ export fn make_rooftop_player(options) {
     }
     fn select_avatar(choice, report) {
         if state.pending {
-            if local_player || state.pending.choice == choice { return }
+            if state.pending.choice == choice {
+                report("Loading " + choice + "…")
+                return
+            }
             cancel_avatar_load()
         }
         if choice == state.choice { report(choice + " is active", true) return }

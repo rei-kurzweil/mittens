@@ -2,14 +2,20 @@
 fn avatar_button(choice, on_select) {
     let button = T {
         name = "avatar_picker_" + choice.id
-        Raycastable.click_only() { interaction_priority(120.0) }
         Style {
             display("flex") width(6.5) height(2.0)
             align_items("center") justify_content("center")
             font_size(0.68)
-            background_color([0.88, 0.81, 0.66, 1.0]) background_z(-0.01)
         }
-        T.position(0.0, 0.0, 0.03) { Text { choice.label } }
+        // Layout puts the origin at the upper left. Give the full 6.5 x 2
+        // layout-unit face one stable pointer target, including under the label.
+        T.position(0.195, -0.06, 0.01).scale(0.39, 0.12, 0.014) {
+            R.cube() {
+                C.rgba(0.88, 0.81, 0.66, 1.0)
+                Raycastable.click_only() { interaction_priority(180.0) }
+            }
+        }
+        T.position(0.0, 0.0, 0.03) { Raycastable.disabled() Text { choice.label } }
     }
     on(button, "Click", fn(event) { on_select(choice.id) })
     return button
