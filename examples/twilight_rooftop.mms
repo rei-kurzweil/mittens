@@ -11,6 +11,7 @@ import { f32, str, vec3, vec4 } from "types"
 
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
@@ -35,8 +36,9 @@ import { rooftop_dusk_sky } from "../assets/components/backgrounds/rooftop_dusk_
 //
 // Across machines: the host binds 0.0.0.0:7010 by default; the client sets
 // MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
-// Desktop: WASD + right-drag to move/look. XR: tracked head/hands
-// and gamepad locomotion. XR-only mode creates no winit window or Camera3D.
+// Desktop: WASD + right-drag to move/look. XR: sticks move, B jumps,
+// double-tap B to toggle flight, and hold B/A to rise/descend in flight.
+// XR-only mode creates no winit window or Camera3D.
 
 // Local voice drives the local avatar's mouth. Stays neutral without a
 // microphone. Client side only: mouth and fingers are not sent to peers yet.
@@ -234,7 +236,7 @@ picker_status.update = avatar_picker.set_status
 local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
-T.position(roof_x + spawn_x + 0.15, roof_height + 1.7, -2.2) { avatar_picker.root }
+T.position(roof_x + spawn_x + 0.9, roof_height + 2.25, -2.2) { avatar_picker.root }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
@@ -243,13 +245,13 @@ if use_desktop && !use_xr {
         InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
         local.root
     }
-} else { local.root }
+} else { local.locomotion }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
 if use_xr {
     let xr_calibration_file = XrSettings.floor.default_file()
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
-    T.position(roof_x + spawn_x - 1.28, roof_height + 2.3, -1.5) {
+    T.position(roof_x + spawn_x - 2.0, roof_height + 2.3, -2.2) {
         xr_settings_panel({ root_name = "twilight_rooftop_xr_settings", calibration_file = xr_calibration_file })
     }
 }
@@ -284,6 +286,10 @@ if use_xr {
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null }
 let channel_state = { ticks = 0.0 send_elapsed = 0.0 avatar_elapsed = 0.0 sent_avatar = null }
 let connection = { root = null avatar_group = null address = null peer_avatar = null }
+let hand_curls = controller_hand_curls({
+    socket = socket xr = use_xr input = query("#local_xr_locomotion")
+    left_driver = local.left_driver right_driver = local.right_driver
+})
 let channel_groups = T { name = "channel_groups" }
 channel_groups
 
@@ -300,6 +306,7 @@ fn receive_transform(group, name, address, target, space) {
 
 fn bind_peer_avatar(head, model, choice) {
     if !connection.root { return }
+    hand_curls.bind_model(model, choice)
     if connection.avatar_group { connection.avatar_group.remove_subtree() }
     let group = T { name = "peer_avatar_channels" }
     connection.root.attach(group)
@@ -336,6 +343,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     channel_state.sent_avatar = null
     for item in shared_objects { item.connect(group, address) }
     pickup.connect(group, address)
+    hand_curls.connect(group, address)
     links.root = publish("root", address, pose_type)
     links.head = publish("head", address, pose_type)
     links.left = publish("left-hand", address, pose_type)
@@ -368,6 +376,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
     pickup.disconnect()
+    hand_curls.disconnect()
     remote.cancel_avatar_load()
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
@@ -390,6 +399,7 @@ on_global("FrameTick", fn(event) {
     channel_state.send_elapsed = channel_state.send_elapsed + event.dt_sec
     channel_state.avatar_elapsed = channel_state.avatar_elapsed + event.dt_sec
     if channel_state.send_elapsed < 0.05 { return }
+    hand_curls.tick(channel_state.send_elapsed)
     channel_state.send_elapsed = 0.0
     if links.avatar && links.avatar.ready() {
         let choice = local.avatar_id()

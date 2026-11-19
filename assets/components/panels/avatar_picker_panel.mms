@@ -18,10 +18,7 @@ export fn avatar_picker_panel(options) {
     let status = Text { name = "avatar_picker_status" options.status }
     let panel_width = 1.6
     for choice in options.choices { panel_width = panel_width + 6.95 }
-    let panel = T.scale(0.06, 0.06, 0.06) {
-        name = options.root_name
-        Selectable.off()
-        Unlit {}
+    let content = T {
         Style {
             display("flex") flex_direction("column") width(panel_width)
             padding(0.8) row_gap(0.55) font_size(0.68)
@@ -34,6 +31,16 @@ export fn avatar_picker_panel(options) {
             for choice in options.choices { avatar_button(choice, options.on_select) }
         }
         status
+    }
+    let panel = T {
+        name = options.root_name
+        Selectable.off()
+        Unlit {}
+        LayoutRoot {
+            available_width(panel_width)
+            unit_scale(0.06)
+            content
+        }
     }
     return { root = panel set_status = fn(text) { status.set_text(text) } }
 }

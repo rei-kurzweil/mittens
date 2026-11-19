@@ -88,15 +88,25 @@ export fn make_rooftop_player(options) {
     let initial = initial_factory(prefix + "_model", track_hands)
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
-        if local_player && use_xr { Pointer { name = "local_left_pointer" } }
+        if track_hands {
+            Pointer { name = "local_left_pointer" click_max_ray_angle_deg(12.0) click_max_origin_distance(0.16) }
+        }
     }
     let right = T.position(0.35, -0.35, -0.25) {
         name = prefix + "_right_target"
-        if local_player && use_xr { Pointer { name = "local_right_pointer" } }
+        if track_hands {
+            Pointer { name = "local_right_pointer" click_max_ray_angle_deg(12.0) click_max_origin_distance(0.16) }
+        }
     }
     let external_hands = !local_player || !use_xr
-    let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) { left }
-    let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) { right }
+    let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) {
+        if track_hands { laser() }
+        left
+    }
+    let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) {
+        if track_hands { laser() }
+        right
+    }
     let root_name = prefix + "_root"
     fn build_body(spec, choice) {
         let avatar = AVC.movement_target("[name='" + root_name + "']") {
@@ -151,7 +161,10 @@ export fn make_rooftop_player(options) {
     }
     let eye_tracking = XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
     fn mount_body(avatar, spec, choice) {
-        let model_frame = T {}
+        let model_frame = T {
+            // The wearer can aim through their own hands and body.
+            if track_hands { Raycastable.disabled() Selectable.off() }
+        }
         if choice == "miku" {
             // Normalize the export's Z-up coordinates and scale below the AVC frame.
             let normalized = T.rotation(Math.pi / 2.0, 0.0, 0.0).scale(MIKU_SCALE, MIKU_SCALE, MIKU_SCALE) {}
@@ -193,11 +206,26 @@ export fn make_rooftop_player(options) {
     let driver = PoseInput {}
     if local_player && use_xr {
         driver = InputXR.on() {
-            InputXRGamepad { name = "local_xr_locomotion" locomotion() speed(1.5) }
+            InputXRGamepad { name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(true) }
         }
     }
     driver.attach(head)
     root.attach(driver)
+    let locomotion = root
+    let gravity = null
+    if track_hands {
+        let motion = Velocity { name = "local_velocity" root }
+        gravity = Gravity.enabled(false) { name = "local_gravity" motion }
+        locomotion = gravity
+    }
+    fn enable_gravity_when_ready(body) {
+        if !gravity { return }
+        on(body, "DataEvent", fn(event) {
+            if event == "CapsuleReady" { gravity.set_enabled(true) }
+        })
+        if body.capsule_ready() { gravity.set_enabled(true) }
+    }
+    enable_gravity_when_ready(avatar)
     let state = { head = head model = initial.model choice = options.avatar pending = null changed = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
@@ -241,6 +269,8 @@ export fn make_rooftop_player(options) {
             let factory = factories[choice]
             let spec = factory(prefix + "_model", track_hands)
             let body = build_body(spec, choice)
+            if gravity { gravity.set_enabled(false) }
+            enable_gravity_when_ready(body)
             if choice != "miku" {
                 on(spec.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, body) })
             }
@@ -304,7 +334,7 @@ export fn make_rooftop_player(options) {
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
-        root = root head = head left = left right = right model = initial.model
+        root = root locomotion = locomotion head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load
