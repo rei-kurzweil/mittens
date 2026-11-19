@@ -58,5 +58,22 @@ export fn pickup_ride_height(bindings, pose, apply_compression) {
         }
         return {ratio=total/count lift=state.lift pitch=state.pitch roll=state.roll}
     }
-    return {adjust=adjust reset=reset clear_pose=clear_pose status=status}
+    fn ratios() {
+        return [status("fl").ratio,status("fr").ratio,status("rl").ratio,status("rr").ratio]
+    }
+    fn apply_ratios(values) {
+        let index=0
+        let changed=false
+        for corner in ["fl","fr","rl","rr"] {
+            let ratio=Math.clamp(values[index],0.65,1.35)
+            if Math.abs(status(corner).ratio-ratio)>0.0001 {
+                apply_compression(corner,ratio)
+                changed=true
+            }
+            index=index+1
+        }
+        if changed {update_pose()}
+        return changed
+    }
+    return {adjust=adjust reset=reset clear_pose=clear_pose status=status ratios=ratios apply_ratios=apply_ratios}
 }

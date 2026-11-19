@@ -53,5 +53,6 @@ export fn pickup_hydraulics_panel(ride) {
             button("reset","REST",0.34,-0.135,0.13,fn() {ride.reset() refresh()})
         }
     }
+    panel.refresh=refresh
     return panel
 }

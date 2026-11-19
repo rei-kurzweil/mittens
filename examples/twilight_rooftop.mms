@@ -2,34 +2,28 @@
 // for a desktop window. Network role is separate (commands below).
 let use_xr = true
 let use_desktop = false
-// Avatars follow the network role: peers do not exchange avatar choices yet,
-// so each side derives the remote player's model from its role.
+// These are the starting avatars and the role-based models used for peers.
+// The rooftop picker changes the local avatar.
 // Supported: "mitten", "lumae".
 let host_avatar = "mitten"
-let client_avatar = "lumae" // the desktop joiner
+let client_avatar = "lumae"
 
 import { f32, vec3, vec4 } from "types"
-import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
-import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
-import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building_with_openings, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
 import { round_aperture_wall } from "../assets/components/buildings/round_aperture.mms"
 import { railroad_arc } from "../assets/components/trains/railroad_track.mms"
 import { boxcar, boxcar_sensor } from "../assets/components/trains/boxcar.mms"
+import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
+import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
 import { rooftop_dusk_sky } from "../assets/components/backgrounds/rooftop_dusk_sky.mms"
-import { looping_blink } from "../assets/components/animations/looping_blink.mms"
-import { vroid_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/vroid.mms"
-import { lumae_colliders } from "../assets/components/characters/lumae/colliders.mms"
-import { lumae_secondary_motion } from "../assets/components/characters/lumae/secondary_motion.mms"
-import { pose as lumae_relaxed_pose } from "../assets/components/characters/lumae/poses/000-relaxed.pose.mms"
 
 // Two-player LAN/loopback rooftop: the multiplayer-basic baseline (typed pose
 // channels, shared cube and gohei) on the main building's roof. Below it, a
@@ -205,142 +199,51 @@ if !net.is_host() { channel_port = 7012 remote_port = 7011 }
 let socket = UdpSocket.bind("0.0.0.0:" + channel_port) {}
 socket
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
-
-// Both are VRoid rigs: same joint names, bone map, and blink/mouth morphs.
-// Eye height is the desktop eye-to-sole pose; sole offsets are per-model
-// shoe calibrations used by crouch and walking IK.
-let avatar_specs = {
-    mitten = { uri = "assets/models/mitten.glb" eye_height = 1.58
-        sole_offset = [0.0, 0.0530325, 0.0874534] }
-    // Lumae's rest eyes sit 6.4 cm above Mitten's.
-    lumae = { uri = "assets/components/characters/lumae/lumae.glb" eye_height = 1.644
-        sole_offset = [0.0, 0.0687271, 0.1129329] }
-}
-
-fn avatar_model(prefix, avatar, local_player) {
-    return GLTF.new(avatar_specs[avatar].uri) {
-        name = prefix + "_model"
-        // Articulated fingers from OpenXR hand tracking, local XR player only.
-        if local_player && use_xr { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
-        vroid_humanoid_bone_map()
-        MorphTargetMap.new()
-            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-            .slot("viseme_aa", "Fcl_MTH_A")
-        if avatar == "lumae" {
-            lumae_relaxed_pose()
-            lumae_colliders()
-            lumae_secondary_motion()
-        } else {
-            bisket_colliders()
-            bisket_shirt_physics(false)
-            mitten_bow_secondary_motion()
-        }
-    }
-}
-
-fn make_player(prefix, local_player, avatar) {
-    let spec = avatar_specs[avatar]
-    let model = avatar_model(prefix, avatar, local_player)
-    let left = T.position(-0.35, -0.35, -0.25) {
-        name = prefix + "_left_target"
-        if local_player && use_xr { Pointer { name = "local_left_pointer" } }
-    }
-    let right = T.position(0.35, -0.35, -0.25) {
-        name = prefix + "_right_target"
-        if local_player && use_xr { Pointer { name = "local_right_pointer" } }
-    }
-    let external_hands = !local_player || !use_xr
-    let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) { left }
-    let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) { right }
-    let root_name = prefix + "_root"
-    let avatar = AVC.movement_target("[name='" + root_name + "']") {
-        name = prefix + "_avatar"
-        // Desktop owns an authored clip; XR closure comes only from tracking.
-        idle_blink(false)
-        // Per-model sole landmarks with paper-craft's local gait.
-        // Match camera-bearing and camera-free rigs' eye-to-head calibration.
-        eye_offset([0.0, 0.08, 0.12])
-        crouch_enabled(true)
-        // Get low enough and crouching gives way to hands and knees.
-        posture("auto")
-        // Torso spheres keep the pitched body colliding on hands and knees.
-        collision_detail("detailed")
-        crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
-        WalkingIK { step_scale(1.3) }
-        if !local_player { collision_response("read_only") }
-        if local_player {
-            mouth_open_from_amplitude(voice_level)
-            mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
-            mouth_open_amount(mouth_tuning.amount)
-            mouth_open_smoothing(16.0)
-            voice_level
-        }
-        initial_yaw(3.14159)
-        arm_ik(vroid_arm_ik_bend_plane_prototype())
-        hand_rotation_smoothing(220.0)
-        T { model }
-        left_driver
-        right_driver
-        if local_player && use_desktop {
-            // AVC mounts this at the mapped head, with desktop yaw correction.
-            T.position(0.0, 0.08, 0.12) {
-                name = "local_desktop_camera_anchor"
-                C3D {
-                    fov(65.0) near(0.01)
-                    Pointer {
-                        name = "local_desktop_pointer"
-                        Raycast.event_driven().min_distance(0.75) {}
-                    }
-                }
-            }
-        }
-        if local_player && use_xr {
-            // Match Mitten's established head-relative eye/view offset.
-            T.position(0.0, 0.08, 0.12) {
-                name = "local_xr_camera_anchor"
-                CXR {}
-            }
-            XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
-        }
-    }
-    on(model, "GLTFInitialized", fn(event) {
-        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-        if left_eye && right_eye {
-            let gaze = ambient_eye_saccades(left_eye, right_eye, 2.0)
-            avatar.attach(gaze)
-        } else { print("twilight rooftop: mapped eyes not found for " + prefix) }
-        if local_player && !use_xr {
-            let blink = looping_blink(event.gltf, 2.0)
-            avatar.attach(blink)
-        }
-    })
-    // Per-model desktop eye-to-sole height; a generic 1.65 m leaves Mitten's
-    // soles about 6.6 cm above the floor. XR replaces this pose.
-    let head = T.position(0.0, spec.eye_height, 0.0) { name = prefix + "_head_target" avatar }
-    let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
-    let root = T { name = root_name T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label } }
-    if local_player && use_xr {
-        let driver = InputXR.on() { InputXRGamepad { locomotion() speed(1.5) } head }
-        root.attach(driver)
-    } else { let driver = PoseInput { head } root.attach(driver) }
-    return { root = root head = head left = left right = right model = model avatar = avatar left_driver = left_driver right_driver = right_driver label = label }
-}
+let grab_rank = 2
+if net.is_host() { grab_rank = 1 }
+// The rooftop is flat. Keep the parked chassis at slab height.
+let pickup = pickup_truck(null, null, false, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
+T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
+let pistol = ship_machine_pistol("rooftop_machine_pistol", {
+    socket = socket weapon_id = "arena.pistol.1" rank = grab_rank
+    left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
+})
+T.position(roof_x - 0.25, roof_height + 1.04, -1.1) { pistol }
+box([roof_x - 0.25, roof_height + 0.48, -1.1], [0.55, 0.96, 0.55], pink)
+ship_input_controller(false, [pistol.grip])
 
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
 if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
-let local = make_player("local", true, local_avatar)
-let remote = make_player("remote", false, remote_avatar)
+let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop voice_level = voice_level mouth_tuning = mouth_tuning })
+let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop })
+let picker_status = { update = null }
+fn report_avatar_status(message) { picker_status.update(message) }
+fn select_local_avatar(choice) { local.select_avatar(choice, report_avatar_status) }
+let avatar_picker = avatar_picker_panel({
+    root_name = "twilight_rooftop_avatar_picker"
+    status = local_avatar + " is active"
+    choices = [
+        { id = "mitten" label = "Mitten" },
+        { id = "lumae" label = "Lumae" },
+        { id = "miku" label = "Miku" },
+        { id = "succubus" label = "Succubus" },
+    ]
+    on_select = select_local_avatar
+})
+picker_status.update = avatar_picker.set_status
 local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
+T.position(roof_x + spawn_x + 0.15, roof_height + 1.7, -2.2) { avatar_picker.root }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
-    I.speed(2.0) { InputTransformMode.forward_z() { fps_rotation() roll_axis_y() } local.root }
+    I.speed(2.0) {
+        name = "local_desktop_locomotion"
+        InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
+        local.root
+    }
 } else { local.root }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
@@ -360,21 +263,24 @@ let shared_prop = T.position(roof_x, roof_height + 1.1, 0.0) {
         R.cube() { C.rgba(0.12, 0.85, 0.95, 1.0) Raycastable.enabled() }
     }
 }
-let grab_rank = 2
-if net.is_host() { grab_rank = 1 }
 let shared = shared_grabbable({ socket = socket name = "arena.prop.1" target = shared_prop rank = grab_rank })
 shared.root
 let gohei = gohei_black_spring("shared_gohei")
 gohei.update_transform([roof_x + 1.1, roof_height + 1.1, 0.0])
 let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank })
 shared_gohei.root
-let shared_objects = [shared, shared_gohei]
+let shared_objects = [shared, shared_gohei, pistol]
 for item in shared_objects {
     if use_desktop { item.bind_pointer(query("[name='local_desktop_pointer']")) }
     if use_xr {
         item.bind_pointer(query("[name='local_left_pointer']"))
         item.bind_pointer(query("[name='local_right_pointer']"))
     }
+}
+if use_desktop { local.watch_pointer(query("[name='local_desktop_pointer']"), "desktop") }
+if use_xr {
+    local.watch_pointer(query("[name='local_left_pointer']"), "left")
+    local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null }
 let channel_state = { ticks = 0.0 send_elapsed = 0.0 }
@@ -404,6 +310,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.root = group
     let address = ip + ":" + remote_port
     for item in shared_objects { item.connect(group, address) }
+    pickup.connect(group, address)
     links.root = publish("root", address, pose_type)
     links.head = publish("head", address, pose_type)
     links.left = publish("left-hand", address, pose_type)
@@ -433,6 +340,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
+    pickup.disconnect()
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     roster.count = 0
@@ -455,11 +363,11 @@ on_global("FrameTick", fn(event) {
     channel_state.send_elapsed = 0.0
     if links.root && links.root.ready() {
         links.root.write(local.root.world_trs())
-        if links.head.ready() { links.head.write(local.head.trs()) }
+        if links.head.ready() { links.head.write(local.head_pose()) }
         if links.left.ready() { links.left.write(local.left.trs()) }
         if links.right.ready() { links.right.write(local.right.trs()) }
-        if links.blink_left.ready() { links.blink_left.write(local.model.morph_weight("left_eye_blink")) }
-        if links.blink_right.ready() { links.blink_right.write(local.model.morph_weight("right_eye_blink")) }
+        if links.blink_left.ready() { links.blink_left.write(local.blink("left_eye_blink")) }
+        if links.blink_right.ready() { links.blink_right.write(local.blink("right_eye_blink")) }
         let left_tracked = 0.0
         let right_tracked = 0.0
         if local.left_driver.pose_valid() { left_tracked = 1.0 }

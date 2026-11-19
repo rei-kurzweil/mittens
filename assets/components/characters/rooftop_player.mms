@@ -1,0 +1,295 @@
+import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
+import { bisket_colliders } from "../colliders/bisket.mms"
+import { bisket_shirt_physics } from "../secondary_motion/bisket-shirt-physics.mms"
+import { mitten_bow_secondary_motion } from "../secondary_motion/mitten-bow.mms"
+import { vroid_arm_ik_bend_plane_prototype } from "../arm_ik/vroid.mms"
+import { ambient_eye_saccades } from "../animations/ambient_eye_saccades.mms"
+import { looping_blink } from "../animations/looping_blink.mms"
+import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
+import { lumae_colliders } from "../characters/lumae/colliders.mms"
+import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
+import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
+import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
+
+let MIKU_SCALE = 0.09
+
+fn vroid_face() {
+    return MorphTargetMap.new()
+        .slot("left_eye_blink", "Fcl_EYE_Close_L")
+        .slot("right_eye_blink", "Fcl_EYE_Close_R")
+        .slot("viseme_aa", "Fcl_MTH_A")
+}
+
+let model_uris = {
+    mitten = "assets/models/mitten.glb"
+    lumae = "assets/components/characters/lumae/lumae.glb"
+    miku = "assets/models/local/third_party/TDA_Hatsune_Miku/tda_miku_with_bones.glb"
+    succubus = "assets/models/local/succubus.glb"
+}
+
+fn make_mitten(model_name, track_hands) {
+    let model = GLTF.new(model_uris.mitten) {
+        name = model_name
+        if track_hands { HandTracking.new().source("openxr") }
+        bisket_anime_shading()
+        vroid_humanoid_bone_map()
+        vroid_face()
+        bisket_colliders()
+        bisket_shirt_physics(false)
+        mitten_bow_secondary_motion()
+    }
+    return { model = model eye_height = 1.58 sole_offset = [0.0, 0.0530325, 0.0874534] }
+}
+
+fn make_lumae(model_name, track_hands) {
+    let model = GLTF.new(model_uris.lumae) {
+        name = model_name
+        if track_hands { HandTracking.new().source("openxr") }
+        bisket_anime_shading()
+        vroid_humanoid_bone_map()
+        vroid_face()
+        lumae_relaxed_pose()
+        lumae_colliders()
+        lumae_secondary_motion()
+    }
+    return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
+}
+
+fn make_miku(model_name, _track_hands) {
+    let model = GLTF.new(model_uris.miku) {
+        name = model_name
+        miku_humanoid_bone_map()
+    }
+    return { model = model eye_height = 1.59 sole_offset = [0.0, 0.04, 0.08] }
+}
+
+fn make_succubus(model_name, track_hands) {
+    let model = GLTF.new(model_uris.succubus) {
+        name = model_name
+        if track_hands { HandTracking.new().source("openxr") }
+        bisket_anime_shading()
+        vroid_humanoid_bone_map()
+        vroid_face()
+    }
+    return { model = model eye_height = 1.659 sole_offset = [0.0, 0.055684, 0.091826] }
+}
+
+let factories = { mitten = make_mitten lumae = make_lumae miku = make_miku succubus = make_succubus }
+
+export fn make_rooftop_player(options) {
+    let prefix = options.prefix
+    let local_player = options.local_player
+    let use_xr = options.use_xr
+    let use_desktop = options.use_desktop
+    let voice_level = options["voice_level"]
+    let mouth_tuning = options["mouth_tuning"]
+    let track_hands = local_player && use_xr
+    let initial_factory = factories[options.avatar]
+    let initial = initial_factory(prefix + "_model", track_hands)
+    let left = T.position(-0.35, -0.35, -0.25) {
+        name = prefix + "_left_target"
+        if local_player && use_xr { Pointer { name = "local_left_pointer" } }
+    }
+    let right = T.position(0.35, -0.35, -0.25) {
+        name = prefix + "_right_target"
+        if local_player && use_xr { Pointer { name = "local_right_pointer" } }
+    }
+    let external_hands = !local_player || !use_xr
+    let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) { left }
+    let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) { right }
+    let root_name = prefix + "_root"
+    fn build_body(spec, choice) {
+        let avatar = AVC.movement_target("[name='" + root_name + "']") {
+            name = prefix + "_avatar"
+            // Desktop owns an authored clip; XR closure comes only from tracking.
+            idle_blink(false)
+            // Per-model sole landmarks with paper-craft's local gait.
+            // Match camera-bearing and camera-free rigs' eye-to-head calibration.
+            eye_offset([0.0, 0.08, 0.12])
+            crouch_enabled(true)
+            // Get low enough and crouching gives way to hands and knees.
+            posture("auto")
+            // Torso spheres keep the pitched body colliding on hands and knees.
+            collision_detail("detailed")
+            crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
+            if choice == "miku" {
+                avatar_height(spec.eye_height)
+                // The neck constraint assumes a meter-scale rig.
+                neck_pin_disabled()
+            }
+            WalkingIK { step_scale(1.3) }
+            if !local_player { collision_response("read_only") }
+            if local_player && choice != "miku" {
+                mouth_open_from_amplitude(voice_level)
+                mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+                mouth_open_amount(mouth_tuning.amount)
+                mouth_open_smoothing(16.0)
+                voice_level
+            }
+            initial_yaw(3.14159)
+            if choice != "miku" { arm_ik(vroid_arm_ik_bend_plane_prototype()) }
+            hand_rotation_smoothing(220.0)
+        }
+        return avatar
+    }
+
+    let camera = T.position(0.0, 0.08, 0.12) {
+        if local_player && use_desktop {
+            name = "local_desktop_camera_anchor"
+            C3D {
+                fov(65.0) near(0.01)
+                Pointer {
+                    name = "local_desktop_pointer"
+                    Raycast.event_driven().min_distance(0.75) {}
+                }
+            }
+        }
+        if local_player && use_xr {
+            name = "local_xr_camera_anchor"
+            CXR {}
+        }
+    }
+    let eye_tracking = XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
+    fn mount_body(avatar, spec, choice) {
+        let model_frame = T {}
+        if choice == "miku" {
+            // Normalize the export's Z-up coordinates and scale below the AVC frame.
+            let normalized = T.rotation(Math.pi / 2.0, 0.0, 0.0).scale(MIKU_SCALE, MIKU_SCALE, MIKU_SCALE) {}
+            normalized.attach(spec.model)
+            model_frame.attach(normalized)
+        } else { model_frame.attach(spec.model) }
+        avatar.attach(model_frame)
+        avatar.attach(left_driver)
+        avatar.attach(right_driver)
+        if local_player {
+            camera.update_transform([0.0, 0.08, 0.12], [0.0, 0.0, 0.0])
+            avatar.attach(camera)
+            if use_xr { avatar.attach(eye_tracking) }
+        }
+    }
+
+    fn animate_face(model, avatar) {
+        let left_eye = model.query("[name='J_Adj_L_FaceEye']")
+        let right_eye = model.query("[name='J_Adj_R_FaceEye']")
+        if left_eye && right_eye { avatar.attach(ambient_eye_saccades(left_eye, right_eye, 2.0)) }
+        if local_player && !use_xr { avatar.attach(looping_blink(model, 2.0)) }
+    }
+
+    let avatar = build_body(initial, options.avatar)
+    mount_body(avatar, initial, options.avatar)
+    on(initial.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, avatar) })
+    let head = T.position(0.0, initial.eye_height, 0.0) { name = prefix + "_head_target" avatar }
+    let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
+    let root = T {
+        name = root_name
+        if local_player && use_xr {
+            Rider.anchor("#local_xr_camera_anchor").movement_root("#local_root").input("#local_xr_locomotion") {}
+        }
+        if local_player && use_desktop {
+            Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("#local_desktop_locomotion") {}
+        }
+        T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label }
+    }
+    let driver = PoseInput {}
+    if local_player && use_xr {
+        driver = InputXR.on() {
+            InputXRGamepad { name = "local_xr_locomotion" locomotion() speed(1.5) }
+        }
+    }
+    driver.attach(head)
+    root.attach(driver)
+    let state = { head = head model = initial.model choice = options.avatar pending = null }
+    let held = { left = false right = false desktop = false mounted = false }
+    fn holding_item() { return held.left || held.right || held.desktop }
+    fn can_swap(report) {
+        if held.mounted { report("Exit the truck to switch avatars") return false }
+        if holding_item() { report("Release held items first") return false }
+        return true
+    }
+
+    fn select_avatar(choice, report) {
+        if state.pending { return }
+        if choice == state.choice { report(choice + " is active") return }
+        if !can_swap(report) { return }
+        // Load and validate away from the play area while the live body and camera stay mounted.
+        let probe = GLTF.new(model_uris[choice]) {}
+        let staging = T.position(0.0, -10000.0, 0.0) { probe }
+        state.pending = { staging = staging elapsed = 0.0 choice = choice report = report }
+        on(probe, "GLTFInitialized", fn(event) {
+            if !can_swap(report) {
+                staging.remove_subtree()
+                state.pending = null
+                return
+            }
+            if choice == "miku" && !event.gltf.query("[name='������.R_059']") {
+                staging.remove_subtree()
+                state.pending = null
+                report("Miku rig unavailable")
+                return
+            }
+            let factory = factories[choice]
+            let spec = factory(prefix + "_model", track_hands)
+            let body = build_body(spec, choice)
+            if choice != "miku" {
+                on(spec.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, body) })
+            }
+            // Move the camera and hands before disposing of their old rig.
+            mount_body(body, spec, choice)
+            // AVC splices its head bone under the pose target, so that target
+            // must be retired with the old AVC to remove the entire old rig.
+            let next_head = T { name = prefix + "_head_target" body }
+            if choice == "miku" {
+                on(body, "DataEvent", fn(event) {
+                    if event != "CapsuleReady" { return }
+                    let bone = next_head.query("[name='���_012']")
+                    if bone {
+                        // The spliced head no longer inherits the GLTF's normalization.
+                        bone.update_transform([0.0, 0.0, 0.0], [-0.01046, 0.0, 0.0], [MIKU_SCALE, MIKU_SCALE, MIKU_SCALE])
+                        let yaw = 0.0
+                        if use_desktop && !use_xr { yaw = Math.pi }
+                        camera.update_transform([0.0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0.0, yaw, 0.0])
+                    }
+                })
+            }
+            next_head.trs(state.head.trs())
+            if !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
+            driver.attach(next_head)
+            state.head.remove_subtree()
+            staging.remove_subtree()
+            state.head = next_head
+            state.model = spec.model
+            state.choice = choice
+            state.pending = null
+            report(choice + " is active")
+        })
+        root.attach(staging)
+        report("Loading " + choice + "…")
+    }
+    if local_player {
+        on_global("MountStarted", fn(event) { held.mounted = true })
+        on_global("MountEnded", fn(event) { held.mounted = false })
+        on_global("FrameTick", fn(event) {
+            let pending = state.pending
+            if !pending { return }
+            pending.elapsed = pending.elapsed + event.dt_sec
+            if pending.elapsed < 8.0 { return }
+            pending.staging.remove_subtree()
+            state.pending = null
+            pending.report(pending.choice + " unavailable. Current avatar kept.")
+        })
+    }
+    fn watch_pointer(pointer, key) {
+        on(pointer, "PointerGrabbed", fn(event) { held[key] = true })
+        on(pointer, "PointerReleased", fn(event) { held[key] = false })
+    }
+    fn blink(slot) {
+        if state.choice == "miku" { return 0.0 }
+        return state.model.morph_weight(slot)
+    }
+    fn head_pose() { return state.head.trs() }
+    return {
+        root = root head = head left = left right = right model = initial.model
+        left_driver = left_driver right_driver = right_driver label = label
+        select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
+    }
+}

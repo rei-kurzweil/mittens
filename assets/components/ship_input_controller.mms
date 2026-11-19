@@ -1,6 +1,6 @@
 // One persistent controller; vehicle bindings exist only after first use and
 // are bypassed natively while no driver needs them. Weapon input stays separate.
-export fn ship_input_controller(patrol_enabled) {
+export fn ship_input_controller(patrol_enabled, weapon_grips) {
     let root=T {name="ship_input_controller"}
     let state={driver=null frame_binding=null input_bindings=null}
     fn driver() {
@@ -32,6 +32,10 @@ export fn ship_input_controller(patrol_enabled) {
     fn forward_tools(kind,event) {
         // Only Space is used by these weapons on desktop.
         if (kind=="KeyDown" || kind=="KeyUp") && event.code!="Space" {return}
+        if weapon_grips {
+            for grip in weapon_grips {grip.ship_input(kind,event)}
+            return
+        }
         for index in range(3) {
             let grip=query("#ship_rack_pistol_"+index+"_grip")
             if grip {grip.ship_input(kind,event)}

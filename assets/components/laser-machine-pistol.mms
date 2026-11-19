@@ -2,6 +2,7 @@ import { laser } from "./laser.mms"
 import { muzzle_flash } from "./muzzle-flash.mms"
 import { mini_explosion } from "./mini-explosion.mms"
 import { ui_unlit_material } from "./materials/ui_unlit.mms"
+import { pistol_replication } from "./network/pistol_replication.mms"
 
 // Semi: one shot. Burst: three fast shots. Auto: slower, continuous firing.
 export fn laser_machine_pistol(options) {
@@ -30,6 +31,21 @@ export fn laser_machine_pistol(options) {
     let first = laser({ name = label + "_first" length = options.length beam_radius = options.beam_radius ray_origin_offset = options.ray_origin_offset beats_per_second = beats_per_second })
     let second = laser({ name = label + "_second" length = options.length beam_radius = options.beam_radius ray_origin_offset = options.ray_origin_offset beats_per_second = beats_per_second })
     let third = laser({ name = label + "_third" length = options.length beam_radius = options.beam_radius ray_origin_offset = options.ray_origin_offset beats_per_second = beats_per_second })
+    let network = null
+    if options["socket"] {
+        let slots = [first, second, third]
+        fn play_remote(index, pose, mode) {
+            let slot = slots[index]
+            slot.play_visual(pose)
+            flash.play()
+            if index == 0 {
+                if mode == 0.0 { single_sound.play() }
+                if mode == 1.0 { sound.play() }
+                if mode == 2.0 { auto_sound.play() }
+            }
+        }
+        network = pistol_replication({ socket = options.socket name = options.weapon_id play = play_remote })
+    }
     fn default_impact(hit) {
         let impact = mini_explosion(hit.hit_point, beats_per_second)
         impact.root
@@ -37,7 +53,8 @@ export fn laser_machine_pistol(options) {
     }
     let on_hit = default_impact
     if options["on_hit"] != null { on_hit = options.on_hit }
-    fn emit_shot(projectile, aim) {
+    fn emit_shot(projectile, aim, index) {
+        if options["can_fire"] && !options.can_fire() { return }
         if !device_state.cancelled && (device_state.ammunition == null || device_state.ammunition > 0) {
             // Spend synchronously at the actual shot, including each burst keyframe.
             if device_state.ammunition != null { device_state.ammunition = device_state.ammunition - 1 }
@@ -45,7 +62,9 @@ export fn laser_machine_pistol(options) {
             let damage=3.0
             if device_state.burst_mode=="burst" {damage=2.0}
             if device_state.burst_mode=="auto" {damage=1.5}
-            projectile.launch({ pose = aim.world_trs() source_tool = device_state.tool source_user = device_state.user damage=damage on_hit = on_hit })
+            let pose = aim.world_trs()
+            projectile.launch({ pose = pose source_tool = device_state.tool source_user = device_state.user damage=damage on_hit = on_hit })
+            if network { network.shot(index, pose, device_state.burst_mode) }
             emit_data(completion, "ShotFired")
         }
     }
@@ -91,9 +110,9 @@ export fn laser_machine_pistol(options) {
         }
     }
     on(completion, "DataEvent", fn(event) {
-        if event == "FireFirst" { emit_shot(first,first_aim) }
-        if event == "FireSecond" { emit_shot(second,second_aim) }
-        if event == "FireThird" { emit_shot(third,third_aim) }
+        if event == "FireFirst" { emit_shot(first,first_aim,0) }
+        if event == "FireSecond" { emit_shot(second,second_aim,1) }
+        if event == "FireThird" { emit_shot(third,third_aim,2) }
         if event == "BurstComplete" {
             device_state.firing = false
             if device_state.trigger_held && device_state.mode == "auto" { begin_fire() }
@@ -192,5 +211,5 @@ export fn laser_machine_pistol(options) {
             }
         }
     }
-    return { root = root completion = completion projectiles = [first.root, second.root, third.root] animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode }
+    return { root = root completion = completion projectiles = [first.root, second.root, third.root] animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode network = network }
 }

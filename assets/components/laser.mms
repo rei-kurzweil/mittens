@@ -79,5 +79,10 @@ export fn laser(options) {
         animation.play()
     }
 
-    return { root = root animation = animation raycaster = raycaster launch = launch }
+    fn play_visual(pose) {
+        root.world_trs(pose)
+        animation.play()
+    }
+
+    return { root = root animation = animation raycaster = raycaster launch = launch play_visual = play_visual }
 }
