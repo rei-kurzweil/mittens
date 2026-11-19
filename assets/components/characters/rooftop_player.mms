@@ -9,6 +9,7 @@ import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
 import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
+import { miku_twintails, prepare_miku_arms, normalize_miku_grips } from "./tda_miku_rig.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
 
 let MIKU_SCALE = 0.09
@@ -58,9 +59,11 @@ fn make_lumae(model_name, track_hands) {
 fn make_miku(model_name, _track_hands) {
     let model = GLTF.new(model_uris.miku) {
         name = model_name
+        bisket_anime_shading()
         miku_humanoid_bone_map()
+        miku_twintails()
     }
-    return { model = model eye_height = 1.59 sole_offset = [0.0, 0.04, 0.08] }
+    return { model = model eye_height = 1.59 }
 }
 
 fn make_succubus(model_name, track_hands) {
@@ -121,11 +124,18 @@ export fn make_rooftop_player(options) {
             posture("auto")
             // Torso spheres keep the pitched body colliding on hands and knees.
             collision_detail("detailed")
-            crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
             if choice == "miku" {
+                // Measured at the boot soles in the weighted ankle frames (GLB units).
+                crouch_sole_offsets([-0.0065, -1.599, 0.311], [0.0065, -1.599, 0.311])
+                crouch_support_margin(0.25)
+                arm_ik({ left = { pole_direction = [1.0, -1.5, 0.6] } right = { pole_direction = [-1.0, -1.5, 0.6] } })
+                collision_disabled()
                 avatar_height(spec.eye_height)
                 // The neck constraint assumes a meter-scale rig.
                 neck_pin_disabled()
+            } else {
+                crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
+                arm_ik(vroid_arm_ik_bend_plane_prototype())
             }
             WalkingIK { step_scale(1.3) }
             if !local_player { collision_response("read_only") }
@@ -134,10 +144,8 @@ export fn make_rooftop_player(options) {
                 mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
                 mouth_open_amount(mouth_tuning.amount)
                 mouth_open_smoothing(16.0)
-                voice_level
             }
             initial_yaw(3.14159)
-            if choice != "miku" { arm_ik(vroid_arm_ik_bend_plane_prototype()) }
             hand_rotation_smoothing(220.0)
         }
         return avatar
@@ -165,12 +173,17 @@ export fn make_rooftop_player(options) {
             // The wearer can aim through their own hands and body.
             if track_hands { Raycastable.disabled() Selectable.off() }
         }
+        let model_mount = spec.model
+        if spec["staging"] {
+            model_mount = spec.staging
+            model_mount.update_transform([0, 0, 0])
+        }
         if choice == "miku" {
-            // Normalize the export's Z-up coordinates and scale below the AVC frame.
-            let normalized = T.rotation(Math.pi / 2.0, 0.0, 0.0).scale(MIKU_SCALE, MIKU_SCALE, MIKU_SCALE) {}
-            normalized.attach(spec.model)
+            // The imported scene already includes its axis conversion, as in the cafeteria.
+            let normalized = T.scale(MIKU_SCALE, MIKU_SCALE, MIKU_SCALE) {}
+            normalized.attach(model_mount)
             model_frame.attach(normalized)
-        } else { model_frame.attach(spec.model) }
+        } else { model_frame.attach(model_mount) }
         avatar.attach(model_frame)
         avatar.attach(left_driver)
         avatar.attach(right_driver)
@@ -195,6 +208,8 @@ export fn make_rooftop_player(options) {
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
     let root = T {
         name = root_name
+        // Voice capture belongs to the player across body replacements.
+        if local_player { voice_level }
         if local_player && use_xr {
             Rider.anchor("#local_xr_camera_anchor").movement_root("#local_root").input("#local_xr_locomotion") {}
         }
@@ -226,7 +241,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null }
+    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null capsule = null miku_head = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -253,8 +268,11 @@ export fn make_rooftop_player(options) {
         if !factories[choice] { report("Avatar unavailable", false) return }
         if !can_swap(report) { return }
         // Load and validate away from the play area while the live body and camera stay mounted.
-        let probe = GLTF.new(model_uris[choice]) {}
+        let factory = factories[choice]
+        let spec = factory(prefix + "_model", track_hands)
+        let probe = spec.model
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
+        spec.staging = staging
         state.pending = { staging = staging elapsed = 0.0 choice = choice report = report }
         on(probe, "GLTFInitialized", fn(event) {
             if !state.pending || state.pending.staging != staging { return }
@@ -263,45 +281,42 @@ export fn make_rooftop_player(options) {
                 state.pending = null
                 return
             }
-            if choice == "miku" && !event.gltf.query("[name='������.R_059']") {
+            if choice == "miku" && !prepare_miku_arms(event.gltf) {
                 staging.remove_subtree()
                 state.pending = null
                 report("Miku rig unavailable", false)
                 return
             }
-            let factory = factories[choice]
-            let spec = factory(prefix + "_model", track_hands)
             let body = build_body(spec, choice)
             if gravity { gravity.set_enabled(false) }
-            enable_gravity_when_ready(body)
-            if choice != "miku" {
-                on(spec.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, body) })
-            }
+            if choice != "miku" { enable_gravity_when_ready(body) }
+            if choice != "miku" { animate_face(spec.model, body) }
             // Move the camera and hands before disposing of their old rig.
             mount_body(body, spec, choice)
             // AVC splices its head bone under the pose target, so that target
             // must be retired with the old AVC to remove the entire old rig.
             let next_head = T { name = prefix + "_head_target" body }
+            if state.capsule { state.capsule.remove_subtree() state.capsule = null }
+            state.miku_head = null
             if choice == "miku" {
-                on(body, "DataEvent", fn(event) {
-                    if event != "CapsuleReady" { return }
-                    let bone = next_head.query("[name='���_012']")
-                    if bone {
-                        // The spliced head no longer inherits the GLTF's normalization.
-                        bone.update_transform([0.0, 0.0, 0.0], [-0.01046, 0.0, 0.0], [MIKU_SCALE, MIKU_SCALE, MIKU_SCALE])
-                        if local_player {
-                            let yaw = 0.0
-                            if use_desktop && !use_xr { yaw = Math.pi }
-                            camera.update_transform([0.0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0.0, yaw, 0.0])
+                state.miku_head = spec.model.query("[name='���_012']")
+                // The TDA skinned meshes store their vertex bounds sideways.
+                // Keep the capsule upright on the movement root on both peers.
+                let capsule = T.position(0, 0.91, 0) {
+                    name = prefix + "_miku_capsule"
+                    Zone.capsule_y(0.28, 0.63) {
+                        Collidable.slide().movement_target(root) {
+                            if !local_player { response("read_only") }
                         }
                     }
-                })
+                }
+                root.attach(capsule)
+                state.capsule = capsule
             }
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
             state.head.remove_subtree()
-            staging.remove_subtree()
             state.head = next_head
             state.model = spec.model
             state.choice = choice
@@ -317,12 +332,25 @@ export fn make_rooftop_player(options) {
         on_global("MountEnded", fn(event) { held.mounted = false })
     }
     on(world, "FrameTick", fn(event) {
+        // The visible head loses its inherited scale when AVC reparents it.
+        // Wait for the splice, including delayed XR tracking, and restore it once.
+        if state.miku_head && query("[name='" + prefix + "_head_target'] > transform > [name='���_012']") == state.miku_head {
+            state.miku_head.update_transform([0, 0, 0], [-0.01046, 0, 0], [MIKU_SCALE, MIKU_SCALE, MIKU_SCALE])
+            state.miku_head = null
+            if track_hands { normalize_miku_grips(state.model, MIKU_SCALE) }
+            if gravity { gravity.set_enabled(true) }
+            if local_player {
+                let yaw = 0.0
+                if use_desktop && !use_xr { yaw = Math.pi }
+                camera.update_transform([0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0, yaw, 0])
+            }
+        }
         let pending = state.pending
         if !pending { return }
         pending.elapsed = pending.elapsed + event.dt_sec
         if pending.elapsed < 8.0 { return }
         cancel_avatar_load()
-        pending.report(pending.choice + " unavailable. Current avatar kept.", false)
+        pending.report(pending.choice + " load timed out. Current avatar kept.", false)
     })
     fn watch_pointer(pointer, key) {
         on(pointer, "PointerGrabbed", fn(event) { held[key] = true })

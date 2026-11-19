@@ -3,13 +3,13 @@ fn avatar_button(choice, on_select) {
     let button = T {
         name = "avatar_picker_" + choice.id
         Style {
-            display("flex") width(6.5) height(2.0)
+            display("flex") width(6.5) height(3.6)
             align_items("center") justify_content("center")
             font_size(0.68)
         }
-        // Layout puts the origin at the upper left. Give the full 6.5 x 2
+        // Layout puts the origin at the upper left. Give the full 6.5 x 3.6
         // layout-unit face one stable pointer target, including under the label.
-        T.position(0.195, -0.06, 0.01).scale(0.39, 0.12, 0.014) {
+        T.position(0.195, -0.108, 0.01).scale(0.39, 0.216, 0.014) {
             R.cube() {
                 C.rgba(0.88, 0.81, 0.66, 1.0)
                 Raycastable.click_only() { interaction_priority(180.0) }
