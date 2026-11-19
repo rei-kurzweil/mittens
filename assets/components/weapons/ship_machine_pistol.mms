@@ -3,6 +3,7 @@ import { laser_machine_pistol } from "../laser-machine-pistol.mms"
 import { mini_explosion } from "../mini-explosion.mms"
 import { emissive_surface } from "../materials/emissive_surface.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
+import { shared_impact } from "../network/shared_impact.mms"
 
 // Reuses the existing weapon's muzzle, selector, sounds and firing cadence.
 // Unique labels keep the three rack instances' controls independent.
@@ -24,11 +25,19 @@ export fn ship_machine_pistol(label, options) {
         if options["user"] { user = options.user }
     }
     fn can_fire() { return !sharing.grab || sharing.grab.state.owner == options.rank }
-    fn impact(hit) {
-        Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, hit.damage)
-        let effect = mini_explosion(hit.hit_point, 2.0)
+    fn apply_impact(point, amount) {
+        Damage.at(point[0], point[1], point[2], 0.28, amount)
+        let effect = mini_explosion(point, 2.0)
         effect.root
         effect.animation.play()
+    }
+    let impacts = null
+    if sharing.socket {
+        impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_impact })
+    }
+    fn impact(hit) {
+        if impacts { impacts.hit(hit.hit_point, hit.damage) }
+        else { apply_impact(hit.hit_point, hit.damage) }
     }
     let tool = laser_machine_pistol({
         name = label + "_laser" length = 60.0 flash_size = 0.22 beam_radius = 0.012
@@ -129,11 +138,13 @@ export fn ship_machine_pistol(label, options) {
         assembly.connect = fn(group, address) {
             sharing.grab.connect(group, address)
             tool.network.connect(group, address)
+            impacts.connect(group, address)
         }
         assembly.disconnect = fn() {
             tool.use_end()
             sharing.grab.disconnect()
             tool.network.disconnect()
+            impacts.disconnect()
         }
     }
     return assembly

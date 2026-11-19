@@ -1,5 +1,12 @@
 import { rocket_explosion } from "./rocket_explosion.mms"
 
+export fn apply_rocket_impact(point, amount) {
+    Damage.at(point[0], point[1], point[2], 1.5, amount)
+    let effect = rocket_explosion(point)
+    effect.root
+    effect.animation.play()
+}
+
 // All flight acceleration and collision checks run in native fixed steps.
 export fn rocket(spec) {
     let state = { alive = true }
@@ -31,10 +38,8 @@ export fn rocket(spec) {
         if !state.alive { return }
         state.alive = false
         let point = event.point
-        Damage.at(point[0], point[1], point[2], 1.5, 8.0)
-        let effect = rocket_explosion(point)
-        effect.root
-        effect.animation.play()
+        if spec["impact"] { spec.impact(point, 8.0) }
+        else { apply_rocket_impact(point, 8.0) }
         if spec["on_hit"] != null {
             spec.on_hit({ hit_point = point normal = event.normal other_zone = event.other_zone source_tool = spec.source_tool source_user = spec.source_user projectile = root damage = 8.0 })
         }

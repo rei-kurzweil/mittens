@@ -198,7 +198,7 @@ export fn make_rooftop_player(options) {
     }
     driver.attach(head)
     root.attach(driver)
-    let state = { head = head model = initial.model choice = options.avatar pending = null }
+    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -207,15 +207,26 @@ export fn make_rooftop_player(options) {
         return true
     }
 
+    fn cancel_avatar_load() {
+        if state.pending {
+            state.pending.staging.remove_subtree()
+            state.pending = null
+        }
+    }
     fn select_avatar(choice, report) {
-        if state.pending { return }
-        if choice == state.choice { report(choice + " is active") return }
+        if state.pending {
+            if local_player || state.pending.choice == choice { return }
+            cancel_avatar_load()
+        }
+        if choice == state.choice { report(choice + " is active", true) return }
+        if !factories[choice] { report("Avatar unavailable", false) return }
         if !can_swap(report) { return }
         // Load and validate away from the play area while the live body and camera stay mounted.
         let probe = GLTF.new(model_uris[choice]) {}
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         state.pending = { staging = staging elapsed = 0.0 choice = choice report = report }
         on(probe, "GLTFInitialized", fn(event) {
+            if !state.pending || state.pending.staging != staging { return }
             if !can_swap(report) {
                 staging.remove_subtree()
                 state.pending = null
@@ -224,7 +235,7 @@ export fn make_rooftop_player(options) {
             if choice == "miku" && !event.gltf.query("[name='������.R_059']") {
                 staging.remove_subtree()
                 state.pending = null
-                report("Miku rig unavailable")
+                report("Miku rig unavailable", false)
                 return
             }
             let factory = factories[choice]
@@ -245,14 +256,16 @@ export fn make_rooftop_player(options) {
                     if bone {
                         // The spliced head no longer inherits the GLTF's normalization.
                         bone.update_transform([0.0, 0.0, 0.0], [-0.01046, 0.0, 0.0], [MIKU_SCALE, MIKU_SCALE, MIKU_SCALE])
-                        let yaw = 0.0
-                        if use_desktop && !use_xr { yaw = Math.pi }
-                        camera.update_transform([0.0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0.0, yaw, 0.0])
+                        if local_player {
+                            let yaw = 0.0
+                            if use_desktop && !use_xr { yaw = Math.pi }
+                            camera.update_transform([0.0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0.0, yaw, 0.0])
+                        }
                     }
                 })
             }
             next_head.trs(state.head.trs())
-            if !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
+            if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
             state.head.remove_subtree()
             staging.remove_subtree()
@@ -260,7 +273,8 @@ export fn make_rooftop_player(options) {
             state.model = spec.model
             state.choice = choice
             state.pending = null
-            report(choice + " is active")
+            if state.changed { state.changed(next_head, spec.model, choice) }
+            report(choice + " is active", true)
         })
         root.attach(staging)
         report("Loading " + choice + "…")
@@ -268,16 +282,15 @@ export fn make_rooftop_player(options) {
     if local_player {
         on_global("MountStarted", fn(event) { held.mounted = true })
         on_global("MountEnded", fn(event) { held.mounted = false })
-        on_global("FrameTick", fn(event) {
-            let pending = state.pending
-            if !pending { return }
-            pending.elapsed = pending.elapsed + event.dt_sec
-            if pending.elapsed < 8.0 { return }
-            pending.staging.remove_subtree()
-            state.pending = null
-            pending.report(pending.choice + " unavailable. Current avatar kept.")
-        })
     }
+    on(world, "FrameTick", fn(event) {
+        let pending = state.pending
+        if !pending { return }
+        pending.elapsed = pending.elapsed + event.dt_sec
+        if pending.elapsed < 8.0 { return }
+        cancel_avatar_load()
+        pending.report(pending.choice + " unavailable. Current avatar kept.", false)
+    })
     fn watch_pointer(pointer, key) {
         on(pointer, "PointerGrabbed", fn(event) { held[key] = true })
         on(pointer, "PointerReleased", fn(event) { held[key] = false })
@@ -287,9 +300,13 @@ export fn make_rooftop_player(options) {
         return state.model.morph_weight(slot)
     }
     fn head_pose() { return state.head.trs() }
+    fn avatar_id() { return state.choice }
+    fn on_avatar_changed(callback) { state.changed = callback }
+    fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
         root = root head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
+        avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load
     }
 }

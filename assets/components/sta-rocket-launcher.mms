@@ -1,11 +1,23 @@
 // Triggering starts the launch sequence. The visual-time event at 100 ms is
 // where the rear flash will finish and the independent rocket will be launched.
 // on_launch receives the muzzle's world pose and the user captured at trigger.
-import { rocket } from "./projectiles/rocket.mms"
+import { rocket, apply_rocket_impact } from "./projectiles/rocket.mms"
+import { shared_impact } from "./network/shared_impact.mms"
 
 export fn sta_rocket_launcher(options) {
     let label = "sta_rocket_launcher"
     if options["name"] != null { label = options.name }
+    // A socket-enabled caller connects network to its peer channel group.
+    let network = null
+    if options["socket"] {
+        let weapon_id = label
+        if options["weapon_id"] { weapon_id = options.weapon_id }
+        network = shared_impact({ socket = options.socket name = weapon_id apply = apply_rocket_impact })
+    }
+    fn impact(point, amount) {
+        if network { network.hit(point, amount) }
+        else { apply_rocket_impact(point, amount) }
+    }
     let state = { trigger_held = false pending = false user = null }
     let muzzle = T { name = label + "_muzzle" }
     let events = T { name = label + "_events" }
@@ -25,7 +37,7 @@ export fn sta_rocket_launcher(options) {
     on(events, "DataEvent", fn(event) {
         if event == "Launch" && state.pending {
             state.pending = false
-            rocket({ pose = muzzle.world_trs() source_tool = root source_user = state.user })
+            rocket({ pose = muzzle.world_trs() source_tool = root source_user = state.user impact = impact })
             if options["on_launch"] != null {
                 options.on_launch({ pose = muzzle.world_trs() source_tool = root source_user = state.user })
             }
@@ -41,5 +53,5 @@ export fn sta_rocket_launcher(options) {
         return true
     }
     fn use_end() { state.trigger_held = false }
-    return { root = root muzzle = muzzle animation = launch_sequence use_start = use_start use_end = use_end }
+    return { root = root muzzle = muzzle animation = launch_sequence use_start = use_start use_end = use_end network = network }
 }

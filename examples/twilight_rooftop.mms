@@ -2,13 +2,12 @@
 // for a desktop window. Network role is separate (commands below).
 let use_xr = true
 let use_desktop = false
-// These are the starting avatars and the role-based models used for peers.
-// The rooftop picker changes the local avatar.
+// Starting avatars also serve as the peer's fallback if an optional model is unavailable.
 // Supported: "mitten", "lumae".
 let host_avatar = "mitten"
 let client_avatar = "lumae"
 
-import { f32, vec3, vec4 } from "types"
+import { f32, str, vec3, vec4 } from "types"
 
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
@@ -282,9 +281,9 @@ if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
-let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 }
-let connection = { root = null }
+let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 avatar_elapsed = 0.0 sent_avatar = null }
+let connection = { root = null avatar_group = null address = null peer_avatar = null }
 let channel_groups = T { name = "channel_groups" }
 channel_groups
 
@@ -293,10 +292,32 @@ fn publish(name, address, kind) {
     connection.root.attach(channel)
     return channel
 }
-fn receive_transform(name, address, target, space) {
+fn receive_transform(group, name, address, target, space) {
     let channel = socket.subscribe(name).from(address).type(pose_type)
     let configured = channel.bind_transform(target, { space = space })
-    connection.root.attach(configured)
+    group.attach(configured)
+}
+
+fn bind_peer_avatar(head, model, choice) {
+    if !connection.root { return }
+    if connection.avatar_group { connection.avatar_group.remove_subtree() }
+    let group = T { name = "peer_avatar_channels" }
+    connection.root.attach(group)
+    connection.avatar_group = group
+    let address = connection.address
+    receive_transform(group, "head", address, head, "local")
+    if choice != "miku" {
+        let blink_left = socket.subscribe("blink.left").from(address).type(f32)
+        group.attach(blink_left.bind_morph(model, "left_eye_blink"))
+        let blink_right = socket.subscribe("blink.right").from(address).type(f32)
+        group.attach(blink_right.bind_morph(model, "right_eye_blink"))
+    }
+}
+remote.on_avatar_changed(bind_peer_avatar)
+
+fn ignore_avatar_status(message, success) {}
+fn receive_avatar_status(message, success) {
+    if success == false { remote.select_avatar(remote_avatar, ignore_avatar_status) }
 }
 
 on(net, "MultiplayerConnected", fn(event) { show_status("connected; waiting for typed channels") })
@@ -309,6 +330,10 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     channel_groups.attach(group)
     connection.root = group
     let address = ip + ":" + remote_port
+    connection.address = address
+    connection.avatar_group = null
+    connection.peer_avatar = null
+    channel_state.sent_avatar = null
     for item in shared_objects { item.connect(group, address) }
     pickup.connect(group, address)
     links.root = publish("root", address, pose_type)
@@ -319,30 +344,34 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     links.blink_right = publish("blink.right", address, f32)
     links.left_valid = publish("left-hand.valid", address, f32)
     links.right_valid = publish("right-hand.valid", address, f32)
-    receive_transform("root", address, remote.root, "world")
-    receive_transform("head", address, remote.head, "local")
-    receive_transform("left-hand", address, remote.left, "local")
-    receive_transform("right-hand", address, remote.right, "local")
+    links.avatar = publish("avatar", address, str)
+    let avatar_channel = socket.subscribe("avatar").from(address).type(str)
+    group.attach(avatar_channel)
+    on(avatar_channel, "UdpSample", fn(sample) {
+        if sample.value == connection.peer_avatar { return }
+        connection.peer_avatar = sample.value
+        remote.select_avatar(sample.value, receive_avatar_status)
+    })
+    receive_transform(group, "root", address, remote.root, "world")
+    receive_transform(group, "left-hand", address, remote.left, "local")
+    receive_transform(group, "right-hand", address, remote.right, "local")
     let left_valid = socket.subscribe("left-hand.valid").from(address).type(f32)
     connection.root.attach(left_valid)
     on(left_valid, "UdpSample", fn(sample) { remote.left_driver.set_pose_valid(sample.value > 0.5) })
     let right_valid = socket.subscribe("right-hand.valid").from(address).type(f32)
     connection.root.attach(right_valid)
     on(right_valid, "UdpSample", fn(sample) { remote.right_driver.set_pose_valid(sample.value > 0.5) })
-    let blink_left = socket.subscribe("blink.left").from(address).type(f32)
-    let left_binding = blink_left.bind_morph(remote.model, "left_eye_blink")
-    connection.root.attach(left_binding)
-    let blink_right = socket.subscribe("blink.right").from(address).type(f32)
-    let right_binding = blink_right.bind_morph(remote.model, "right_eye_blink")
-    connection.root.attach(right_binding)
+    remote.bind_avatar()
     roster.count = 1
     show_status(event.name + " joined; typed pose and face channels")
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
     pickup.disconnect()
+    remote.cancel_avatar_load()
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
+    links.avatar = null
     roster.count = 0
     show_status(event.name + " left; holding last received pose")
 })
@@ -359,8 +388,17 @@ on_global("FrameTick", fn(event) {
         local.right.update_transform([0.35, -0.35 - wave, -0.25])
     }
     channel_state.send_elapsed = channel_state.send_elapsed + event.dt_sec
+    channel_state.avatar_elapsed = channel_state.avatar_elapsed + event.dt_sec
     if channel_state.send_elapsed < 0.05 { return }
     channel_state.send_elapsed = 0.0
+    if links.avatar && links.avatar.ready() {
+        let choice = local.avatar_id()
+        if choice != channel_state.sent_avatar || channel_state.avatar_elapsed >= 0.5 {
+            links.avatar.write(choice)
+            channel_state.sent_avatar = choice
+            channel_state.avatar_elapsed = 0.0
+        }
+    }
     if links.root && links.root.ready() {
         links.root.write(local.root.world_trs())
         if links.head.ready() { links.head.write(local.head_pose()) }
