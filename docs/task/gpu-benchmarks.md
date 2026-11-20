@@ -76,6 +76,7 @@ The scene (`android/examples/noise-bench.mms`) settles 10 s, then runs 6 cases
 
 ## Work log
 
+- 2026-11-20: Multiview A/B plan recorded in [Android multiview](android-multiview.md).
 - 2026-11-20: Created. Desktop noise harness and XR2 noise scene added; neither
   has been run yet. Authoring machine has no Rust toolchain or headset, so
   both are unbuilt.
