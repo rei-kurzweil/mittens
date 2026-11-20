@@ -805,3 +805,10 @@ The next investigation/fix should focus on the MMS loader/evaluator, not the edi
 
 - [docs/task/armature-visualization-startup-followup.md](./armature-visualization-startup-followup.md)
 - [docs/task/editor-panel-selection-refresh-perf-investigation.md](./editor-panel-selection-refresh-perf-investigation.md)
+
+## Proposed importer split
+
+Separate file resolution, geometry and image decoding, and GPU resource registration
+from scene-node spawning in GLTFSystem. Keep resource caches shared per resolved asset
+and preserve batched uploads. Compare GLB startup RSS, first-frame time and upload
+counts for repeated instances before and after moving these responsibilities.

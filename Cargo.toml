@@ -66,6 +66,7 @@ slotmap = "1.0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.11", features = ["v4", "serde"] }
+crc32fast = "1"
 ddsfile = "0.5"
 mcubes = "=0.1.7"
 manifold-rust = { version = "=0.19.1", default-features = false }

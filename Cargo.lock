@@ -1543,6 +1543,7 @@ dependencies = [
  "ash",
  "bvh",
  "cpal",
+ "crc32fast",
  "ddsfile",
  "fundsp",
  "gltf",

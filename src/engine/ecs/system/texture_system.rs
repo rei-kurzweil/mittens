@@ -408,6 +408,33 @@ fn is_virtual_texture_key(uri: &str) -> bool {
     !uri.starts_with("file://") && uri.contains(':')
 }
 
+pub(super) fn upload_sidecar(
+    path: &Path,
+    width: u32,
+    height: u32,
+    uploader: &mut dyn TextureUploader,
+) -> Result<Option<TextureHandle>, Box<dyn std::error::Error>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    let handle = if path.extension().is_some_and(|ext| ext == "astc") {
+        let image = decode_astc(&bytes)?;
+        if (image.width, image.height) != (width, height) {
+            return Err("ASTC dimensions differ from embedded image".into());
+        }
+        uploader.upload_texture_astc(image.blocks, width, height, image.block)?
+    } else {
+        let image = decode_dds_bc7(&bytes)?;
+        if (image.width, image.height) != (width, height) || image.srgb {
+            return Err("expected BC7 UNORM matching embedded image dimensions".into());
+        }
+        uploader.upload_texture_bc7(&image.bc7_blocks, width, height, false)?
+    };
+    Ok(Some(handle))
+}
+
 struct AstcDecoded<'a> {
     width: u32,
     height: u32,
@@ -489,9 +516,10 @@ fn decode_dds_bc7(bytes: &[u8]) -> Result<Bc7Decoded, String> {
     }
 
     // We only use the top mip for now.
-    let blocks_w = (width + 3) / 4;
-    let blocks_h = (height + 3) / 4;
-    let expected_len = blocks_w as usize * blocks_h as usize * 16;
+    let expected_len = (width.div_ceil(4) as usize)
+        .checked_mul(height.div_ceil(4) as usize)
+        .and_then(|blocks| blocks.checked_mul(16))
+        .ok_or("BC7 texture dimensions overflow")?;
     if data.len() < expected_len {
         return Err(format!(
             "DDS data too small for BC7 level 0: got={}, need={}",

@@ -4294,14 +4294,15 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
     let mut render_assets = RenderAssets::new();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (mut session, output) = start_settings_scene(
         source,
-        Some("examples/secondary-motion-desktop.mms"),
+        "examples/secondary-motion-desktop.mms",
         &mut world,
         &mut rx,
         Some(&mut render_assets),
         &mut emit,
-    );
+    )
+    .unwrap();
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     assert!(!source.contains(".overlay(avatar_gltf)"));
 
@@ -4574,6 +4575,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     assert!(first_person_slot_transform.transform.translation[2] > 0.0);
 
     let head = world.add_component_boxed_named("J_Bip_C_Head", Box::new(TransformComponent::new()));
+    world.add_child(avatar_gltf, head).unwrap();
     world
         .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(avatar_gltf)
         .unwrap()
@@ -4588,10 +4590,11 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             },
         ),
     );
-    let initialized = rx.drain_ready_intents();
-    assert!(initialized.iter().any(|signal| matches!(
-        signal.intent.as_ref().map(|intent| &intent.value),
-        Some(IntentValue::Attach { parent, child })
+    let initialized = session.service_callbacks(&mut world, &mut rx, Some(&mut render_assets), &mut emit);
+    assert!(initialized.errors.is_empty(), "{:?}", initialized.errors);
+    assert!(initialized.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::Attach { parent, child }
             if *parent == head && *child == first_person_camera_slot
     )));
 
@@ -4602,28 +4605,30 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         screen_pos_px: None,
     };
     rx.dispatch_event_handlers(&mut world, &Signal::event(toggle, click()));
-    let first_toggle = rx.drain_ready_intents();
-    assert!(first_toggle.iter().any(|signal| matches!(
-        signal.intent.as_ref().map(|intent| &intent.value),
-        Some(IntentValue::Attach { parent, child })
+    let first_toggle = session.service_callbacks(&mut world, &mut rx, Some(&mut render_assets), &mut emit);
+    assert!(first_toggle.errors.is_empty(), "{:?}", first_toggle.errors);
+    assert!(first_toggle.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::Attach { parent, child }
             if *parent == first_person_camera_slot && *child == desktop_camera_rig
     )));
-    assert!(first_toggle.iter().any(|signal| matches!(
-        signal.intent.as_ref().map(|intent| &intent.value),
-        Some(IntentValue::Attach { parent, child })
+    assert!(first_toggle.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::Attach { parent, child }
             if *parent == fixed_camera_slot && *child == fixed_camera_icon
     )));
 
     rx.dispatch_event_handlers(&mut world, &Signal::event(toggle, click()));
-    let second_toggle = rx.drain_ready_intents();
-    assert!(second_toggle.iter().any(|signal| matches!(
-        signal.intent.as_ref().map(|intent| &intent.value),
-        Some(IntentValue::Attach { parent, child })
+    let second_toggle = session.service_callbacks(&mut world, &mut rx, Some(&mut render_assets), &mut emit);
+    assert!(second_toggle.errors.is_empty(), "{:?}", second_toggle.errors);
+    assert!(second_toggle.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::Attach { parent, child }
             if *parent == fixed_camera_slot && *child == desktop_camera_rig
     )));
-    assert!(second_toggle.iter().any(|signal| matches!(
-        signal.intent.as_ref().map(|intent| &intent.value),
-        Some(IntentValue::Attach { parent, child })
+    assert!(second_toggle.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::Attach { parent, child }
             if *parent == hidden_camera_icon_parking && *child == fixed_camera_icon
     )));
 }
@@ -4743,18 +4748,35 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
     let mut visuals = VisualWorld::default();
     let mut render_assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/secondary-motion-desktop.mms"),
-        Some("examples/secondary-motion-desktop.mms"),
+        "examples/secondary-motion-desktop.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut render_assets),
         &mut queue,
-    );
+    )
+    .unwrap();
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
     }
+    let mut frame = |world: &mut World,
+                     systems: &mut crate::engine::ecs::system::SystemWorld,
+                     visuals: &mut VisualWorld,
+                     render_assets: &mut RenderAssets,
+                     queue: &mut CommandQueue| {
+        systems.tick_with_runtime_session(
+            world, visuals, render_assets, &InputState::default(), queue,
+            Some(&mut session), 1.0 / 60.0,
+        );
+        let output = session.service_callbacks(world, &mut systems.rx, Some(render_assets), queue);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        for intent in output.intents {
+            queue.push_intent_now(ComponentId::default(), intent);
+        }
+        systems.process_commands(world, visuals, render_assets, queue);
+    };
     systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
     let named = |world: &World, label: &str| {
         world
@@ -4776,14 +4798,7 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
         .transform
         .translation[1];
     for _ in 0..120 {
-        systems.tick(
-            &mut world,
-            &mut visuals,
-            &mut render_assets,
-            &InputState::default(),
-            &mut queue,
-            1.0 / 60.0,
-        );
+        frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
     }
     let landed = world
         .get_component_by_id_as::<TransformComponent>(root)
@@ -4826,14 +4841,9 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
         );
     };
     press_space(&mut systems);
-    systems.tick(
-        &mut world,
-        &mut visuals,
-        &mut render_assets,
-        &InputState::default(),
-        &mut queue,
-        1.0 / 60.0,
-    );
+    frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
+    // The runtime applies the jump callback at the end of the input frame.
+    frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
     let speed = world
         .get_component_by_id_as::<VelocityComponent>(motion)
         .unwrap()
@@ -4854,14 +4864,7 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
             > landed
     );
     press_space(&mut systems);
-    systems.tick(
-        &mut world,
-        &mut visuals,
-        &mut render_assets,
-        &InputState::default(),
-        &mut queue,
-        1.0 / 60.0,
-    );
+    frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
     assert!(
         world
             .get_component_by_id_as::<VelocityComponent>(motion)
@@ -4871,14 +4874,7 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
         "airborne presses must not add another jump impulse"
     );
     for _ in 0..120 {
-        systems.tick(
-            &mut world,
-            &mut visuals,
-            &mut render_assets,
-            &InputState::default(),
-            &mut queue,
-            1.0 / 60.0,
-        );
+        frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
     }
     assert!(
         world
@@ -4914,14 +4910,7 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
             screen_pos_px: None,
         },
     );
-    systems.tick(
-        &mut world,
-        &mut visuals,
-        &mut render_assets,
-        &InputState::default(),
-        &mut queue,
-        1.0 / 60.0,
-    );
+    frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
     assert!(
         world
             .get_component_by_id_as::<VelocityComponent>(motion)
@@ -4946,14 +4935,15 @@ fn secondary_motion_xr_gravity_b_button_targets_falling_velocity() {
         .trim_end()
         .strip_suffix("XR.on()")
         .unwrap();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (mut session, output) = start_settings_scene(
         source,
-        Some("examples/vtuber-secondary-motion.mms"),
+        "examples/vtuber-secondary-motion.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut assets),
         &mut queue,
-    );
+    )
+    .unwrap();
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
@@ -5004,6 +4994,11 @@ fn secondary_motion_xr_gravity_b_button_targets_falling_velocity() {
     };
     press(&mut systems, XrButtonControl::ButtonY);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    let output = session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
         world
@@ -5014,6 +5009,11 @@ fn secondary_motion_xr_gravity_b_button_targets_falling_velocity() {
     );
     press(&mut systems, XrButtonControl::ButtonB);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    let output = session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
         world
@@ -5030,6 +5030,11 @@ fn secondary_motion_xr_gravity_b_button_targets_falling_velocity() {
     );
     press(&mut systems, XrButtonControl::ButtonB);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    let output = session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
         world
@@ -5048,27 +5053,37 @@ fn secondary_motion_desktop_head_camera_survives_gltf_and_avatar_initialization(
     let mut visuals = VisualWorld::default();
     let mut render_assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (mut session, output) = start_settings_scene(
         source,
-        Some("examples/secondary-motion-desktop.mms"),
+        "examples/secondary-motion-desktop.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut render_assets),
         &mut queue,
-    );
+    )
+    .unwrap();
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
     }
+    let mut frame = |world: &mut World,
+                     systems: &mut crate::engine::ecs::system::SystemWorld,
+                     visuals: &mut VisualWorld,
+                     render_assets: &mut RenderAssets,
+                     queue: &mut CommandQueue| {
+        systems.tick_with_runtime_session(
+            world, visuals, render_assets, &InputState::default(), queue,
+            Some(&mut session), 1.0 / 60.0,
+        );
+        let output = session.service_callbacks(world, &mut systems.rx, Some(render_assets), queue);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        for intent in output.intents {
+            queue.push_intent_now(ComponentId::default(), intent);
+        }
+        systems.process_commands(world, visuals, render_assets, queue);
+    };
     systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
-    systems.tick(
-        &mut world,
-        &mut visuals,
-        &mut render_assets,
-        &InputState::default(),
-        &mut queue,
-        1.0 / 60.0,
-    );
+    frame(&mut world, &mut systems, &mut visuals, &mut render_assets, &mut queue);
 
     let named = |world: &World, label: &str| {
         world
@@ -5099,6 +5114,11 @@ fn secondary_motion_desktop_head_camera_survives_gltf_and_avatar_initialization(
         &mut queue,
         100_000,
     );
+    let output = session.service_callbacks(&mut world, &mut systems.rx, Some(&mut render_assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
     queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
     assert_eq!(world.parent_of(camera_rig), Some(camera_slot));
 
@@ -5468,14 +5488,15 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
     let mut visuals = VisualWorld::default();
     let mut render_assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (_session, output) = start_settings_scene(
         include_str!("../../examples/secondary-motion-desktop.mms"),
-        Some("examples/secondary-motion-desktop.mms"),
+        "examples/secondary-motion-desktop.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut render_assets),
         &mut queue,
-    );
+    )
+    .unwrap();
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
@@ -8699,55 +8720,55 @@ fn all_bisket_secondary_motion_examples_evaluate_with_explicit_colliders() {
         (
             "examples/secondary-motion-desktop.mms",
             include_str!("../../examples/secondary-motion-desktop.mms"),
-            17,
+            15,
             0,
         ),
         (
             "examples/gltf-pose-animation.mms",
             include_str!("../../examples/gltf-pose-animation.mms"),
-            17,
+            15,
             0,
         ),
         (
             "examples/vtuber-secondary-motion.mms",
             include_str!("../../examples/vtuber-secondary-motion.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/xr-grab-demo.mms",
             include_str!("../../examples/xr-grab-demo.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/vtuber-mirror-example.mms",
             include_str!("../../examples/vtuber-mirror-example.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/bisket-vr-demo.mms",
             include_str!("../../examples/bisket-vr-demo.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/bisket-vr-only-example.mms",
             include_str!("../../examples/bisket-vr-only-example.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/input-xr-gamepad.mms",
             include_str!("../../examples/input-xr-gamepad.mms"),
-            23,
+            21,
             2,
         ),
         (
             "examples/vtuber-editor-example.mms",
             include_str!("../../examples/vtuber-editor-example.mms"),
-            23,
+            21,
             2,
         ),
     ] {
@@ -8755,14 +8776,15 @@ fn all_bisket_secondary_motion_examples_evaluate_with_explicit_colliders() {
         let mut rx = RxWorld::default();
         let mut emit = CommandQueue::new();
         let mut render_assets = RenderAssets::new();
-        let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        let (_session, output) = start_settings_scene(
             source,
-            Some(path),
+            path,
             &mut world,
             &mut rx,
             Some(&mut render_assets),
             &mut emit,
-        );
+        )
+        .unwrap();
         assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
         if expected_pointer_hands > 0 {
             assert_xr_gamepad_locomotion_targets(&world, path);

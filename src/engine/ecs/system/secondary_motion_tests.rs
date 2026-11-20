@@ -261,7 +261,13 @@ fn chain_and_joint_swing_limits_bind_per_joint() {
         .get_component_by_id_as_mut::<SpringJointComponent>(fixture.first_config)
         .unwrap()
         .max_swing = Some(20.0);
-    let (bound, _) = build_chain(&fixture.world, gltf, fixture.chain, &[]).unwrap();
+    let (bound, _) = build_chain(
+        &fixture.world,
+        gltf,
+        fixture.chain,
+        fixture.world.children_of(fixture.chain),
+    )
+    .unwrap();
     assert_eq!(bound.joints[0].swing_limit, SwingLimit::from_degrees(20.0));
     assert_eq!(bound.joints[1].swing_limit, None);
 

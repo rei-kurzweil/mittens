@@ -113,3 +113,12 @@ Mitten typed poses/blinks/IK), plus 25 UDP checks (1 intentionally ignored).
 The session no longer stores, forwards, publishes or applies poses. Legacy v2
 pose wire fields remain recognized by the codec for compatibility and codec
 regressions; the live endpoint ignores them.
+
+## Scripting test organization
+
+Group the scene integration tests in `src/scripting/tests.rs` by feature and
+keep legacy evaluator parity tests separate from configured runtime scene tests.
+Reuse the existing scene setup and callback delivery helpers. Preserve the
+number of scene loads and per-frame updates so the split adds no work to the
+test suite or engine. Validate with the focused scene filters and the full
+library suite.

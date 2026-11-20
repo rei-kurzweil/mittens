@@ -298,7 +298,12 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
     let gate = std::env::var_os("SAKURA_PROFILE_GATE").map(PathBuf::from);
     let start = Instant::now();
     let context = RendererContext::new(None, None, None)?;
-    let extent = [1440, 1600];
+    let compare_textures = std::env::var_os("SAKURA_PROFILE_COMPARE_TEXTURES").is_some();
+    let extent = if compare_textures {
+        [1920, 1920]
+    } else {
+        [1440, 1600]
+    };
     let mut renderer = VulkanoState::new(
         context.clone(),
         RendererOutput::Xr(Format::B8G8R8A8_UNORM),
@@ -579,21 +584,23 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
             .count();
         if frame >= warmup {
             assert_eq!(scene.systems.clock.driver_name(), "sakura-profile");
-            assert_eq!(
-                npc_dirty, 0,
-                "stationary NPCs must not be deformed after warmup"
-            );
-            if motion == "static" {
-                assert!(
-                    profile.dirty_components.is_empty(),
-                    "fully static scene is still dirty"
+            if !compare_textures {
+                assert_eq!(
+                    npc_dirty, 0,
+                    "stationary NPCs must not be deformed after warmup"
                 );
-            }
-            if hidden {
-                assert!(
-                    profile.npc_draws.is_empty(),
-                    "hidden control still submits NPC graphics draws"
-                );
+                if motion == "static" {
+                    assert!(
+                        profile.dirty_components.is_empty(),
+                        "fully static scene is still dirty"
+                    );
+                }
+                if hidden {
+                    assert!(
+                        profile.npc_draws.is_empty(),
+                        "hidden control still submits NPC graphics draws"
+                    );
+                }
             }
             rows.push(serde_json::json!({"frame":frame-warmup,"total_ms":before.elapsed().as_secs_f64()*1000.,"driver_transform_ms":transform_ms,"update_ms":update_ms,"skin_ms":skin_ms,"bindings_updated":bindings,"prepare_ms":prepare_ms,"record_submit_ms":record_ms,"wait_ms":wait_ms,"gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"deformation_cpu_ms":profile.deformation_cpu_ns as f64/1e6,"morph_upload_cpu_ms":profile.morph_upload_cpu_ns as f64/1e6,"npc_dirty_jobs":npc_dirty,"all_dirty_jobs":profile.dirty_components.len(),"draws":profile.draws,"npc_draws":profile.npc_draws}));
         }
@@ -606,7 +613,7 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
         counters.deformation_morph_delta_upload_bytes, 0,
         "immutable morph deltas must remain uploaded after warmup, including moving frames"
     );
-    if motion == "static" {
+    if motion == "static" && !compare_textures {
         assert_eq!(counters.deformation_jobs, 0);
         assert_eq!(counters.deformation_bone_upload_bytes, 0);
     }
@@ -644,7 +651,21 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
         binding_end[2] - binding_start[2],
     ];
     let binding_details: Vec<_> = renderer.material_instances.iter().map(|(id,entry)|serde_json::json!({"id":format!("{id:?}"),"hits":entry.bindings.hits,"misses":entry.bindings.misses,"evictions":entry.bindings.evictions,"retained":entry.bindings.len()})).collect();
-    let result = serde_json::json!({"lumae":count,"motion":motion,"hidden":hidden,"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,"gpu":renderer.gpu_device_name(),"context_ms":context_ms,"load_upload_ms":load_ms,"timing":timing,"counters":counters,"cached_material_hits":renderer.cached_material_sets.hits-material_start.0,"cached_material_misses":renderer.cached_material_sets.misses-material_start.1,"cached_material_evictions":renderer.cached_material_sets.evictions-material_start.2,"material_binding_cache_deltas":binding_deltas,"material_binding_cache_totals":binding_details,"material_allocations":renderer.material_upload_stats.allocations-material_start.3,"material_uploads":renderer.material_upload_stats.uploads-material_start.4,"material_reuses":renderer.material_upload_stats.snapshot_reuses-material_start.5,"bones_palette_bytes":scene.visuals.bones_palette().len()*64,"unique_npc_meshes":npc_meshes.len(),"npc_instances":identity,"morph_arena_bytes":renderer.deformation_morph_cpu.len()*std::mem::size_of::<GpuMorphDelta>(),"deformation_live_bytes":renderer.deformation_stats.live_cache_bytes,"deformation_allocated_bytes":renderer.deformation_stats.allocated_cache_bytes,"gpu_meshes":renderer.meshes.len(),"gpu_textures":renderer.textures.len(),"sample_draws":rows.last().unwrap()["draws"],"sample_npc_draws":rows.last().unwrap()["npc_draws"]});
+    let mut texture_memory_by_format = std::collections::BTreeMap::<String, [u64; 2]>::new();
+    for texture in renderer.textures.values() {
+        let entry = texture_memory_by_format
+            .entry(format!("{:?}", texture.format))
+            .or_default();
+        entry[0] += 1;
+        entry[1] += texture
+            .view
+            .image()
+            .memory_requirements()
+            .iter()
+            .map(|req| req.layout.size())
+            .sum::<u64>();
+    }
+    let result = serde_json::json!({"lumae":count,"motion":motion,"hidden":hidden,"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,"gpu":renderer.gpu_device_name(),"context_ms":context_ms,"load_upload_ms":load_ms,"timing":timing,"counters":counters,"cached_material_hits":renderer.cached_material_sets.hits-material_start.0,"cached_material_misses":renderer.cached_material_sets.misses-material_start.1,"cached_material_evictions":renderer.cached_material_sets.evictions-material_start.2,"material_binding_cache_deltas":binding_deltas,"material_binding_cache_totals":binding_details,"material_allocations":renderer.material_upload_stats.allocations-material_start.3,"material_uploads":renderer.material_upload_stats.uploads-material_start.4,"material_reuses":renderer.material_upload_stats.snapshot_reuses-material_start.5,"bones_palette_bytes":scene.visuals.bones_palette().len()*64,"unique_npc_meshes":npc_meshes.len(),"npc_instances":identity,"morph_arena_bytes":renderer.deformation_morph_cpu.len()*std::mem::size_of::<GpuMorphDelta>(),"deformation_live_bytes":renderer.deformation_stats.live_cache_bytes,"deformation_allocated_bytes":renderer.deformation_stats.allocated_cache_bytes,"gpu_meshes":renderer.meshes.len(),"gpu_textures":renderer.textures.len(),"texture_counts_and_required_bytes_by_format":texture_memory_by_format,"sample_draws":rows.last().unwrap()["draws"],"sample_npc_draws":rows.last().unwrap()["npc_draws"]});
     println!("SAKURA_PROFILE_RESULT {}", result);
     if let Some(path) = std::env::var_os("SAKURA_PROFILE_OUTPUT") {
         let path = PathBuf::from(path);

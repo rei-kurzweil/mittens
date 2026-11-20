@@ -91,8 +91,6 @@ on(avatar_gltf, "GLTFInitialized", fn(event) {
     let head = event.gltf.query("#J_Bip_C_Head")
     if head {
         head.attach(first_person_camera_slot)
-    } else {
-        print("GLTFInitialized: expected Bisket head bone #J_Bip_C_Head was not found")
     }
 })
 
@@ -177,12 +175,10 @@ on(camera_view_toggle, "Click", fn(event) {
         fixed_camera_slot.attach(desktop_camera_rig)
         hidden_camera_icon_parking.attach(fixed_camera_icon)
         camera_view_state.first_person = false
-        print("camera attached to fixed_camera_slot")
     } else {
         first_person_camera_slot.attach(desktop_camera_rig)
         fixed_camera_slot.attach(fixed_camera_icon)
         camera_view_state.first_person = true
-        print("camera attached to first_person_camera_slot")
     }
 })
 

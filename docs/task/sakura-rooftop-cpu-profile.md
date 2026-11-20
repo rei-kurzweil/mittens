@@ -667,3 +667,10 @@ root. `xr-comparison.json` records the old/new report values, and the matching
 `xr-0.log` / `xr-2.log` retain session/tracking events. No further headset demo
 is running. Next retain the material binding-cache follow-up and the separate
 transform/IK update investigation; multiview remains a later measured slice.
+
+### Proposed profiler split
+
+Move stereo scene setup, frame timing, and reporting into separate modules.
+Keep timestamp queries in the existing submission, preserve the per-frame
+fence behavior and avoid additional GPU waits. Validate the split with the
+same fixed-camera frame sequence, draw counts, and repeated GPU timings.

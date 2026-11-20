@@ -41,6 +41,7 @@ struct ImportedMesh {
 
 #[derive(Debug)]
 struct ImportedTexture {
+    sidecar: Option<std::path::PathBuf>,
     rgba: Option<Vec<u8>>,
     width: u32,
     height: u32,
@@ -256,6 +257,7 @@ impl GLTFSystem {
         uri: &str,
     ) -> Result<
         (
+            String,
             gltf::Document,
             Vec<gltf::buffer::Data>,
             Vec<gltf::image::Data>,
@@ -265,11 +267,11 @@ impl GLTFSystem {
         let mut last_err: Option<(String, String)> = None;
         for candidate in Self::candidate_paths(uri) {
             match gltf::import(&candidate) {
-                Ok(ok) => {
+                Ok((doc, buffers, images)) => {
                     if candidate != uri {
                         println!("[GLTFSystem] resolved '{}' -> '{}'", uri, candidate);
                     }
-                    return Ok(ok);
+                    return Ok((candidate, doc, buffers, images));
                 }
                 Err(err) => {
                     last_err = Some((candidate, err.to_string()));
@@ -363,7 +365,7 @@ impl GLTFSystem {
 
             // Import to walk the node tree.
             // Heavy mesh/texture data is cached in `resources_by_uri`.
-            let Ok((doc, buffers, _images)) = Self::import_with_fallback(&uri) else {
+            let Ok((_, doc, buffers, _images)) = Self::import_with_fallback(&uri) else {
                 self.spawned_components.insert(cid);
                 continue;
             };
@@ -603,7 +605,25 @@ impl GLTFSystem {
                         .get(index)
                         .cloned()
                         .unwrap_or_else(|| format!("{}:{}", loaded.gltf_name, index));
-                    match uploader.upload_texture_rgba8(rgba, t.width, t.height) {
+                    let compressed = t.sidecar.as_deref().and_then(|path| {
+                        match super::texture_system::upload_sidecar(
+                            path, t.width, t.height, uploader,
+                        ) {
+                            Ok(handle) => handle,
+                            Err(err) => {
+                                eprintln!(
+                                    "[GLTFSystem] {}: {err}; using embedded image",
+                                    path.display()
+                                );
+                                None
+                            }
+                        }
+                    });
+                    let upload = compressed.map_or_else(
+                        || uploader.upload_texture_rgba8(rgba, t.width, t.height),
+                        Ok,
+                    );
+                    match upload {
                         Ok(handle) => {
                             texture_system.register_cached_texture(key, handle);
                         }
@@ -700,7 +720,11 @@ impl GLTFSystem {
     }
 
     fn load_gltf_resources(uri: &str) -> Result<LoadedGltf, String> {
-        let (doc, buffers, images) = Self::import_with_fallback(uri)?;
+        let (path, doc, buffers, images) = Self::import_with_fallback(uri)?;
+        let sidecar_dir = std::path::PathBuf::from(format!("{path}.textures"));
+        let has_sidecars = sidecar_dir.is_dir();
+        #[cfg(test)]
+        let has_sidecars = has_sidecars && std::env::var_os("SAKURA_PROFILE_RGBA_ONLY").is_none();
 
         let gltf_name = Path::new(uri)
             .file_stem()
@@ -894,11 +918,9 @@ impl GLTFSystem {
         // Build texture table (RGBA8).
         let mut texture_keys: Vec<String> = Vec::new();
         let mut textures: Vec<ImportedTexture> = Vec::new();
-        for (i, img) in images.into_iter().enumerate() {
-            let name_or_index = doc
-                .images()
-                .nth(i)
-                .and_then(|im| im.name())
+        for (i, (source, img)) in doc.images().zip(images).enumerate() {
+            let name_or_index = source
+                .name()
                 .map(Self::sanitize_key_part)
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| format!("{}", i));
@@ -938,7 +960,21 @@ impl GLTFSystem {
                 }
             };
 
+            let sidecar = match source.source() {
+                gltf::image::Source::View { view, .. } if has_sidecars => {
+                    let bytes = &buffers[view.buffer().index()].0;
+                    let hash = crc32fast::hash(&bytes[view.offset()..view.offset() + view.length()]);
+                    let extension = if cfg!(target_os = "android") {
+                        "astc"
+                    } else {
+                        "dds"
+                    };
+                    Some(sidecar_dir.join(format!("{i}-{hash:08x}.{extension}")))
+                }
+                _ => None,
+            };
             textures.push(ImportedTexture {
+                sidecar,
                 rgba: Some(rgba),
                 width,
                 height,
