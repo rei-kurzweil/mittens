@@ -75,8 +75,10 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_explosion_without_frame_bindin
         &mut uploader,
         &mut scene.command_queue,
     );
+    assert!(has(&scene.world, "sta_rocket_trail"), "rocket carries its exhaust ribbon");
     let mut explosion = false;
-    for _ in 0..80 {
+    // Impact fades the trail for one beat before removing the flight root.
+    for _ in 0..140 {
         advance(&mut scene, &clock);
         explosion |= has(&scene.world, "rocket_explosion");
     }

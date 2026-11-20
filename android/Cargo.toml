@@ -25,6 +25,7 @@ resolution-probe = ["mobile-renderer"]
 resolution-render-probe = ["mobile-renderer"]
 profile-ui = ["mobile-renderer"]
 profile-collision = ["mobile-renderer"]
+noise-bench = ["mobile-renderer"]
 
 [build-dependencies]
 shaderc = "0.8.3"
@@ -36,6 +37,7 @@ android-activity = { version = "=0.6.0", features = ["native-activity"] }
 android_logger = { version = "0.14", default-features = false }
 ash = { version = "0.38", optional = true }
 jni = { version = "0.21", optional = true }
+libc = "0.2"
 log = "0.4"
 mittens-engine = { path = "..", default-features = false }
 ndk-context = "0.1"

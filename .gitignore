@@ -25,3 +25,6 @@ assets/models/tmp
 # Personal examples stay local; Git needs one tracked file to retain the folder.
 /examples/local/**
 !/examples/local/.gitkeep
+
+# Texture compression CLIs installed by scripts/install-texture-tools
+/tools/texture/

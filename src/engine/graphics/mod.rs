@@ -101,6 +101,18 @@ pub trait TextureUploader {
         height: u32,
         srgb: bool,
     ) -> Result<TextureHandle, Box<dyn std::error::Error>>;
+
+    /// One level of 2D ASTC LDR blocks (16 bytes each), linear UNorm.
+    /// Renderers without ASTC support report an error rather than decoding.
+    fn upload_texture_astc(
+        &mut self,
+        _blocks: &[u8],
+        _width: u32,
+        _height: u32,
+        _block: [u32; 2],
+    ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+        Err("ASTC textures are not supported by this renderer".into())
+    }
 }
 
 /// Convenience super-trait for types that can upload both meshes and textures.

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Installs pinned texture compression CLIs into tools/texture/ (gitignored):
+# - astcenc 5.7.1 (ARM, Apache-2.0): ASTC for Android/Adreno.
+# The download is verified against ARM's published SHA-256. No sudo required.
+#
+# BC7 (desktop) needs no external tool for generated grayscale textures:
+# assets/images/noise/generate-perlin-noise.py encodes BC7 itself. AMD's
+# compressonatorcli 4.6.0 Linux build was evaluated but links OpenEXR 2.5
+# (libIlmImf-2_5), which current Arch/Manjaro no longer ship.
+#
+# Usage: scripts/install-texture-tools [--force]
+# Afterwards: tools/texture/bin/astcenc
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
+DEST="$REPO_ROOT/tools/texture"
+BIN="$DEST/bin"
+
+ASTCENC_VERSION=5.7.1
+ASTCENC_URL="https://github.com/ARM-software/astc-encoder/releases/download/$ASTCENC_VERSION/astcenc-$ASTCENC_VERSION-linux-x64.zip"
+ASTCENC_SHA256=f1d576f0801e7701548da78d782f4bf70dfde3673a238d1a2ac0ebd3511b2f37
+
+force=0
+[[ "${1:-}" == "--force" ]] && force=1
+
+if [[ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]]; then
+  echo "error: only Linux x86_64 is pinned here; add other platforms' URLs/hashes" >&2
+  exit 1
+fi
+
+download() { # url sha256 output
+  curl -fL --retry 3 -o "$3" "$1"
+  echo "$2  $3" | sha256sum -c -
+}
+
+mkdir -p "$BIN" "$DEST/cache"
+
+if [[ $force -eq 1 || ! -x "$BIN/astcenc" ]]; then
+  archive="$DEST/cache/astcenc-$ASTCENC_VERSION.zip"
+  download "$ASTCENC_URL" "$ASTCENC_SHA256" "$archive"
+  rm -rf "$DEST/astcenc"
+  mkdir -p "$DEST/astcenc"
+  python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$archive" "$DEST/astcenc"
+  # Prefer the SSE4.1 build: runs on any x86_64 CPU from the last decade.
+  exe="$(find "$DEST/astcenc" -type f -name 'astcenc-sse4.1' | head -n1)"
+  [[ -n "$exe" ]] || exe="$(find "$DEST/astcenc" -type f -name 'astcenc-*' | head -n1)"
+  chmod +x "$exe"
+  ln -sf "$exe" "$BIN/astcenc"
+fi
+
+"$BIN/astcenc" -version 2>&1 | head -n1 || true
+echo "installed into $BIN"

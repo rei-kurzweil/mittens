@@ -10,6 +10,7 @@ pub(crate) enum DemoScene {
     SakuraStage,
     SakuraLean,
     SakuraCollision,
+    NoiseBench,
 }
 pub(crate) struct SceneSource {
     pub source: String,
@@ -75,6 +76,16 @@ const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "assets/shaders/ui-unlit.frag",
     "assets/shaders/bvh-snapshot.frag",
 ];
+const NOISE_BENCH_FILES: &[(&str, &[u8])] = bundle![
+    "android/examples/noise-bench.mms",
+    "assets/images/noise/perlin-1024.png",
+    "assets/textures/noise/perlin-1024-astc4x4.astc",
+    "assets/textures/noise/perlin-1024-astc8x8.astc",
+];
+/// Shader NOISE_MODE variants written by the installer (no includes/defines in MMS).
+const NOISE_BENCH_SHADER: &str = include_str!("../../assets/shaders/perlin-noise-benchmark.frag");
+const NOISE_BENCH_MODES: [u8; 4] = [0, 1, 2, 3];
+
 pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource> {
     let root = directory.join("mittens-demo");
     std::fs::create_dir_all(&root).map_err(|e| format!("demo directory: {e}"))?;
@@ -100,12 +111,29 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
         DemoScene::Shell
         | DemoScene::SakuraStage
         | DemoScene::SakuraLean
-        | DemoScene::SakuraCollision => {
-            let files = if matches!(scene, DemoScene::Shell) {
-                SHELL_FILES
-            } else {
-                STAGE_FILES
+        | DemoScene::SakuraCollision
+        | DemoScene::NoiseBench => {
+            let files = match scene {
+                DemoScene::Shell => SHELL_FILES,
+                DemoScene::NoiseBench => NOISE_BENCH_FILES,
+                _ => STAGE_FILES,
             };
+            if matches!(scene, DemoScene::NoiseBench) {
+                let shaders = root.join("assets/shaders");
+                std::fs::create_dir_all(&shaders).map_err(|e| e.to_string())?;
+                for mode in NOISE_BENCH_MODES {
+                    let source = NOISE_BENCH_SHADER.replacen(
+                        "#version 450",
+                        &format!("#version 450\n#define NOISE_MODE {mode}\n#define NOISE_OCTAVES 6"),
+                        1,
+                    );
+                    std::fs::write(
+                        shaders.join(format!("perlin-noise-benchmark-mode{mode}.frag")),
+                        source,
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
             for &(relative, bytes) in files {
                 let target = root.join(relative);
                 std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
@@ -148,6 +176,10 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
                 DemoScene::SakuraCollision => (
                     "android/examples/sakura-stage-collision.mms",
                     "Sakura rooftop stage: collision, no UI",
+                ),
+                DemoScene::NoiseBench => (
+                    "android/examples/noise-bench.mms",
+                    "noise texture vs procedural GPU benchmark",
                 ),
                 DemoScene::Cubes => unreachable!(),
             };

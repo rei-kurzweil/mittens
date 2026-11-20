@@ -30,6 +30,8 @@ pub(crate) struct Gpu {
     pub dynamic: bool,
     #[allow(dead_code)] // The scene renderer deliberately uses classic passes.
     pub dynamic_api: Option<ash::khr::dynamic_rendering::Device>,
+    /// `textureCompressionASTC_LDR` was reported and enabled at device creation.
+    pub astc_ldr: bool,
 }
 impl Drop for Gpu {
     fn drop(&mut self) {
@@ -413,9 +415,14 @@ impl Gpu {
             let mut density_enable = vk::PhysicalDeviceFragmentDensityMapFeaturesEXT::default()
                 .fragment_density_map(true)
                 .fragment_density_map_non_subsampled_images(true);
+            // ASTC formats are unusable unless the feature is enabled here.
+            let astc_ldr = features.texture_compression_astc_ldr == vk::TRUE;
+            let enabled_features =
+                vk::PhysicalDeviceFeatures::default().texture_compression_astc_ldr(astc_ldr);
             let mut info = vk::DeviceCreateInfo::default()
                 .queue_create_infos(&queues)
-                .enabled_extension_names(&pointers);
+                .enabled_extension_names(&pointers)
+                .enabled_features(&enabled_features);
             if dynamic {
                 info = info.push_next(&mut dynamic_enable);
             }
@@ -453,6 +460,7 @@ impl Gpu {
                 dynamic,
                 dynamic_api,
                 density_texel,
+                astc_ldr,
             }))
         }
     }

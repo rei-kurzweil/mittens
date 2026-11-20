@@ -502,7 +502,19 @@ impl TextureUploader for SceneRenderer {
         _: u32,
         _: bool,
     ) -> std::result::Result<TextureHandle, Box<dyn std::error::Error>> {
-        Err("BC7 is unsupported on the Focus 3; supply RGBA8 textures for this renderer".into())
+        Err("BC7 is unsupported on the Focus 3; supply ASTC or RGBA8 textures for this renderer".into())
+    }
+    fn upload_texture_astc(
+        &mut self,
+        blocks: &[u8],
+        width: u32,
+        height: u32,
+        block: [u32; 2],
+    ) -> std::result::Result<TextureHandle, Box<dyn std::error::Error>> {
+        let image = resources::upload_astc(self.gpu.clone(), blocks, width, height, block)?;
+        let handle = TextureHandle(u32::try_from(self.textures.len())?);
+        self.textures.push(image);
+        Ok(handle)
     }
 }
 
