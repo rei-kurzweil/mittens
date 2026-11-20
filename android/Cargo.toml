@@ -25,6 +25,7 @@ resolution-probe = ["mobile-renderer"]
 resolution-render-probe = ["mobile-renderer"]
 profile-ui = ["mobile-renderer"]
 profile-collision = ["mobile-renderer"]
+noise-bench = ["mobile-renderer"]
 
 [build-dependencies]
 shaderc = "0.8.3"

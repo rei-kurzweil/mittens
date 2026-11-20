@@ -28,6 +28,8 @@ impl FrameSetup {
                 crate::demo_assets::DemoScene::SakuraStage
             } else if cfg!(feature = "profile-collision") {
                 crate::demo_assets::DemoScene::SakuraCollision
+            } else if cfg!(feature = "noise-bench") {
+                crate::demo_assets::DemoScene::NoiseBench
             } else {
                 crate::demo_assets::DemoScene::SakuraLean
             };

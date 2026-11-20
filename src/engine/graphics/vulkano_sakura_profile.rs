@@ -709,6 +709,9 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
 #[path = "vulkano_ship_profile.rs"]
 mod ship;
 
+#[path = "vulkano_noise_profile.rs"]
+mod noise;
+
 #[path = "vulkano_ship_profile_motion.rs"]
 mod ship_motion;
 
