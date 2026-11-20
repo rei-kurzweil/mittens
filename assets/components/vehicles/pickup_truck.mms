@@ -23,6 +23,14 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         Selectable.off()
     }
     on(model,"GLTFInitialized",fn(event) {
+        for binding in bindings {
+            // Each wheel exports rubber first and the metal rim second.
+            let tire=event.gltf.query("[name='"+binding.wheel+"'] > renderable")
+            if tire {
+                let tread=Texture.from_png("assets/textures/vehicles/tire-tread.png") {}
+                tire.attach(tread)
+            }
+        }
         bind_pickup_model_suspension(event.gltf,bindings)
         let chassis=event.gltf.query("#truck")
         if chassis {

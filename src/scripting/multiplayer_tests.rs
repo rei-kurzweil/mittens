@@ -570,7 +570,10 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     use crate::engine::ecs::component::material::{
         MaterialComponent, MaterialDefinitionComponent, ShadingModel,
     };
-    use crate::engine::ecs::component::{Camera3DComponent, CameraXRComponent, ColorComponent};
+    use crate::engine::ecs::component::texture::TextureSource;
+    use crate::engine::ecs::component::{
+        Camera3DComponent, CameraXRComponent, ColorComponent, RenderableComponent, TextureComponent,
+    };
     use crate::engine::graphics::materials::OpaqueBucket;
     // Default flags: XR-only, solo host still waiting for a peer.
     let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
@@ -634,6 +637,23 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     assert_eq!(finish.values["shade_strength"], [0.15]);
     assert_eq!(finish.values["shade_threshold"], [0.2875]);
     assert_eq!(finish.values["lit_threshold"], [0.6625]);
+    for suffix in ["", ".001", ".002", ".003"] {
+        let wheel = named(&scene, &format!("front-left-WHEEL{suffix}")).unwrap();
+        let primitives: Vec<_> = world
+            .children_of(wheel)
+            .iter()
+            .copied()
+            .filter(|&id| world.get_component_by_id_as::<RenderableComponent>(id).is_some())
+            .collect();
+        let [tire, rim] = primitives.as_slice() else {
+            panic!("expected rubber and rim primitives for wheel {suffix}");
+        };
+        let tread = world.find_component(*tire, "texture").unwrap();
+        let tread = world.get_component_by_id_as::<TextureComponent>(tread).unwrap();
+        assert!(matches!(&tread.source, TextureSource::Uri(uri)
+            if uri == "assets/textures/vehicles/tire-tread.png"));
+        assert!(world.find_component(*rim, "texture").is_none());
+    }
     // Both players stand on the main roof (5 floors x 3.2 m).
     let local = world_position(&scene, "local_root").unwrap();
     assert!(
