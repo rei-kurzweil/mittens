@@ -13,7 +13,7 @@ To hand a run to an agent on the GPU/headset machine, give it the
 
 | Name | GPU | Driver / OS | Notes |
 |---|---|---|---|
-| desktop-1080 | NVIDIA GTX 1080 | _fill in_ | desktop Vulkan (vulkano renderer) |
+| desktop-1080 | NVIDIA GTX 1080 | NVIDIA 580.159.04 / EndeavourOS | desktop Vulkan (vulkano renderer) |
 | focus3 | Adreno 650 (XR2), HTC Focus 3 | _fill in_ | Android renderer, classic passes, two eye passes |
 
 ## Benchmarks
@@ -63,8 +63,8 @@ The scene (`android/examples/noise-bench.mms`) settles 10 s, then runs 6 cases
 
 | Date | Commit | Machine | Extent/eye | flat ms | rgba8 Δ | bc7 Δ | perlin-1 Δ | fbm6 Δ | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| | | desktop-1080 | 1920×1080 | | | | | | |
-| | | desktop-1080 | 2448×2448 | | | | | | |
+| 2026-11-20 | `8e08010e` | desktop-1080 | 1920×1080 | 0.269 | 0.051 | 0.016 | 0.052 | 0.648 | Default settings |
+| 2026-11-20 | `8e08010e` | desktop-1080 | 2448×2448 | 0.725 | 0.211 | 0.068 | 0.163 | 1.885 | Default settings |
 
 Δ = `delta_vs_flat_ms` (both eyes) from `/tmp/noise-profile.json`.
 
@@ -77,6 +77,8 @@ The scene (`android/examples/noise-bench.mms`) settles 10 s, then runs 6 cases
 Δ = mean `gpu_frame_ms` of the case minus `flat`, averaged over rounds.
 
 ## Work log
+
+- 2026-11-20 — Ran the desktop noise benchmark on `8e08010e` with release defaults. Discarded the first capture after concurrent GPU use was reported. Before the rerun the GPU reported 1–3% utilization in P8. Each case contributed 480 measured stereo frames per extent. The ASTC and release rocket tests passed. The benchmark compiled without changes. [Raw rerun timings](results/noise-profile-desktop-1080-2026-11-20.json)
 
 - 2026-11-20: Added the [runbook](gpu-benchmark-runbook.md) for agent-run benchmarks.
 - 2026-11-20: Multiview A/B plan recorded in [Android multiview](android-multiview.md).
