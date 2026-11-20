@@ -10,7 +10,7 @@ export fn shared_sta_launcher(label, options) {
         Selectable.off()
         Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
         tool.root
-        T.position(0.191, -1.50, -0.15) { GLTF.new("assets/models/STA_launcher.glb") { name = label } }
+        tool.model
     }
     let grab = null
     if options["socket"] {

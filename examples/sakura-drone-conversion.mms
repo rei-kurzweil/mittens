@@ -473,7 +473,6 @@ fn rooftop_pistol(label, effect_label, x) {
 }
 rooftop_pistol("sakura_machine_pistol", "sakura_pistol_laser", -21.15)
 rooftop_pistol("sakura_machine_pistol_2", "sakura_pistol_laser_2", -20.30)
-// The GLB's geometry is offset from its origin. Center it in the grip frame.
 let launcher = sta_rocket_launcher({ name = "sakura_sta_launcher" })
 let launcher_held = { active = false hand = "" pointer = null }
 let launcher_grip = T.position(-19.45, roof_height + 1.055, 0.2).rotation_quat(0.5, -0.5, -0.5, 0.5) {
@@ -481,9 +480,7 @@ let launcher_grip = T.position(-19.45, roof_height + 1.055, 0.2).rotation_quat(0
     Selectable.off()
     Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
     launcher.root
-    T.position(0.191, -1.50, -0.15) {
-        GLTF.new("assets/models/STA_launcher.glb") { name = "sakura_sta_launcher" }
-    }
+    launcher.model
 }
 launcher_grip
 on(launcher_grip, "GrabStart", fn(event) {

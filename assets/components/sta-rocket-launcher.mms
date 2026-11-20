@@ -19,7 +19,14 @@ export fn sta_rocket_launcher(options) {
         else { apply_rocket_impact(point, amount) }
     }
     let state = { trigger_held = false pending = false user = null }
-    let muzzle = T { name = label + "_muzzle" }
+    // Cancel the exported handle pivot translation before turning the GLB's
+    // forward (+Z) onto the held controller and projectile axis (-Z).
+    let model = T.rotation(0, Math.pi, 0) {
+        T.position(0.191245, -1.387106, -0.449388) {
+            GLTF.new("assets/models/STA_launcher.glb") { name = label }
+        }
+    }
+    let muzzle = T.position(0.00031, 0.12039, -0.18366) { name = label + "_muzzle" }
     let events = T { name = label + "_events" }
     // Animation time is in beats at the default two beats per second.
     let launch_sequence = Animation.paused().length(0.2) {
@@ -53,5 +60,5 @@ export fn sta_rocket_launcher(options) {
         return true
     }
     fn use_end() { state.trigger_held = false }
-    return { root = root muzzle = muzzle animation = launch_sequence use_start = use_start use_end = use_end network = network }
+    return { root = root model = model muzzle = muzzle animation = launch_sequence use_start = use_start use_end = use_end network = network }
 }

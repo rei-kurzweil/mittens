@@ -169,7 +169,7 @@ impl Component for TextureComponent {
             (TextureSource::Uri(uri), CatEngineTextureFormat::DdsBc7) => {
                 ce_call("Texture", "from_dds", vec![s(uri)])
             }
-            (TextureSource::Uri(uri), CatEngineTextureFormat::Rgba8) => {
+            (TextureSource::Uri(uri), CatEngineTextureFormat::Rgba8 | CatEngineTextureFormat::Astc) => {
                 ce_call("Texture", "with_uri", vec![s(uri)])
             }
             // Handle-backed textures are runtime-only; emit unresolved.
