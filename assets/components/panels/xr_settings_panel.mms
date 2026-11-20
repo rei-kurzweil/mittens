@@ -32,7 +32,7 @@ fn settings_content(calibration_file) {
             Raycastable.enabled() { interaction_priority(120.0) }
         }
     }
-    let slider = Slider.range(-0.5, 0.5).step(0.005).value(correction)
+    let slider = Slider.range(-1.0, 1.0).step(0.005).value(correction)
         .width(TRACK_WIDTH - THUMB_RADIUS * 2.0 - 0.04).track(track).thumb(thumb) {
             name = "xr_floor_correction_slider"
         }

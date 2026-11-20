@@ -51,7 +51,7 @@ fn xr_calibration_file_api_read_is_explicit_and_failed_save_preserves_runtime() 
     let blocked = serde_json::to_string(&format!("{}/child.json", fixture.file())).unwrap();
     for source in [
         format!("XrSettings.floor.set_correction_meters(0.3, {{file = {blocked}}})"),
-        format!("XrSettings.floor.set_correction_meters(0.51, {{file = {file}}})"),
+        format!("XrSettings.floor.set_correction_meters(1.01, {{file = {file}}})"),
         "XrSettings.floor.correction_meters({})".into(),
         "XrSettings.floor.correction_meters({file = 42})".into(),
         format!("XrSettings.floor.correction_meters({{file = {file}, typo = true}})"),
@@ -93,12 +93,12 @@ fn xr_calibration_panel_commits_share_across_scenes_restarts_and_reset() {
         slider,
         ecs::IntentValue::SliderSet {
             component_id: slider,
-            value: 0.125,
+            value: 0.875,
             emit_changed: true,
         },
     );
     pump_settings_callbacks(&mut universe);
-    assert!((universe.systems.xr_settings.floor_correction_meters() - 0.125).abs() < 1e-6);
+    assert!((universe.systems.xr_settings.floor_correction_meters() - 0.875).abs() < 1e-6);
     assert!(
         !std::path::Path::new(&fixture.file()).exists(),
         "drag preview must not write to disk"
@@ -107,18 +107,18 @@ fn xr_calibration_panel_commits_share_across_scenes_restarts_and_reset() {
         slider,
         EventSignal::SliderCommitted {
             slider,
-            value: 0.125,
+            value: 0.875,
         },
     );
     pump_settings_callbacks(&mut universe);
-    assert_eq!(calibration_file::load(&fixture.file()).unwrap(), 0.125);
+    assert_eq!(calibration_file::load(&fixture.file()).unwrap(), 0.875);
     universe
         .load_mms_source_at_path(&second_scene, "examples/_xr_second.mms")
         .unwrap();
     labelled(&universe, "second_demo");
     assert_eq!(
         universe.systems.xr_settings.floor_correction_meters(),
-        0.125
+        0.875
     );
     // A fresh Universe simulates restarting the application.
     drop(universe);
@@ -128,7 +128,7 @@ fn xr_calibration_panel_commits_share_across_scenes_restarts_and_reset() {
         .unwrap();
     assert_eq!(
         universe.systems.xr_settings.floor_correction_meters(),
-        0.125
+        0.875
     );
     // Rebuilt accordion callbacks retain the selected calibration file.
     let toggle = labelled(&universe, "accordion_toggle");

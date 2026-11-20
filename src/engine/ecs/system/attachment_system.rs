@@ -86,6 +86,12 @@ impl AttachmentSystem {
             .is_some_and(|&rider| self.mounted_relationship(world, rider).is_some())
     }
 
+    pub(crate) fn has_mounted_ancestor(&self, world: &World, component: ComponentId) -> bool {
+        !self.rider_by_root.is_empty()
+            && std::iter::successors(Some(component), |id| world.parent_of(*id))
+                .any(|id| self.is_movement_root_mounted(world, id))
+    }
+
     /// Reconcile only the affected relationship at an interaction boundary.
     /// Periodic tick still handles endpoint changes without an interaction.
     fn reconcile_rider(

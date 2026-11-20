@@ -9,8 +9,8 @@ struct Calibration {
 }
 
 pub(super) fn validate(meters: f64) -> Result<(), &'static str> {
-    if !meters.is_finite() || !(-0.5..=0.5).contains(&meters) {
-        return Err("floor correction must be finite and between -0.5 and +0.5 metres");
+    if !meters.is_finite() || !(-1.0..=1.0).contains(&meters) {
+        return Err("floor correction must be finite and between -1.0 and +1.0 metres");
     }
     Ok(())
 }
@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(load(&file).unwrap(), 0.0);
         let url = reqwest::Url::from_file_path(&file).unwrap().to_string();
         assert!(url.contains("%20") && url.contains("%25"));
-        for value in [-0.5, 0.15, 0.5, 0.0] {
+        for value in [-1.0, -0.5, 0.15, 0.5, 1.0, 0.0] {
             save(&url, value).unwrap();
             assert_eq!(load(&file).unwrap(), value);
             assert_eq!(load(&url).unwrap(), value);
@@ -173,8 +173,8 @@ mod tests {
             f64::NAN,
             f64::INFINITY,
             f64::NEG_INFINITY,
-            -0.500001,
-            0.500001,
+            -1.000001,
+            1.000001,
         ] {
             assert!(save(&file, value).is_err());
             assert_eq!(fs::read(&file).unwrap(), original);
@@ -192,7 +192,7 @@ mod tests {
         for record in [
             "bad JSON",
             r#"{"version":2,"floor_correction_meters":0}"#,
-            r#"{"version":1,"floor_correction_meters":0.51}"#,
+            r#"{"version":1,"floor_correction_meters":1.01}"#,
             r#"{"version":1,"floor_correction_meters":null}"#,
             r#"{"version":1}"#,
         ] {

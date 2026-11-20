@@ -5,6 +5,7 @@
 use super::lower_body::{LowerBodyIkSystem, LowerBodyStatus};
 use super::upper_body::{SpineRig, UpperBodyIkSystem};
 use crate::engine::ecs::component::{AvatarControlComponent, BodyPosture, TransformComponent};
+use crate::engine::ecs::system::AttachmentSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
@@ -135,6 +136,7 @@ impl BodySolverSystem {
         emit: &mut dyn SignalEmitter,
         upper: &UpperBodyIkSystem,
         lower: &LowerBodyIkSystem,
+        attachments: &AttachmentSystem,
         dt_sec: f32,
     ) {
         let dt = if dt_sec.is_finite() {
@@ -154,7 +156,14 @@ impl BodySolverSystem {
                 *instance = BodyInstance::default();
                 continue;
             };
-            if let Some(height) = lower.feet(id).and_then(|feet| {
+            let mounted = attachments.has_mounted_ancestor(world, id);
+            if mounted {
+                // Feet stop reporting support while riding. The seat may carry
+                // the rider to an entirely different floor before dismount.
+                instance.support = None;
+                instance.held_pitch = 0.0;
+                instance.weight = 0.0;
+            } else if let Some(height) = lower.feet(id).and_then(|feet| {
                 feet.iter()
                     .filter_map(|f| f.support_height)
                     .min_by(f32::total_cmp)
@@ -168,6 +177,7 @@ impl BodySolverSystem {
             let (next, reason) = match avatar.posture {
                 BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
                 BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
+                BodyPosture::Auto if mounted => (BodyMode::Vertical, "mounted"),
                 BodyPosture::Auto => match (instance.mode, head_above) {
                     (_, None) => (instance.mode, ""),
                     _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, ""),

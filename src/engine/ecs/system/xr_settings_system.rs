@@ -79,8 +79,8 @@ mod tests {
             f64::NAN,
             f64::INFINITY,
             f64::NEG_INFINITY,
-            0.500001,
-            -0.500001,
+            1.000001,
+            -1.000001,
         ] {
             assert!(
                 settings

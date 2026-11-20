@@ -452,8 +452,8 @@ fn xr_settings_host_validates_readback_and_resets_with_session() {
         "XrSettings.floor.set_correction_meters(true)",
         "XrSettings.floor.set_correction_meters()",
         "XrSettings.floor.set_correction_meters(0.1, 0.2)",
-        "XrSettings.floor.set_correction_meters(0.51)",
-        "XrSettings.floor.set_correction_meters(-0.51)",
+        "XrSettings.floor.set_correction_meters(1.01)",
+        "XrSettings.floor.set_correction_meters(-1.01)",
         "XrSettings.floor.correction_meters(0.1)",
     ] {
         assert!(
@@ -522,7 +522,7 @@ fn xr_settings_panel_slider_reset_external_updates_and_restore() {
     assert_eq!(readout(&universe), "+15.0 cm");
     let panel = labelled(&universe, "test_xr_settings");
     let chevron = labelled(&universe, "accordion_toggle");
-    for correction in [-0.2, 0.5, -0.5] {
+    for correction in [-0.2, 1.0, -1.0] {
         click(&mut universe, chevron);
         assert!(
             universe

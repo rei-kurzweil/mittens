@@ -2,7 +2,9 @@
 //! by a plain head target while no peer is connected, so lowering that target
 //! stands in for a player getting down on hands and knees.
 use crate::engine::Universe;
-use crate::engine::ecs::component::{AvatarControlComponent, HumanoidSlot, TransformComponent};
+use crate::engine::ecs::component::{
+    AvatarControlComponent, BodyPosture, CollisionDetail, HumanoidSlot, TransformComponent,
+};
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::ik::BodyMode;
 use crate::engine::ecs::system::ik::upper_body::UpperBodyStatus;
@@ -202,17 +204,17 @@ fn detailed_collision_adds_torso_spheres_that_mirror_the_capsule() {
 
 #[test]
 fn simple_collision_adds_no_spheres() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms")
-        .unwrap()
-        .replace(
-            "collision_detail(\"detailed\")",
-            "collision_detail(\"simple\")",
-        );
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
         .unwrap();
     let avatar = named(&scene, "remote_avatar");
+    scene
+        .world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+        .unwrap()
+        .collision_detail = CollisionDetail::Simple;
     let head = named(&scene, "remote_head_target");
     hold_head(&mut scene, head, 1.644, 30);
     let avc = scene
@@ -225,14 +227,17 @@ fn simple_collision_adds_no_spheres() {
 
 #[test]
 fn vertical_posture_never_leaves_vertical() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms")
-        .unwrap()
-        .replace("posture(\"auto\")", "posture(\"vertical\")");
+    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
         .unwrap();
     let avatar = named(&scene, "remote_avatar");
+    scene
+        .world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+        .unwrap()
+        .posture = BodyPosture::Vertical;
     let head = named(&scene, "remote_head_target");
     hold_head(&mut scene, head, 0.55, 90);
     assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
@@ -541,4 +546,101 @@ fn body_solver_flowchart_example_has_a_card_for_every_note() {
         .filter(|&c| scene.world.component_label(c) == Some("body_flow_arrowhead"))
         .count();
     assert_eq!(arrows, 16, "every wire has an arrowhead");
+}
+
+#[test]
+fn mounted_mitten_reacquires_ground_after_falling_from_the_roof() {
+    use crate::engine::ecs::system::external_xr_frame::ExternalXrFrame;
+
+    let mut scene = Universe::new(World::default());
+    let path = "examples/twilight_rooftop.mms";
+    scene
+        .load_mms_source_at_path(&std::fs::read_to_string(path).unwrap(), path)
+        .unwrap();
+    let view = openxr::View {
+        pose: openxr::Posef {
+            position: openxr::Vector3f {
+                x: 0.0,
+                y: 1.65,
+                z: 0.0,
+            },
+            ..openxr::Posef::IDENTITY
+        },
+        fov: Default::default(),
+    };
+    scene.systems.xr.set_external_frame(Some(ExternalXrFrame {
+        views: Some([view; 2]),
+        ..Default::default()
+    }));
+    let advance = |scene: &mut Universe, frames| {
+        for _ in 0..frames {
+            scene.update(1.0 / 30.0, &Default::default());
+        }
+    };
+    let translate = |scene: &mut Universe, component_id, translation| {
+        scene.command_queue.push_intent_now(
+            component_id,
+            IntentValue::UpdateTransform {
+                component_id,
+                translation,
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            },
+        );
+    };
+    advance(&mut scene, 8);
+    let avatar = named(&scene, "local_avatar");
+    assert_eq!(scene.systems.body_solver.floor(avatar), Some(ROOF));
+    let root = named(&scene, "local_root");
+    let eye = position(&scene, named(&scene, "local_xr_camera_anchor"));
+    let door = position(&scene, named(&scene, "pickup_entry_frame"));
+    let start = position(&scene, root);
+    let mut at_door = std::array::from_fn(|i| start[i] + door[i] - eye[i]);
+    at_door[1] += 0.55;
+    translate(&mut scene, root, at_door);
+    advance(&mut scene, 2);
+
+    let pointer = named(&scene, "local_left_pointer");
+    let truck = named(&scene, "pickup_truck");
+    let hit = scene.world.find_component(truck, "renderable").unwrap();
+    assert!(scene.systems.attachment.try_mount_from_hit(
+        &mut scene.world,
+        pointer,
+        hit,
+        &mut scene.command_queue,
+    ));
+    advance(&mut scene, 5);
+    // Move past the parapet, then let the truck's native gravity do the drop.
+    let mut over_edge = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(truck)
+        .unwrap()
+        .translation();
+    over_edge[0] += 38.0;
+    translate(&mut scene, truck, over_edge);
+    advance(&mut scene, 120);
+    let head = bone(&scene, avatar, HumanoidSlot::Head);
+    let neck = bone(&scene, avatar, HumanoidSlot::Neck);
+    let neck_length = |scene: &Universe| {
+        let head = position(scene, head);
+        let neck = position(scene, neck);
+        (0..3)
+            .map(|i| (head[i] - neck[i]).powi(2))
+            .sum::<f32>()
+            .sqrt()
+    };
+    assert!(position(&scene, head)[1] < 2.0);
+    assert_eq!(scene.systems.body_solver.floor(avatar), None);
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
+    assert!(neck_length(&scene) < 0.15);
+    assert!(scene.systems.attachment.try_dismount_for_pointer(
+        &mut scene.world,
+        pointer,
+        &mut scene.command_queue,
+    ));
+    advance(&mut scene, 15);
+    let floor = scene.systems.body_solver.floor(avatar).unwrap();
+    assert!((floor + 0.23).abs() < 0.01, "ground surface at {floor}");
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
+    assert!(neck_length(&scene) < 0.15);
 }

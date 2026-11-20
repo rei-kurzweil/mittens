@@ -11,7 +11,7 @@ let correction = XrSettings.floor.correction_meters()
 XrSettings.floor.set_correction_meters(0.0)
 ```
 
-The setter accepts a finite number from -0.50 to +0.50 metres. Invalid input
+The setter accepts a finite number from -1.00 to +1.00 metres. Invalid input
 leaves the current setting unchanged. Readback immediately returns the accepted
 value; `XrSettingsChanged` is emitted only for a changed value.
 

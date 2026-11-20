@@ -514,18 +514,9 @@ impl HeadNeckBodyConstraintSystem {
             let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
                 continue;
             };
-            let mut ancestor = Some(id);
-            let mut mounted = false;
-            while let Some(node) = ancestor {
-                if attachments.is_movement_root_mounted(world, node) {
-                    mounted = true;
-                    break;
-                }
-                ancestor = world.parent_of(node);
-            }
             let result = if !avatar.head_neck_body_enabled || !avatar.neck_pin_enabled {
                 Err(HeadNeckBodyConstraintStatus::Disabled)
-            } else if mounted {
+            } else if attachments.has_mounted_ancestor(world, id) {
                 Err(HeadNeckBodyConstraintStatus::Mounted)
             } else if let Some(constraint) = &avatar.head_neck_body_constraint {
                 constraint.candidate(world, avatar)
