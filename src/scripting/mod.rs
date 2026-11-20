@@ -141,3 +141,6 @@ mod shared_udp_tests;
 
 #[cfg(test)]
 mod collision_response_tests;
+
+#[cfg(test)]
+mod midnight_alleyway_scene_tests;
