@@ -65,6 +65,9 @@ The scene (`android/examples/noise-bench.mms`) settles 10 s, then runs 6 cases
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-11-20 | `8e08010e` | desktop-1080 | 1920×1080 | 0.269 | 0.051 | 0.016 | 0.052 | 0.648 | Default settings |
 | 2026-11-20 | `8e08010e` | desktop-1080 | 2448×2448 | 0.725 | 0.211 | 0.068 | 0.163 | 1.885 | Default settings |
+| 2026-11-20 | `6332d6de` | desktop-1080 | 1920×1080 | 0.271 | 0.049 | 0.015 | 0.052 | 0.646 | Three-extent run |
+| 2026-11-20 | `6332d6de` | desktop-1080 | 1920×1920 | 0.454 | 0.121 | 0.035 | 0.101 | 1.168 | Three-extent run |
+| 2026-11-20 | `6332d6de` | desktop-1080 | 2448×2448 | 0.722 | 0.211 | 0.063 | 0.159 | 41.683 | Anomalous six-octave result |
 
 Δ = `delta_vs_flat_ms` (both eyes) from `/tmp/noise-profile.json`.
 
@@ -77,6 +80,8 @@ The scene (`android/examples/noise-bench.mms`) settles 10 s, then runs 6 cases
 Δ = mean `gpu_frame_ms` of the case minus `flat`, averaged over rounds.
 
 ## Work log
+
+- 2026-11-20 — Added the usual 1920×1920 XR extent. GTX 1080 utilization was 1% immediately before the run. The 2448×2448 six-octave delta rose from 1.885 ms in the earlier two-extent run to 41.683 ms in this three-extent run. The cause is unverified. [Raw three-extent timings](results/noise-profile-desktop-1080-xr-square-2026-11-20.json)
 
 - 2026-11-20 — Ran the desktop noise benchmark on `8e08010e` with release defaults. Discarded the first capture after concurrent GPU use was reported. Before the rerun the GPU reported 1–3% utilization in P8. Each case contributed 480 measured stereo frames per extent. The ASTC and release rocket tests passed. The benchmark compiled without changes. [Raw rerun timings](results/noise-profile-desktop-1080-2026-11-20.json)
 

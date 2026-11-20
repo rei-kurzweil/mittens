@@ -5,12 +5,11 @@ Focus 3 over adb. Results and the benchmark list live in
 [GPU benchmarks](gpu-benchmarks.md); design notes in
 [perlin noise GPU benchmark](perlin-noise-gpu-benchmark.md).
 
-**Important:** the code below was authored on a machine with no Rust
-toolchain. None of it has been compiled. Expect small compile errors; fix
-them minimally (don't redesign), and note each fix in the work log of
-[GPU benchmarks](gpu-benchmarks.md). Commit directly to `main`.
+The desktop harness, ASTC decoder test and rocket tests passed on the GTX 1080
+host at `8e08010e`. Record any fixes in the benchmark work log. Commit directly
+to `main`.
 
-Unbuilt pieces, in order of risk:
+Benchmark implementation files:
 
 | Piece | Files |
 |---|---|
@@ -52,7 +51,7 @@ cargo test --release --lib noise_profile -- --ignored --nocapture
 ```
 
 - Runs 5 cases (`flat`, `texture-rgba8`, `texture-bc7`, `perlin-1-octave`,
-  `perlin-fbm`) at 1920×1080 and 2448×2448 per eye, 4x MSAA, both eyes.
+  `perlin-fbm`) at 1920×1080, 1920×1920 and 2448×2448 per eye, 4x MSAA, both eyes.
 - Writes `/tmp/noise-profile.json`. Env overrides: `NOISE_PROFILE_OUTPUT`,
   `NOISE_PROFILE_WARMUP` (24), `NOISE_PROFILE_FRAMES` (80),
   `NOISE_PROFILE_REPEATS` (6), `NOISE_PROFILE_OCTAVES` (6).
@@ -61,6 +60,49 @@ cargo test --release --lib noise_profile -- --ignored --nocapture
   [GPU benchmarks](gpu-benchmarks.md), using `delta_vs_flat_ms`.
 - Fill the desktop-1080 driver version in the Machines table
   (`nvidia-smi` or `vulkaninfo --summary`).
+
+### GTX 1080 findings and texture audit
+
+The 2026-11-20 rerun used driver 580.159.04 and 480 measured stereo frames per
+case at each extent. Flat draws a constant gray sphere and includes the graphics
+pass clear and 4× MSAA resolve. The other columns give additional milliseconds
+over flat for both eyes together. [Raw timings](results/noise-profile-desktop-1080-2026-11-20.json)
+
+| Extent per eye | Flat (ms) | RGBA8 Δ | BC7 Δ | One octave Δ | Six octaves Δ |
+|---|---:|---:|---:|---:|---:|
+| 1920×1080 | 0.269 | 0.051 | 0.016 | 0.052 | 0.648 |
+| 2448×2448 | 0.725 | 0.211 | 0.068 | 0.163 | 1.885 |
+
+At the usual 1920×1920 XR extent, a separate run measured 0.454 ms flat.
+RGBA8 added 0.121 ms, BC7 added 0.035 ms, one octave added 0.101 ms, and
+six octaves added 1.168 ms for both eyes. [XR extent timings](results/noise-profile-desktop-1080-xr-square-2026-11-20.json)
+
+At the two extents in the table, BC7 saved 0.035 and 0.143 ms respectively over RGBA8 for one full-screen
+sample per fragment. One octave and RGBA8 cost about the same at 1080p. At the
+larger extent one octave was cheaper than RGBA8. Both texture formats beat six
+octaves. Octaves two through five and Android ASTC need their own measurements.
+
+The following static inventory uses source references and image dimensions.
+Sizes are RGBA8 base-level estimates before mipmaps, per asset if loaded.
+Actual frame cost depends on visible coverage and sampling.
+
+| Where RGBA8 is used | Base-level size | Why it matters |
+|---|---:|---|
+| Embedded images in the PC Rei hoodie, Lumae, and Mitten GLBs | 196, 192, and 81 MiB per model | The importer uploads decoded images directly. Adding a DDS beside a GLB alone cannot change that path. Bisket also contains 81 MiB. [Importer](../../src/engine/ecs/system/gltf_system.rs) |
+| Optional local rooftop roster assets | Succubus 124 MiB, Miku 41 MiB | Based on the local GLBs available during this audit. |
+| Midnight Alleyway panorama | 83.3 MiB | The 11369×1920 JPEG is one large standalone candidate. [Scene](../../examples/midnight-alleyway.mms) |
+| Sky cloud mask, grass, pool tiles, chrome matcap, cherry blossoms | 2 MiB sky, 1 MiB each for grass, tiles and matcap, 0.25 MiB blossoms | Skies and tiled surfaces can cover much of an eye. Check packed normals and alpha-cutout foliage for artifacts at a distance. |
+| Grocery label and lid, muzzle flashes, pickup tread | 2 and 1 MiB for groceries, 4 MiB per flash, 0.125 MiB for tread | The four tires share one uploaded image by URI. [Texture loading and cache](../../src/engine/ecs/system/texture_system.rs) |
+
+Start desktop A/B tests with the panorama or a high-coverage tiled surface.
+For the larger avatar memory savings, the importer needs a way to select
+platform-compressed images. Preserve color space, alpha, packed data channels
+and mip filtering when comparing assets. The current RGBA8 upload builds a mip
+chain, while the BC7 and raw ASTC upload paths use a single level. Desktop font
+atlases and the noise benchmark already have DDS assets. Render targets and
+runtime-updated images have different write requirements from static sampled
+art. [Desktop upload](../../src/engine/graphics/vulkano_texture_upload.rs) ·
+[Android upload](../../android/src/renderer/mod.rs)
 
 ## 3. XR2 benchmark (Focus 3 over adb)
 
