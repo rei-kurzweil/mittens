@@ -16,7 +16,7 @@ use crate::engine::ecs::{
 };
 use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_mul, quat_normalize, quat_rotate_vec3, shortest_arc_quat,
-    vec3_add, vec3_len, vec3_normalize, vec3_scale, vec3_sub,
+    vec3_add, vec3_dot, vec3_len, vec3_normalize, vec3_scale, vec3_sub,
 };
 use binding::*;
 use std::collections::{HashMap, HashSet};
@@ -33,6 +33,26 @@ struct JointConfig {
     stiffness: f32,
     drag: f32,
     gravity: [f32; 3],
+    swing_limit: Option<SwingLimit>,
+}
+
+/// Cone around a bone's imported rest direction in its parent's simulated
+/// frame, stored as cos/sin of the authored angle so the solver does no
+/// trigonometry per step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SwingLimit {
+    cos: f32,
+    sin: f32,
+}
+
+impl SwingLimit {
+    fn from_degrees(degrees: f32) -> Option<Self> {
+        let radians = degrees.clamp(0.0, 180.0).to_radians();
+        (degrees < 180.0).then(|| Self {
+            cos: radians.cos(),
+            sin: radians.sin(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1080,6 +1100,11 @@ fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts
         .rest_targets
         .as_ref()
         .map(|targets| targets.rotation(world));
+    let limited = state.joints.iter().any(|joint| joint.swing_limit.is_some());
+    // World rotation of the previous simulated joint, rebuilt as
+    // `apply_rotations` will write it, so each swing limit is measured in its
+    // parent's simulated frame rather than against last frame's output.
+    let mut previous_joint_world_q = None;
     for index in 0..state.joints.len() {
         let primary_head = pos(world, state.joints[index].id).unwrap_or(state.current[index]);
         let head = if index == 0 {
@@ -1133,7 +1158,28 @@ fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts
             ),
         );
         state.previous[index] = state.current[index];
-        let direction = vec3_normalize(vec3_sub(next, head));
+        let mut direction = vec3_normalize(vec3_sub(next, head));
+        if limited {
+            let joint = &state.joints[index];
+            let parent_q = if index > 0 && joint.parent_id == state.joints[index - 1].id {
+                previous_joint_world_q.unwrap_or([0.0, 0.0, 0.0, 1.0])
+            } else {
+                world
+                    .get_component_by_id_as::<TransformComponent>(joint.parent_id)
+                    .map(|transform| mat_to_quat(transform.transform.matrix_world))
+                    .unwrap_or([0.0, 0.0, 0.0, 1.0])
+            };
+            if let Some(limit) = joint.swing_limit {
+                let rest = quat_rotate_vec3(parent_q, joint.rest_direction);
+                direction = clamp_swing(direction, rest, limit);
+            }
+            let correction = shortest_arc_quat(
+                joint.rest_direction,
+                quat_rotate_vec3(quat_conjugate(parent_q), direction),
+            );
+            previous_joint_world_q =
+                Some(quat_mul(parent_q, quat_mul(correction, joint.rest_rotation)));
+        }
         state.current[index] = vec3_add(head, vec3_scale(direction, state.lengths[index]));
     }
     if contacts.spheres.is_empty() && contacts.surface_ids.is_empty() {
@@ -1208,6 +1254,33 @@ fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts
             state.current[index] = endpoint;
         }
     }
+}
+
+/// Rotate `direction` toward `target` until it lies within `limit`'s cone.
+/// Both inputs are unit vectors; a zero `target` (no rest direction) leaves
+/// `direction` unchanged.
+fn clamp_swing(direction: [f32; 3], target: [f32; 3], limit: SwingLimit) -> [f32; 3] {
+    if vec3_len(target) <= f32::EPSILON {
+        return direction;
+    }
+    let cos = vec3_dot(direction, target);
+    if cos >= limit.cos {
+        return direction;
+    }
+    let mut side = vec3_sub(direction, vec3_scale(target, cos));
+    if vec3_len(side) <= 1e-6 {
+        // Directly opposite the target: any perpendicular is equally valid.
+        let axis = if target[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        side = vec3_sub(axis, vec3_scale(target, vec3_dot(axis, target)));
+    }
+    vec3_add(
+        vec3_scale(target, limit.cos),
+        vec3_scale(vec3_normalize(side), limit.sin),
+    )
 }
 
 /// Project onto a contact half-space while keeping the bone length exactly.

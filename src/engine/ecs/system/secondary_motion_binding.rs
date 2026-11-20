@@ -551,6 +551,7 @@ pub(super) fn build_chain(
                 config.drag_force,
                 config.gravity_power,
                 config.gravity_dir,
+                config.max_swing,
             ));
         }
     } else {
@@ -562,10 +563,11 @@ pub(super) fn build_chain(
                 chain.drag_force,
                 chain.gravity_power,
                 chain.gravity_dir,
+                chain.max_swing,
             ));
         }
     }
-    for (id, surface, stiffness, drag_force, gravity_power, gravity_dir) in resolved {
+    for (id, surface, stiffness, drag_force, gravity_power, gravity_dir, max_swing) in resolved {
         if !local_ids.insert(id) {
             return Err(BindFailure::invalid(format!(
                 "joint '{}' occurs more than once in the chain",
@@ -595,6 +597,7 @@ pub(super) fn build_chain(
             stiffness,
             drag: drag_force,
             gravity: vec3_scale(vec3_normalize(gravity_dir), gravity_power),
+            swing_limit: max_swing.and_then(SwingLimit::from_degrees),
         });
     }
     for pair in joints.windows(2) {

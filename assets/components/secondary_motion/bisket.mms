@@ -49,11 +49,15 @@ export fn bisket_secondary_motion_with(config, extra_chains) {
         //         .colliders(["[name='bisket_collider_upper_chest']", "[name='bisket_collider_spine']", "[name='bisket_colliders_hands']", "[name='bisket_colliders_lower_arms']", "[name='bisket_colliders_upper_arms']"])
         //         .hit_radius(0.025)
         // }
+        // max_swing keeps the tail's authored upward curl: each joint may sag
+        // at most 20 degrees from its rest direction. Shared by every Bisket
+        // and mitten instance (mitten loads this through bisket_shirt_physics).
         SpringBone.from_root("[name='tail']")
             .virtual_end_length_ratio(1.0)
             .stiffness(1.0)
             .drag_force(0.25)
             .gravity(0.8, [0, -1, 0])
+            .max_swing(20)
             .colliders(["[name='bisket_collider_spine']", "[name='bisket_collider_hips']", "[name='bisket_colliders_upper_legs']"])
             .hit_radius(0.0375)
         if extra_chains {

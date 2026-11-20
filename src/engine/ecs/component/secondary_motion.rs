@@ -169,6 +169,10 @@ pub struct SpringBoneComponent {
     pub drag_force: f32,
     pub gravity_power: f32,
     pub gravity_dir: [f32; 3],
+    /// Maximum angle in degrees each bone may swing away from its imported rest
+    /// direction, measured in its parent's simulated frame. `None` (or 180)
+    /// leaves the chain unlimited.
+    pub max_swing: Option<f32>,
     pub colliders: Vec<ComponentRef>,
     pub hit_radius: f32,
     pub world_collision: bool,
@@ -188,6 +192,7 @@ impl SpringBoneComponent {
             drag_force: 0.4,
             gravity_power: 0.0,
             gravity_dir: [0.0, -1.0, 0.0],
+            max_swing: None,
             colliders: Vec::new(),
             hit_radius: 0.0,
             world_collision: true,
@@ -229,6 +234,10 @@ impl SpringBoneComponent {
     pub fn gravity(mut self, power: f32, direction: [f32; 3]) -> Self {
         self.gravity_power = power;
         self.gravity_dir = direction;
+        self
+    }
+    pub fn max_swing(mut self, degrees: f32) -> Self {
+        self.max_swing = Some(degrees.clamp(0.0, 180.0));
         self
     }
     pub fn colliders(mut self, colliders: Vec<ComponentRef>) -> Self {
@@ -318,6 +327,9 @@ impl Component for SpringBoneComponent {
                         num(self.gravity_dir[2] as f64),
                     ],
                 );
+            if let Some(degrees) = self.max_swing {
+                out = out.with_call("max_swing", vec![num(degrees as f64)]);
+            }
         }
         out
     }
@@ -330,6 +342,8 @@ pub struct SpringJointComponent {
     pub drag_force: f32,
     pub gravity_power: f32,
     pub gravity_dir: [f32; 3],
+    /// Per-joint swing limit in degrees, as on `SpringBoneComponent`.
+    pub max_swing: Option<f32>,
     component: Option<ComponentId>,
 }
 impl SpringJointComponent {
@@ -340,6 +354,7 @@ impl SpringJointComponent {
             drag_force: 0.4,
             gravity_power: 0.0,
             gravity_dir: [0.0, -1.0, 0.0],
+            max_swing: None,
             component: None,
         }
     }
@@ -357,6 +372,10 @@ impl SpringJointComponent {
     pub fn gravity(mut self, power: f32, direction: [f32; 3]) -> Self {
         self.gravity_power = power;
         self.gravity_dir = direction;
+        self
+    }
+    pub fn max_swing(mut self, degrees: f32) -> Self {
+        self.max_swing = Some(degrees.clamp(0.0, 180.0));
         self
     }
 }
@@ -385,7 +404,7 @@ impl Component for SpringJointComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
-        ce_call("SpringJoint", "new", vec![ref_expr(&self.node)])
+        let out = ce_call("SpringJoint", "new", vec![ref_expr(&self.node)])
             .with_call("stiffness", vec![num(self.stiffness as f64)])
             .with_call("drag_force", vec![num(self.drag_force as f64)])
             .with_call(
@@ -396,7 +415,11 @@ impl Component for SpringJointComponent {
                     num(self.gravity_dir[1] as f64),
                     num(self.gravity_dir[2] as f64),
                 ],
-            )
+            );
+        match self.max_swing {
+            Some(degrees) => out.with_call("max_swing", vec![num(degrees as f64)]),
+            None => out,
+        }
     }
 }
 

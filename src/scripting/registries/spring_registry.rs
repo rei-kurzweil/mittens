@@ -45,6 +45,7 @@ pub(super) fn apply(
                 };
             }
             "colliders" => chain.colliders = spring_colliders.unwrap_or_default(),
+            "max_swing" => chain.max_swing = Some(arg_f32(args, 0)?.clamp(0.0, 180.0)),
             "hit_radius" => chain.hit_radius = arg_f32(args, 0)?.max(0.0),
             "world_collision" => chain.world_collision = arg_bool(args, 0)?,
             "avatar_collision" => chain.avatar_collision = arg_bool(args, 0)?,
@@ -64,6 +65,7 @@ pub(super) fn apply(
                     [arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?]
                 };
             }
+            "max_swing" => joint.max_swing = Some(arg_f32(args, 0)?.clamp(0.0, 180.0)),
             _ => {}
         }
         return Ok(());

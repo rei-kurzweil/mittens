@@ -19,6 +19,7 @@ pub(super) fn configure(component: &mut mms::ComponentBuilder<'_, MittensBinding
         "stiffness",
         "drag_force",
         "hit_radius",
+        "max_swing",
     ] {
         component.builder_call(method, floats(1));
     }
