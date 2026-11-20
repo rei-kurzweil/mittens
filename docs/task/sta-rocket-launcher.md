@@ -105,6 +105,18 @@ FrameTick subscription. Expiry remains an animation at the default clock tempo.
 
 ## Work log
 
+- Exhaust ribbon attached: each rocket carries two crossed 3 m x 0.3 m planes
+  behind its body using a per-shot `toon_rocket_exhaust(origin, direction)`
+  instance. The fragment phases its waves by world distance along the flight
+  line (smoke appears to stay put while the ribbon moves with the rocket) and
+  discards fragments behind the launch point. On impact the model is removed
+  and the stopped trail fades in three steps over one beat before the flight
+  root is removed. No engine or vertex-stage changes. Shader compiles with
+  `glslangValidator -V`; Rust tests and visual/headset checks not yet run here
+  (no cargo in this environment). Not verified: inputs uniform layout for
+  four vec3s followed by two floats, and how far the stepped fade reads as
+  smooth.
+
 - Implemented native local acceleration, sphere projectile sweeps, and the
   zone-scoped `ProjectileHit` event. The rocket now applies `Damage.at` with a
   provisional 1.5 m radius and amount 8, plays the expanding sphere, and removes
