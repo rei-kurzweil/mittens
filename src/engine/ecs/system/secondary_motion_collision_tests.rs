@@ -26,6 +26,16 @@ fn tail(
     world: &mut World,
     system: &mut SecondaryMotionSystem,
 ) -> (ComponentId, ComponentId, ComponentId) {
+    tail_with_swing(world, system, None)
+}
+
+/// A one-joint tail at y=0.4 whose rest direction is +Y, displaced to point
+/// along +X, under strong downward gravity.
+fn tail_with_swing(
+    world: &mut World,
+    system: &mut SecondaryMotionSystem,
+    max_swing: Option<f32>,
+) -> (ComponentId, ComponentId, ComponentId) {
     let (gltf, joint) = actor(world, [0.0, 0.4, 0.0]);
     let rest = world.add_component(BoneRestPoseComponent::new(
         [0.0, 1.0, 0.0],
@@ -35,12 +45,14 @@ fn tail(
     world.add_child(joint, rest).unwrap();
     let root = world.add_component(SecondaryMotionComponent::new());
     let reference = ComponentRef::Guid(world.get_component_record(joint).unwrap().guid);
-    let chain = world.add_component(
-        SpringBoneComponent::from_root(reference)
-            .virtual_end_length_ratio(1.0)
-            .gravity(20.0, [0.0, -1.0, 0.0])
-            .hit_radius(0.05),
-    );
+    let mut settings = SpringBoneComponent::from_root(reference)
+        .virtual_end_length_ratio(1.0)
+        .gravity(20.0, [0.0, -1.0, 0.0])
+        .hit_radius(0.05);
+    if let Some(degrees) = max_swing {
+        settings = settings.max_swing(degrees);
+    }
+    let chain = world.add_component(settings);
     world.add_child(gltf, root).unwrap();
     world.add_child(root, chain).unwrap();
     system.register(world, root);
@@ -328,4 +340,36 @@ fn floor_contact_reanchors_downstream_segments_without_stretching() {
             head = *endpoint;
         }
     }
+}
+
+#[test]
+fn swing_limit_holds_a_tail_inside_its_cone_under_strong_gravity() {
+    let head = [0.0, 0.4, 0.0];
+    let cos_limit = 30.0_f32.to_radians().cos();
+    let mut world = World::default();
+    let mut system = SecondaryMotionSystem::default();
+    let (_, chain, _) = tail_with_swing(&mut world, &mut system, Some(30.0));
+    for _ in 0..240 {
+        system.tick_with_collisions(&mut world, STEP, &HashMap::new(), true, false, None);
+        let offset = vec3_sub(state(&system, chain).current[0], head);
+        assert!((vec3_len(offset) - 1.0).abs() < 1e-5);
+        assert!(
+            vec3_dot(vec3_normalize(offset), [0.0, 1.0, 0.0]) >= cos_limit - 1e-4,
+            "tail left its 30 degree cone: {offset:?}"
+        );
+    }
+    // Gravity holds the tail against the edge of the cone.
+    let settled = vec3_normalize(vec3_sub(state(&system, chain).current[0], head));
+    assert!((vec3_dot(settled, [0.0, 1.0, 0.0]) - cos_limit).abs() < 1e-3);
+
+    let mut world = World::default();
+    let mut system = SecondaryMotionSystem::default();
+    let (_, chain, _) = tail_with_swing(&mut world, &mut system, None);
+    for _ in 0..240 {
+        system.tick_with_collisions(&mut world, STEP, &HashMap::new(), true, false, None);
+    }
+    assert!(
+        state(&system, chain).current[0][1] < head[1],
+        "an unlimited tail should droop below its head"
+    );
 }

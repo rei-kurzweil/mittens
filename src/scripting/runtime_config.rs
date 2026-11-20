@@ -740,7 +740,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "SpringJoint" => {
                     component.constructor("new", any(1));
-                    for method in ["stiffness", "drag_force"] {
+                    for method in ["stiffness", "drag_force", "max_swing"] {
                         component.builder_call(method, floats(1));
                     }
                     component.builder_call("gravity", any(2));

@@ -8092,7 +8092,8 @@ fn roundtrip_spring_bone_from_root_preserves_chain_tuning() {
         .virtual_end_length_ratio(1.0)
         .stiffness(2.0)
         .drag_force(0.35)
-        .gravity(3.0, [0.0, -1.0, 0.0]);
+        .gravity(3.0, [0.0, -1.0, 0.0])
+        .max_swing(25.0);
     let (world, id) = roundtrip_component(original);
     let got = world
         .get_component_by_id_as::<SpringBoneComponent>(id)
@@ -8106,6 +8107,7 @@ fn roundtrip_spring_bone_from_root_preserves_chain_tuning() {
     assert_eq!(got.drag_force, 0.35);
     assert_eq!(got.gravity_power, 3.0);
     assert_eq!(got.gravity_dir, [0.0, -1.0, 0.0]);
+    assert_eq!(got.max_swing, Some(25.0));
 }
 
 #[test]

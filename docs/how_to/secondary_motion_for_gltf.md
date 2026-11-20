@@ -48,7 +48,20 @@ Tune `stiffness` for return-to-rest, `drag_force` for damping, and `gravity` for
 CAT_DEBUG_SECONDARY_MOTION=1 cargo run --release --example vtuber-secondary-motion
 ```
 
-Expect `bound_chains` to equal the authored chain count and `failed_chains=0`. Colliders, limits, and center-relative inertia are not yet implemented.
+Expect `bound_chains` to equal the authored chain count and `failed_chains=0`. Center-relative inertia is not yet implemented.
+
+## Limit how far each bone swings
+
+`max_swing(degrees)` caps how far each bone may rotate away from its imported rest direction, measured in its parent bone's simulated frame. Gravity, inertia, and stiffness act as before until a bone reaches the edge of its cone, which then holds. Set it on a `SpringBone` to apply it to every joint, or on an explicit `SpringJoint` for that joint only:
+
+```mms
+SpringBone.from_root("[name='tail']")
+    .virtual_end_length_ratio(1.0)
+    .gravity(0.8, [0, -1, 0])
+    .max_swing(20)
+```
+
+Each joint's limit is local, so a five-joint tail at 20 degrees can still bend up to about 100 degrees overall; smaller values keep more of the authored curve. A limit of 180 or more, or no `max_swing`, leaves the joint unlimited. Colliders resolve after the limit and may push a bone past it. Limits are relative to the imported rest pose, not to an animated primary pose, so an animated wag wider than the limit is clamped. Chains using `allow_stretch(true)` ignore the limit. Per-joint overrides on an automatically discovered chain are not supported yet; list every joint with `SpringJoint` to vary the limit per bone.
 
 ## Return a chain to rest when still
 

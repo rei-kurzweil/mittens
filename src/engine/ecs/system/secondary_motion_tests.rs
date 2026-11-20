@@ -238,6 +238,48 @@ fn sphere_exclusion_adds_hit_radius_and_preserves_segment_length() {
 }
 
 #[test]
+fn swing_clamp_leaves_inside_directions_and_rotates_outside_ones_to_the_cone() {
+    let limit = SwingLimit::from_degrees(30.0).unwrap();
+    let up = [0.0, 1.0, 0.0];
+    let inside = vec3_normalize([0.2, 1.0, 0.0]);
+    assert_eq!(clamp_swing(inside, up, limit), inside);
+    let clamped = clamp_swing([1.0, 0.0, 0.0], up, limit);
+    assert!((vec3_len(clamped) - 1.0).abs() < 1e-5);
+    assert!((vec3_dot(clamped, up) - limit.cos).abs() < 1e-5);
+    assert!(clamped[0] > 0.0, "clamp must keep the swing's side: {clamped:?}");
+    let opposite = clamp_swing([0.0, -1.0, 0.0], up, limit);
+    assert!((vec3_dot(opposite, up) - limit.cos).abs() < 1e-5);
+    assert!(SwingLimit::from_degrees(180.0).is_none());
+}
+
+#[test]
+fn chain_and_joint_swing_limits_bind_per_joint() {
+    let mut fixture = fixture();
+    let gltf = nearest_armature_owner(&fixture.world, fixture.root).unwrap();
+    fixture
+        .world
+        .get_component_by_id_as_mut::<SpringJointComponent>(fixture.first_config)
+        .unwrap()
+        .max_swing = Some(20.0);
+    let (bound, _) = build_chain(&fixture.world, gltf, fixture.chain, &[]).unwrap();
+    assert_eq!(bound.joints[0].swing_limit, SwingLimit::from_degrees(20.0));
+    assert_eq!(bound.joints[1].swing_limit, None);
+
+    let (mut world, gltf, chain, _, _) = automatic_fixture();
+    world
+        .get_component_by_id_as_mut::<SpringBoneComponent>(chain)
+        .unwrap()
+        .max_swing = Some(35.0);
+    let (bound, _) = build_chain(&world, gltf, chain, &[]).unwrap();
+    assert!(
+        bound
+            .joints
+            .iter()
+            .all(|joint| joint.swing_limit == SwingLimit::from_degrees(35.0))
+    );
+}
+
+#[test]
 fn coincident_sphere_center_has_a_deterministic_finite_result() {
     let first = exclude_sphere_at_length([0.0; 3], [0.0; 3], 1.0, [0.0; 3], 0.5);
     let second = exclude_sphere_at_length([0.0; 3], [0.0; 3], 1.0, [0.0; 3], 0.5);
