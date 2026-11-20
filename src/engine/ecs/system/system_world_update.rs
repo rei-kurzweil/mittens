@@ -398,6 +398,8 @@ impl SystemWorld {
         self.upper_body_ik
             .prepare_bindings(world, &self.humanoid_bone_map, queue);
         queue.flush(world, self, visuals, render_assets);
+        // Avatar swaps and reparenting can change membership between mount events.
+        self.attachment.sync_mounted_avatars(world);
         // The body solver picks each avatar's mode and torso pitch; the upper
         // body solver writes the torso before head/neck placement reads it.
         self.body_solver.tick(

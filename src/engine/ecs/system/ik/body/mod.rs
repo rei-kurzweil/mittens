@@ -66,6 +66,7 @@ struct BodyInstance {
     weight: f32,
     dwell: f32,
     support: Option<f32>,
+    mounted: bool,
     /// Last pitch solved in horizontal mode, faded out by `weight`.
     held_pitch: f32,
     pitch: f32,
@@ -156,20 +157,23 @@ impl BodySolverSystem {
                 *instance = BodyInstance::default();
                 continue;
             };
-            let mounted = attachments.has_mounted_ancestor(world, id);
-            if mounted {
+            let mounted = attachments.is_avatar_mounted(id);
+            if mounted && !instance.mounted {
                 // Feet stop reporting support while riding. The seat may carry
                 // the rider to an entirely different floor before dismount.
                 instance.support = None;
                 instance.held_pitch = 0.0;
                 instance.weight = 0.0;
-            } else if let Some(height) = lower.feet(id).and_then(|feet| {
-                feet.iter()
-                    .filter_map(|f| f.support_height)
-                    .min_by(f32::total_cmp)
-            }) {
+            } else if !mounted
+                && let Some(height) = lower.feet(id).and_then(|feet| {
+                    feet.iter()
+                        .filter_map(|f| f.support_height)
+                        .min_by(f32::total_cmp)
+                })
+            {
                 instance.support = Some(height);
             }
+            instance.mounted = mounted;
             instance.dwell += dt;
             let scale = (0..3).map(|r| root[0][r] * root[0][r]).sum::<f32>().sqrt();
             let head_above = instance.support.map(|floor| head[3][1] - floor);

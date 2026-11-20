@@ -116,27 +116,26 @@ impl LowerBodyIkSystem {
                 instance.sole_offsets = avatar.crouch_sole_offsets;
             }
             let mut node = Some(id);
-            let mut mounted = false;
+            let mounted = attachments.is_avatar_mounted(id);
             let mut tracking = None;
             let mut support_frame = None;
             while let Some(current) = node {
-                mounted |= attachments.is_movement_root_mounted(world, current);
-                if tracking.is_none() {
-                    if let Some(input) = world.get_component_by_id_as::<InputXRComponent>(current) {
-                        tracking = Some(input.enabled && input.pose_valid);
-                        support_frame = world
-                            .parent_of(current)
-                            .and_then(|frame| matrix(world, frame).ok().map(|m| (frame, m[3][1])));
-                    } else if let Some(input) =
-                        world.get_component_by_id_as::<InputComponent>(current)
-                    {
-                        tracking = Some(input.enabled);
-                        support_frame = world
-                            .parent_of(current)
-                            .and_then(|frame| matrix(world, frame).ok().map(|m| (frame, m[3][1])));
-                    }
+                let parent = world.parent_of(current);
+                tracking = if let Some(input) =
+                    world.get_component_by_id_as::<InputXRComponent>(current)
+                {
+                    Some(input.enabled && input.pose_valid)
+                } else {
+                    world
+                        .get_component_by_id_as::<InputComponent>(current)
+                        .map(|input| input.enabled)
+                };
+                if tracking.is_some() {
+                    support_frame = parent
+                        .and_then(|frame| matrix(world, frame).ok().map(|m| (frame, m[3][1])));
+                    break;
                 }
-                node = world.parent_of(current);
+                node = parent;
             }
             let vertical_motion = match (instance.support_frame, support_frame) {
                 (Some((old, before)), Some((new, after))) if old == new => Some(after - before),

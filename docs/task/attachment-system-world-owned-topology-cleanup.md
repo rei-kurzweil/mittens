@@ -221,3 +221,13 @@ Reproduce the current benchmark with:
 ```sh
 cargo test --release --lib attachment_cleanup_benchmark -- --ignored --nocapture --test-threads=1
 ```
+
+## Follow-up: Avatar mount membership
+
+Keep the mounted-avatar lookup with the managed occupancy lifecycle. A future
+split can move occupancy indexing and native mount notifications into a sibling
+module while leaving seat alignment and placement in the transaction code.
+The avatar solvers should use direct membership lookups per frame. Rebuild the
+index on mount changes or structural invalidation, including avatar replacement
+while seated. Validate mount, removal, dismount and support reacquisition with
+the lower-body fixture and the Twilight Rooftop drive.

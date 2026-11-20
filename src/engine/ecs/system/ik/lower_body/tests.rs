@@ -888,6 +888,13 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
             .attachment
             .try_mount_from_hit(&mut f.world, pointer, car, &mut f.queue)
     );
+    f.queue
+        .flush(&mut f.world, &mut f.systems, &mut f.visuals, &mut f.assets);
+    assert!(f.systems.attachment.is_avatar_mounted(f.avatar));
+    let late_avatar = f.world.add_component(AvatarControlComponent::new());
+    f.world.add_child(f.scene, late_avatar).unwrap();
+    f.systems.attachment.sync_mounted_avatars(&f.world);
+    assert!(f.systems.attachment.is_avatar_mounted(late_avatar));
     f.step();
     assert_eq!(
         f.systems.lower_body_ik.status(f.avatar),
@@ -908,6 +915,10 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
             .attachment
             .try_dismount_for_pointer(&mut f.world, pointer, &mut f.queue)
     );
+    f.queue
+        .flush(&mut f.world, &mut f.systems, &mut f.visuals, &mut f.assets);
+    assert!(!f.systems.attachment.is_avatar_mounted(f.avatar));
+    assert!(!f.systems.attachment.is_avatar_mounted(late_avatar));
     f.propagate();
     f.step();
     f.assert_pose();

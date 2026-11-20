@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
-    ComponentRef, ControllerHand, InputComponent, InputXRGamepadComponent, MountableComponent,
-    QueryRootMode, RiderComponent, SerializeComponent, TransformComponent,
+    AvatarControlComponent, ComponentRef, ControllerHand, InputComponent, InputXRGamepadComponent,
+    MountableComponent, QueryRootMode, RiderComponent, SerializeComponent, TransformComponent,
     TransformOperatorComponent, XRHandComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::grabbable_system::ensure_generated_raycastable;
@@ -61,6 +61,8 @@ pub struct AttachmentSystem {
     rider_by_mountable: HashMap<ComponentId, ComponentId>,
     rider_by_root: HashMap<ComponentId, ComponentId>,
     mounted_this_frame: HashSet<ComponentId>,
+    mounted_avatars: HashSet<ComponentId>,
+    mounted_avatar_revision: Option<u64>,
 }
 
 impl AttachmentSystem {
@@ -86,10 +88,44 @@ impl AttachmentSystem {
             .is_some_and(|&rider| self.mounted_relationship(world, rider).is_some())
     }
 
-    pub(crate) fn has_mounted_ancestor(&self, world: &World, component: ComponentId) -> bool {
-        !self.rider_by_root.is_empty()
-            && std::iter::successors(Some(component), |id| world.parent_of(*id))
-                .any(|id| self.is_movement_root_mounted(world, id))
+    pub(crate) fn is_avatar_mounted(&self, avatar: ComponentId) -> bool {
+        self.mounted_avatars.contains(&avatar)
+    }
+
+    pub(super) fn sync_mounted_avatars(&mut self, world: &World) {
+        let revision = world.query_revision();
+        if self.mounted_avatar_revision == Some(revision) {
+            return;
+        }
+        self.mounted_avatar_revision = Some(revision);
+        self.mounted_avatars.clear();
+        let mut pending = Vec::new();
+        for &edge in self.by_rider.values() {
+            if !edge_is_valid(world, edge) {
+                continue;
+            }
+            pending.push(edge.attachment.child());
+            while let Some(id) = pending.pop() {
+                if world
+                    .get_component_by_id_as::<AvatarControlComponent>(id)
+                    .is_some()
+                {
+                    self.mounted_avatars.insert(id);
+                }
+                pending.extend(
+                    world
+                        .children_of(id)
+                        .iter()
+                        .copied()
+                        .filter(|&child| world.parent_of(child) == Some(id)),
+                );
+            }
+        }
+    }
+
+    pub(super) fn on_mount_changed(&mut self, world: &World) {
+        self.mounted_avatar_revision = None;
+        self.sync_mounted_avatars(world);
     }
 
     /// Reconcile only the affected relationship at an interaction boundary.

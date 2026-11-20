@@ -61,3 +61,9 @@ SystemWorld retains UdpSystem and passes it at adapter registration/update point
 No event-payload or rendering changes belong in this migration. Future subsystem
 context grouping should retain explicit ownership and direct calls rather than
 adding global state or per-datagram dispatch allocations.
+
+## Native mount events
+
+Native event consumers such as avatar mount membership belong with world
+event dispatch if that code is split out. Keep native handling in the existing
+single dispatch pass and validate mount event delivery with the rooftop scene.

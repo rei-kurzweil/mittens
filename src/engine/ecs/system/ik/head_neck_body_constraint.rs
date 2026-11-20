@@ -516,7 +516,7 @@ impl HeadNeckBodyConstraintSystem {
             };
             let result = if !avatar.head_neck_body_enabled || !avatar.neck_pin_enabled {
                 Err(HeadNeckBodyConstraintStatus::Disabled)
-            } else if attachments.has_mounted_ancestor(world, id) {
+            } else if attachments.is_avatar_mounted(id) {
                 Err(HeadNeckBodyConstraintStatus::Mounted)
             } else if let Some(constraint) = &avatar.head_neck_body_constraint {
                 constraint.candidate(world, avatar)

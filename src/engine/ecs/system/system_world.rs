@@ -1609,6 +1609,12 @@ impl SystemWorld {
                         continue;
                     }
                     processed += 1;
+                    if matches!(
+                        env.event,
+                        Some(EventSignal::MountStarted { .. } | EventSignal::MountEnded { .. })
+                    ) {
+                        self.attachment.on_mount_changed(world);
+                    }
                     self.rx.dispatch_event_handlers(world, &env);
                     self.editor_paint
                         .process_pending_effects(world, render_assets, queue);
