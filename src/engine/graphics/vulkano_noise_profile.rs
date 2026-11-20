@@ -214,8 +214,8 @@ fn noise_profile_texture_vs_procedural() -> Result<(), Box<dyn Error>> {
         .map(|case| Variant::new(context.clone(), case, octaves))
         .collect::<Result<Vec<_>, _>>()?;
     let mut results = Vec::new();
-    // 1080p-class desktop eye and the Focus 3 per-eye panel resolution.
-    for extent in [[1920, 1080], [2448, 2448]] {
+    // Desktop reference, usual XR render extent, and Focus 3 panel extent.
+    for extent in [[1920, 1080], [1920, 1920], [2448, 2448]] {
         let output = Image::new(
             context.memory_allocator().clone(),
             ImageCreateInfo {
