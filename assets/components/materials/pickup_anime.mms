@@ -4,9 +4,10 @@ let definition = MaterialDefinition.anime().opaque_bucket("near")
 export fn pickup_anime_material() {
     return Material(definition).inputs({
         shade_color = [0.32, 0.30, 0.48]
-        shade_strength = 0.58
-        shade_threshold = 0.22
-        lit_threshold = 0.85
+        shade_strength = 0.15
+        // Same midpoint as the rooftop avatar ramp (0.40 to 0.55), 2.5x wider.
+        shade_threshold = 0.2875
+        lit_threshold = 0.6625
         rim_color = [0.90, 0.94, 1.0]
         // Ship avatars use 0.42: this is about 2.38 times their rim strength.
         rim_strength = 1.0

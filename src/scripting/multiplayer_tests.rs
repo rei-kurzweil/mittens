@@ -567,8 +567,11 @@ fn twilight_rooftop_source() -> String {
 
 #[test]
 fn twilight_rooftop_loads_xr_only_without_a_peer() {
-    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
-    use crate::engine::ecs::component::{Camera3DComponent, CameraXRComponent};
+    use crate::engine::ecs::component::material::{
+        MaterialComponent, MaterialDefinitionComponent, ShadingModel,
+    };
+    use crate::engine::ecs::component::{Camera3DComponent, CameraXRComponent, ColorComponent};
+    use crate::engine::graphics::materials::OpaqueBucket;
     // Default flags: XR-only, solo host still waiting for a peer.
     let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
     for _ in 0..10 {
@@ -614,6 +617,23 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
             .is_some_and(|d| d.fragment_uri == "assets/shaders/rooftop-dusk-sky.frag")
     });
     assert_eq!(sky, 1);
+    let paint_sources = named(&scene, "pickup_painted_body").unwrap();
+    let chassis = world.find_component(paint_sources, "renderable").unwrap();
+    let paint = world.find_component(chassis, "color").unwrap();
+    assert_eq!(
+        world.get_component_by_id_as::<ColorComponent>(paint).unwrap().rgba,
+        [1.0, 0.606, 0.047, 1.0]
+    );
+    let finish = named(&scene, "pickup_anime_material").unwrap();
+    let finish = world.get_component_by_id_as::<MaterialComponent>(finish).unwrap();
+    let definition = world
+        .get_component_by_id_as::<MaterialDefinitionComponent>(finish.definition)
+        .unwrap();
+    assert_eq!(definition.opaque_bucket, Some(OpaqueBucket::Near));
+    assert_eq!(definition.builtin, Some(ShadingModel::Anime));
+    assert_eq!(finish.values["shade_strength"], [0.15]);
+    assert_eq!(finish.values["shade_threshold"], [0.2875]);
+    assert_eq!(finish.values["lit_threshold"], [0.6625]);
     // Both players stand on the main roof (5 floors x 3.2 m).
     let local = world_position(&scene, "local_root").unwrap();
     assert!(

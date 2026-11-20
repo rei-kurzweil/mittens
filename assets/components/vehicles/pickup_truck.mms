@@ -3,7 +3,7 @@ import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
-import { pickup_lambert_toon_material } from "../materials/pickup_lambert_toon.mms"
+import { pickup_anime_material } from "../materials/pickup_anime.mms"
 import { pickup_dashboard_gauges } from "./pickup_dashboard_gauges.mms"
 import { pickup_sliding_colliders } from "./pickup_sliding_colliders.mms"
 import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height.mms"
@@ -16,11 +16,10 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
-        if color!=null { C.rgba(color[0],color[1],color[2],1) }
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
-        pickup_lambert_toon_material()
+        pickup_anime_material()
         Selectable.off()
     }
     on(model,"GLTFInitialized",fn(event) {
@@ -32,6 +31,9 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // so reparenting these parts retains their authored local poses.
             chassis.attach(batch)
             // The first source supplies the combined mesh's shared paint colour.
+            if cabin && color!=null {
+                cabin.set_color([color[0],color[1],color[2],1.0])
+            }
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
             for name in ["car_seat","car_seat.passenger_seat","door_left","door_right","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")

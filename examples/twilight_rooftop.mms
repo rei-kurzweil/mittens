@@ -198,7 +198,8 @@ socket
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 let grab_rank = 2
 if net.is_host() { grab_rank = 1 }
-let pickup = pickup_truck(null, null, true, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
+// Use the imported hood's yellow base color for the combined paint.
+let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank
