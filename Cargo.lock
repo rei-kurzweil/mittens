@@ -1528,6 +1528,7 @@ dependencies = [
  "android_logger",
  "ash",
  "jni",
+ "libc",
  "log",
  "mittens-engine",
  "ndk-context",

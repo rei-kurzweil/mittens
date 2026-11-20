@@ -263,19 +263,74 @@ pub(super) fn upload_rgba(
     }
     let (mip_data, levels) =
         mittens_engine::engine::graphics::mipmaps::generate(rgba, width, height, srgb)?;
-    let mut staging = Buffer::new(
-        gpu.clone(),
-        mip_data.len(),
-        vk::BufferUsageFlags::TRANSFER_SRC,
-    )?;
-    staging.write(&mip_data)?;
-    let image = Image::new(
-        gpu.clone(),
+    let levels: Vec<_> = levels
+        .iter()
+        .map(|mip| (mip.offset as u64, mip.width, mip.height))
+        .collect();
+    upload_levels(
+        gpu,
         if srgb {
             vk::Format::R8G8B8A8_SRGB
         } else {
             vk::Format::R8G8B8A8_UNORM
         },
+        width,
+        height,
+        &mip_data,
+        &levels,
+    )
+}
+
+/// One level of 2D ASTC LDR blocks, linear UNorm. Requires the device feature.
+pub(super) fn upload_astc(
+    gpu: Arc<Gpu>,
+    blocks: &[u8],
+    width: u32,
+    height: u32,
+    block: [u32; 2],
+) -> Result<Image> {
+    if !gpu.astc_ldr {
+        return Err("ASTC LDR is not supported/enabled on this device".into());
+    }
+    let format = match block {
+        [4, 4] => vk::Format::ASTC_4X4_UNORM_BLOCK,
+        [5, 4] => vk::Format::ASTC_5X4_UNORM_BLOCK,
+        [5, 5] => vk::Format::ASTC_5X5_UNORM_BLOCK,
+        [6, 5] => vk::Format::ASTC_6X5_UNORM_BLOCK,
+        [6, 6] => vk::Format::ASTC_6X6_UNORM_BLOCK,
+        [8, 5] => vk::Format::ASTC_8X5_UNORM_BLOCK,
+        [8, 6] => vk::Format::ASTC_8X6_UNORM_BLOCK,
+        [8, 8] => vk::Format::ASTC_8X8_UNORM_BLOCK,
+        [10, 5] => vk::Format::ASTC_10X5_UNORM_BLOCK,
+        [10, 6] => vk::Format::ASTC_10X6_UNORM_BLOCK,
+        [10, 8] => vk::Format::ASTC_10X8_UNORM_BLOCK,
+        [10, 10] => vk::Format::ASTC_10X10_UNORM_BLOCK,
+        [12, 10] => vk::Format::ASTC_12X10_UNORM_BLOCK,
+        [12, 12] => vk::Format::ASTC_12X12_UNORM_BLOCK,
+        _ => return Err(format!("unsupported ASTC block {}x{}", block[0], block[1]).into()),
+    };
+    let expected =
+        width.div_ceil(block[0]) as usize * height.div_ceil(block[1]) as usize * 16;
+    if width == 0 || height == 0 || blocks.len() != expected {
+        return Err("invalid ASTC texture dimensions/data".into());
+    }
+    upload_levels(gpu, format, width, height, blocks, &[(0, width, height)])
+}
+
+/// Copies prepared levels `(byte offset, width, height)` from one staging buffer.
+fn upload_levels(
+    gpu: Arc<Gpu>,
+    format: vk::Format,
+    width: u32,
+    height: u32,
+    data: &[u8],
+    levels: &[(u64, u32, u32)],
+) -> Result<Image> {
+    let mut staging = Buffer::new(gpu.clone(), data.len(), vk::BufferUsageFlags::TRANSFER_SRC)?;
+    staging.write(data)?;
+    let image = Image::new(
+        gpu.clone(),
+        format,
         vk::Extent2D { width, height },
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::ImageAspectFlags::COLOR,
@@ -317,9 +372,9 @@ pub(super) fn upload_rgba(
         let copies = levels
             .iter()
             .enumerate()
-            .map(|(level, mip)| {
+            .map(|(level, &(offset, width, height))| {
                 vk::BufferImageCopy::default()
-                    .buffer_offset(mip.offset as u64)
+                    .buffer_offset(offset)
                     .image_subresource(
                         vk::ImageSubresourceLayers::default()
                             .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -327,8 +382,8 @@ pub(super) fn upload_rgba(
                             .layer_count(1),
                     )
                     .image_extent(vk::Extent3D {
-                        width: mip.width,
-                        height: mip.height,
+                        width,
+                        height,
                         depth: 1,
                     })
             })

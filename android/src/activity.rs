@@ -7,6 +7,7 @@ pub(super) fn run(app: AndroidApp) {
             .with_max_level(log::LevelFilter::Info),
     );
     std::panic::set_hook(Box::new(|panic| log::error!("host_panic: {panic}")));
+    forward_stdio_to_logcat();
 
     log::info!(
         "host_start version={} pid={} thread={:?}",
@@ -69,4 +70,37 @@ pub(super) fn run(app: AndroidApp) {
     #[cfg(feature = "xr-probe")]
     drop(worker);
     log::info!("host_exit clean; returning from android_main");
+}
+
+/// Engine diagnostics and MMS `print` write to stdout/stderr, which Android
+/// discards. Forward both into logcat (tag `mitten-droid`, prefix `stdio`).
+fn forward_stdio_to_logcat() {
+    use std::io::{BufRead, BufReader};
+    use std::os::fd::FromRawFd;
+    let mut fds = [0; 2];
+    // SAFETY: plain fd plumbing at startup, before any other thread writes stdio.
+    unsafe {
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
+            log::error!("stdio pipe failed; stdout/stderr stay discarded");
+            return;
+        }
+        libc::dup2(fds[1], libc::STDOUT_FILENO);
+        libc::dup2(fds[1], libc::STDERR_FILENO);
+        libc::close(fds[1]);
+    }
+    // SAFETY: fds[0] is a freshly created pipe read end owned only here.
+    let reader = unsafe { std::fs::File::from_raw_fd(fds[0]) };
+    let spawned = std::thread::Builder::new()
+        .name("stdio-logcat".into())
+        .spawn(move || {
+            for line in BufReader::new(reader).lines() {
+                match line {
+                    Ok(line) => log::info!("stdio {line}"),
+                    Err(_) => break,
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        log::error!("stdio forwarding thread failed: {error}");
+    }
 }

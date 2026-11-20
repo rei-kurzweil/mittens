@@ -340,6 +340,29 @@ impl TextureSystem {
                                 continue;
                             }
                         },
+                        CatEngineTextureFormat::Astc => match decode_astc(&bytes) {
+                            Ok(decoded) => match uploader.upload_texture_astc(
+                                decoded.blocks,
+                                decoded.width,
+                                decoded.height,
+                                decoded.block,
+                            ) {
+                                Ok(h) => h,
+                                Err(e) => {
+                                    println!(
+                                        "[TextureSystem] ASTC upload failed for '{uri}': {:?}",
+                                        e
+                                    );
+                                    let _ = self.pending_attach.remove(&renderable_cid);
+                                    continue;
+                                }
+                            },
+                            Err(e) => {
+                                println!("[TextureSystem] ASTC decode failed for '{uri}': {e}");
+                                let _ = self.pending_attach.remove(&renderable_cid);
+                                continue;
+                            }
+                        },
                         CatEngineTextureFormat::Rgba8 => {
                             let dyn_img = match image::load_from_memory(&bytes) {
                                 Ok(i) => i,
@@ -383,6 +406,52 @@ fn is_virtual_texture_key(uri: &str) -> bool {
     // This avoids trying to read them from disk and allows components to be created before the
     // GLTF's textures are uploaded.
     !uri.starts_with("file://") && uri.contains(':')
+}
+
+struct AstcDecoded<'a> {
+    width: u32,
+    height: u32,
+    block: [u32; 2],
+    blocks: &'a [u8],
+}
+
+/// astcenc's `.astc` container: 16-byte header (magic 0x5CA1AB13, block
+/// x/y/z, 24-bit x/y/z sizes) followed by 16-byte blocks for one level.
+fn decode_astc(bytes: &[u8]) -> Result<AstcDecoded<'_>, String> {
+    if bytes.len() < 16 || bytes[..4] != [0x13, 0xab, 0xa1, 0x5c] {
+        return Err("not an .astc file (bad magic)".to_string());
+    }
+    let size = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], 0]);
+    let block = [bytes[4] as u32, bytes[5] as u32];
+    let (width, height, depth) = (size(7), size(10), size(13));
+    if bytes[6] != 1 || depth != 1 {
+        return Err("3D ASTC textures are not supported".to_string());
+    }
+    if width == 0 || height == 0 {
+        return Err("ASTC has zero size".to_string());
+    }
+    const BLOCKS: [[u32; 2]; 14] = [
+        [4, 4], [5, 4], [5, 5], [6, 5], [6, 6], [8, 5], [8, 6],
+        [8, 8], [10, 5], [10, 6], [10, 8], [10, 10], [12, 10], [12, 12],
+    ];
+    if !BLOCKS.contains(&block) {
+        return Err(format!("unsupported ASTC block size {}x{}", block[0], block[1]));
+    }
+    let expected =
+        width.div_ceil(block[0]) as usize * height.div_ceil(block[1]) as usize * 16;
+    let blocks = &bytes[16..];
+    if blocks.len() != expected {
+        return Err(format!(
+            "ASTC data size mismatch: got={}, need={expected}",
+            blocks.len()
+        ));
+    }
+    Ok(AstcDecoded {
+        width,
+        height,
+        block,
+        blocks,
+    })
 }
 
 struct Bc7Decoded {
@@ -437,4 +506,24 @@ fn decode_dds_bc7(bytes: &[u8]) -> Result<Bc7Decoded, String> {
         srgb,
         bc7_blocks: data[..expected_len].to_vec(),
     })
+}
+
+#[cfg(test)]
+mod astc_tests {
+    use super::decode_astc;
+
+    #[test]
+    fn decodes_generated_astc_headers_and_rejects_truncation() {
+        for (file, block) in [("astc4x4", [4, 4]), ("astc8x8", [8, 8])] {
+            let bytes = std::fs::read(format!(
+                "{}/assets/textures/noise/perlin-128-{file}.astc",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap();
+            let decoded = decode_astc(&bytes).unwrap();
+            assert_eq!((decoded.width, decoded.height, decoded.block), (128, 128, block));
+            assert!(decode_astc(&bytes[..bytes.len() - 1]).is_err());
+        }
+        assert!(decode_astc(b"DDS not astc....").is_err());
+    }
 }

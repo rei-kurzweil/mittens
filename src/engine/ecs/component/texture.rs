@@ -13,6 +13,8 @@ pub enum CatEngineTextureFormat {
     Rgba8,
     /// DDS container containing BC7 blocks (UNorm or UNorm_sRGB).
     DdsBc7,
+    /// `.astc` file (astcenc container) with 2D LDR blocks; linear UNorm, one level.
+    Astc,
 }
 
 /// Where a texture comes from.
@@ -39,6 +41,8 @@ impl CatEngineTextureFormat {
 
         if ext.eq_ignore_ascii_case("dds") {
             CatEngineTextureFormat::DdsBc7
+        } else if ext.eq_ignore_ascii_case("astc") {
+            CatEngineTextureFormat::Astc
         } else {
             CatEngineTextureFormat::Rgba8
         }
