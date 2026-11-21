@@ -251,15 +251,6 @@ impl AudioInputSystem {
                             sample.valid_frames,
                             runtime.dropped.load(Ordering::Relaxed),
                         );
-                    } else {
-                        eprintln!(
-                            "[Amplitude] observer={observer:?} source={source:?} status={:?} rms={:.6} peak={:.6} frames={} dropped={}",
-                            sample.status,
-                            sample.rms,
-                            sample.peak,
-                            sample.valid_frames,
-                            runtime.dropped.load(Ordering::Relaxed),
-                        );
                     }
                     *diagnostic = (Instant::now(), sample.status, reason);
                 }
