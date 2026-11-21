@@ -1,8 +1,11 @@
 import { rocket_explosion } from "./rocket_explosion.mms"
+import { emissive_surface } from "../materials/emissive_surface.mms"
 import { toon_rocket_exhaust } from "../materials/toon_rocket_exhaust.mms"
 
 let trail_length = 3.0
-let trail_width = 0.3
+let trail_width = 0.9
+// The recentered GLB's rear face ends at z=0.17875 with a diameter of 0.0385.
+let nozzle_z = 0.18
 
 // World direction of local -Z, the rocket's flight axis.
 fn forward_of(q) {
@@ -14,9 +17,9 @@ fn forward_of(q) {
 }
 
 // Two crossed planes so the ribbon stays visible edge-on. Each runs from the
-// rocket (UV y=0) back along local +Z; the shader clips it at the launch point.
+// nozzle (UV y=0) back along local +Z; the shader clips it at the launch point.
 fn exhaust_trail(material) {
-    return T.position(0.0, 0.0, trail_length * 0.5) {
+    return T.position(0.0, 0.0, nozzle_z + trail_length * 0.5) {
         name = "sta_rocket_trail"
         T.rotation(-Math.pi / 2.0, 0.0, 0.0) {
             T.scale(trail_width, trail_length, 1.0) {
@@ -42,13 +45,27 @@ export fn apply_rocket_impact(point, amount) {
 export fn rocket(spec) {
     let state = { alive = true }
     let zone = Zone.sphere(0.055) { ProjectileImpact {} }
-    let model = T.position(0.191356, -1.507589, -0.111893) {
-        GLTF.new("assets/models/STA_rocket_bullet.glb") {}
+    let model = T {
+        T.position(0.191356, -1.507589, -0.111893) {
+            GLTF.new("assets/models/STA_rocket_bullet.glb") {}
+        }
+        T.position(0.0, 0.0, nozzle_z) {
+            name = "sta_rocket_nozzle"
+            emissive_surface()
+            Emissive.on().intensity(3.0)
+            T.scale(0.038, 0.038, 1.0) {
+                R.circle_2d() { C.rgba(1.0, 0.05, 0.01, 1.0) }
+            }
+            T.position(0.0, 0.0, 0.001).scale(0.025, 0.025, 1.0) {
+                R.circle_2d() { C.rgba(1.0, 0.72, 0.04, 1.0) }
+            }
+        }
     }
     let launch = spec.pose.translation
     let trail = exhaust_trail(toon_rocket_exhaust(
         [launch[0], launch[1], launch[2]],
         forward_of(spec.pose.rotation_quat_xyzw),
+        trail_length,
     ))
     let body = T {
         name = "sta_rocket_body"

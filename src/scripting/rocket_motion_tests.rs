@@ -76,11 +76,37 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_explosion_without_frame_bindin
         &mut scene.command_queue,
     );
     assert!(has(&scene.world, "sta_rocket_trail"), "rocket carries its exhaust ribbon");
+    let nozzle_discs: Vec<_> = scene
+        .visuals
+        .instances()
+        .iter()
+        .filter(|instance| instance.emissive == 3.0)
+        .collect();
+    assert_eq!(nozzle_discs.len(), 2, "the rim and core both emit light");
+    for disc in nozzle_discs {
+        let material = scene
+            .visuals
+            .materials
+            .instance(disc.material_instance.unwrap())
+            .unwrap();
+        let definition = scene
+            .visuals
+            .materials
+            .definition(material.definition)
+            .unwrap();
+        assert!(definition.capabilities.supports_emission_extraction());
+    }
     let mut explosion = false;
     // Impact fades the trail for one beat before removing the flight root.
     for _ in 0..140 {
         advance(&mut scene, &clock);
-        explosion |= has(&scene.world, "rocket_explosion");
+        if has(&scene.world, "rocket_explosion") {
+            explosion = true;
+            assert!(
+                !has(&scene.world, "sta_rocket_nozzle"),
+                "impact removes the nozzle glow"
+            );
+        }
     }
     assert!(
         explosion,
