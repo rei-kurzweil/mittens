@@ -1,7 +1,5 @@
 import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
-import { bisket_colliders } from "../colliders/bisket.mms"
-import { bisket_shirt_physics } from "../secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../secondary_motion/mitten-bow.mms"
+import { mitten_model } from "mitten.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../arm_ik/vroid.mms"
 import { ambient_eye_saccades } from "../animations/ambient_eye_saccades.mms"
 import { looping_blink } from "../animations/looping_blink.mms"
@@ -22,24 +20,13 @@ fn vroid_face() {
 }
 
 let model_uris = {
-    mitten = "assets/models/mitten.glb"
     lumae = "assets/components/characters/lumae/lumae.glb"
     miku = "assets/models/local/third_party/TDA_Hatsune_Miku/tda_miku_with_bones.glb"
     succubus = "assets/models/local/succubus.glb"
 }
 
 fn make_mitten(model_name, track_hands) {
-    let model = GLTF.new(model_uris.mitten) {
-        name = model_name
-        if track_hands { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
-        vroid_humanoid_bone_map()
-        vroid_face()
-        bisket_colliders()
-        bisket_shirt_physics(false)
-        mitten_bow_secondary_motion()
-    }
-    return { model = model eye_height = 1.58 sole_offset = [0.0, 0.0530325, 0.0874534] }
+    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" })
 }
 
 fn make_lumae(model_name, track_hands) {

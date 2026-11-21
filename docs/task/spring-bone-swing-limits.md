@@ -36,11 +36,15 @@ keeps a canine upward curve, and then add an idle wag that still reads right.
 - [ ] Per-joint overrides on a `from_root` chain: let a `SpringJoint` child
       override only its joint instead of switching the chain to an explicit
       list.
-- [ ] Idle tail wag animation. Today the spring output is written relative to
-      the imported rest rotation, and the limit is rest-relative, so a wag
-      wider than `max_swing` is clamped. Making the limit follow an animated
-      primary pose depends on the primary-pose snapshot in
-      [rest-pose return](secondary-motion-rest-pose-return.md) phase 2.
+- [x] Idle tail wag (2026-11-20, unverified in VR). The spring chain now
+      starts at `J_Bip_C_Hips.003`, leaving the `tail` joint as an animated
+      driver; the swing limits are measured in the driver's frame, so they
+      follow the wag. `assets/components/animations/tail_wag.mms` has
+      `"canine"` (continuous) and `"feline"` (holds 2/3 of the swing time at
+      each side). Attached through `mitten_model(..., { tail_wag })` in
+      `assets/components/characters/mitten.mms`, used by
+      `examples/mitten.mms` and `rooftop_player.mms`.
+- [ ] Move the remaining inline mitten examples onto `mitten_model`.
 - [ ] Do not combine the tail with `ReturnToRestWhenStill`; it would freeze a
       wag at rest.
 - [ ] Optional: gravity-relative limits ("never below horizontal"), alongside

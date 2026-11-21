@@ -52,7 +52,9 @@ export fn bisket_secondary_motion_with(config, extra_chains) {
         // max_swing keeps the tail's authored upward curl: each joint may sag
         // at most 20 degrees from its rest direction. Shared by every Bisket
         // and mitten instance (mitten loads this through bisket_shirt_physics).
-        SpringBone.from_root("[name='tail']")
+        // The chain starts below the `tail` joint, which stays free as the
+        // wag driver (animations/tail_wag.mms); the limits follow its swing.
+        SpringBone.from_root("[name='J_Bip_C_Hips.003']")
             .virtual_end_length_ratio(1.0)
             .stiffness(1.0)
             .drag_force(0.25)

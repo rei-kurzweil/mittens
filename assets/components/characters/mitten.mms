@@ -1,0 +1,45 @@
+import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
+import { bisket_humanoid_bone_map } from "../humanoid_bone_maps/bisket.mms"
+import { bisket_colliders } from "../colliders/bisket.mms"
+import { bisket_shirt_physics } from "../secondary_motion/bisket-shirt-physics.mms"
+import { mitten_bow_secondary_motion } from "../secondary_motion/mitten-bow.mms"
+import { tail_wag } from "../animations/tail_wag.mms"
+
+// Shared mitten avatar model, for VR and desktop scenes. Returns the spec
+// shape used by rooftop_player's avatar factories:
+//   { model, eye_height, sole_offset }
+// `model_name` may be false to leave the GLTF unnamed. Options (all optional):
+//   xr               add OpenXR hand tracking
+//   tail_wag         "canine", "feline", or false for a still tail
+//   beats_per_second scene Clock BPM / 60 (default 2.0, a 120 BPM clock)
+// The caller owns the body (AVC), cameras, and scene-specific additions.
+export fn mitten_model(model_name, options) {
+    let xr = options["xr"]
+    let tail_style = options["tail_wag"]
+    let beats_per_second = options["beats_per_second"]
+    if !beats_per_second { beats_per_second = 2.0 }
+    let model = GLTF.new("assets/models/mitten.glb") {
+        if model_name { name = model_name }
+        if xr { HandTracking.new().source("openxr") }
+        bisket_anime_shading()
+        bisket_humanoid_bone_map()
+        MorphTargetMap.new()
+            .slot("left_eye_blink", "Fcl_EYE_Close_L")
+            .slot("right_eye_blink", "Fcl_EYE_Close_R")
+            .slot("viseme_aa", "Fcl_MTH_A")
+        bisket_colliders()
+        bisket_shirt_physics(false)
+        mitten_bow_secondary_motion()
+    }
+    if tail_style {
+        on(model, "GLTFInitialized", fn(event) {
+            let tail = event.gltf.query("[name='tail']")
+            if tail {
+                model.attach(tail_wag(tail, tail_style, beats_per_second))
+            } else {
+                print("mitten_model: tail joint not found; tail wag was not attached")
+            }
+        })
+    }
+    return { model = model eye_height = 1.58 sole_offset = [0.0, 0.0530325, 0.0874534] }
+}

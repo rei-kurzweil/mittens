@@ -8,11 +8,7 @@ import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/v
 import { studio_stage } from "../assets/components/studio_stage.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 
@@ -129,19 +125,9 @@ let player_motion = Velocity {
         InputXR.on() {
             InputXRGamepad { locomotion() speed(1.5) }
             T {
-                let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
-                    HandTracking.new().source("openxr")
-                    bisket_anime_shading()
-                    bisket_humanoid_bone_map()
-                    MorphTargetMap.new()
-                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                        .slot("viseme_aa", "Fcl_MTH_A")
-                    EM.on()
-                    bisket_colliders()
-                    bisket_shirt_physics(false)
-                    mitten_bow_secondary_motion()
-                }
+                // Switch tail_wag to "feline" for the pause-between-swings wag.
+                let mitten_avatar = mitten_model(false, { xr = true tail_wag = "canine" }).model
+                mitten_avatar.attach(EM.on())
                 let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
                     name = "mitten_avatar_control"
                     // Foot-local sole landmarks for the shared mitten/Bisket shoes.
