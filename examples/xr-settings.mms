@@ -6,11 +6,8 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -100,20 +97,10 @@ ED.active() {
                 }
                 T {
                     name = "mitten_xr_driver"
-                    let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
-                        HandTracking.new().source("openxr")
-                        bisket_anime_shading()
-                        bisket_humanoid_bone_map()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                            .slot("viseme_aa", "Fcl_MTH_A")
-                        EM.on()
-                        PoseCapture { label("mitten") asset_name("mitten") }
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        mitten_bow_secondary_motion()
-                    }
+                    let mitten_avatar = mitten_model(false, {
+                        xr = true
+                        children = [EM.on(), PoseCapture { label("mitten") asset_name("mitten") }]
+                    }).model
                     let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
                         name = "mitten_avatar_control"
                         // Feet follow the stage contacts; AVC's generated slide

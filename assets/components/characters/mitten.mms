@@ -12,16 +12,22 @@ import { tail_wag } from "../animations/tail_wag.mms"
 //   xr               add OpenXR hand tracking
 //   tail_wag         "canine", "feline", or false for a still tail
 //   beats_per_second scene Clock BPM / 60 (default 2.0, a 120 BPM clock)
-// The caller owns the body (AVC), cameras, and scene-specific additions.
+//   material         replaces the default bisket_anime_shading()
+//   children         array of extra components attached to the GLTF root,
+//                    such as poses, EM.on(), PoseCapture, or Raycastable
+// The caller owns the body (AVC), cameras, and other scene-specific nodes.
 export fn mitten_model(model_name, options) {
     let xr = options["xr"]
     let tail_style = options["tail_wag"]
     let beats_per_second = options["beats_per_second"]
     if !beats_per_second { beats_per_second = 2.0 }
+    let material = options["material"]
+    let children = options["children"]
     let model = GLTF.new("assets/models/mitten.glb") {
         if model_name { name = model_name }
         if xr { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
+        if material { material }
+        if !material { bisket_anime_shading() }
         bisket_humanoid_bone_map()
         MorphTargetMap.new()
             .slot("left_eye_blink", "Fcl_EYE_Close_L")
@@ -30,6 +36,9 @@ export fn mitten_model(model_name, options) {
         bisket_colliders()
         bisket_shirt_physics(false)
         mitten_bow_secondary_motion()
+        if children {
+            for child in children { child }
+        }
     }
     if tail_style {
         on(model, "GLTFInitialized", fn(event) {
