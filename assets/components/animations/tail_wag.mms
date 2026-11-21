@@ -5,8 +5,8 @@
 //
 // style "canine": swings side to side continuously; each swing starts the
 //   moment the previous one ends.
-// style "feline": the same swing, but holds at each side for two thirds of the
-//   swing time before swinging back.
+// style "feline": swings in two thirds of the canine swing time, then holds at
+//   each side for 2.5 times its own swing time before swinging back.
 //
 // `beats_per_second` converts the authored seconds to the scene clock's beat
 // unit: pass `Clock BPM / 60` (for example, `2.0` for a 120 BPM clock).
@@ -18,9 +18,9 @@ export fn tail_wag(tail, style, beats_per_second) {
     let amplitude = 0.35
     let hold_seconds = 0.0
     if style == "feline" {
-        swing_seconds = 0.9
+        swing_seconds = swing_seconds * 2.0 / 3.0
         amplitude = 0.3
-        hold_seconds = swing_seconds * 2.0 / 3.0
+        hold_seconds = swing_seconds * 2.5
     }
     let transition = Transition {
         duration_beats(swing_seconds * beats_per_second)

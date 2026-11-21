@@ -40,8 +40,8 @@ keeps a canine upward curve, and then add an idle wag that still reads right.
       starts at `J_Bip_C_Hips.003`, leaving the `tail` joint as an animated
       driver; the swing limits are measured in the driver's frame, so they
       follow the wag. `assets/components/animations/tail_wag.mms` has
-      `"canine"` (continuous) and `"feline"` (holds 2/3 of the swing time at
-      each side). Attached through `mitten_model(..., { tail_wag })` in
+      `"canine"` (continuous) and `"feline"` (swings in 2/3 of the canine time,
+      then holds 2.5x its swing time at each side). Attached through `mitten_model(..., { tail_wag })` in
       `assets/components/characters/mitten.mms`, used by
       `examples/mitten.mms` and `rooftop_player.mms`.
 - [ ] Move the remaining inline mitten examples onto `mitten_model`.
