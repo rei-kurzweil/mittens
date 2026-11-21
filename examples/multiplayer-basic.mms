@@ -5,10 +5,6 @@ let use_desktop = true
 
 import { f32, vec3, vec4 } from "types"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
@@ -19,6 +15,7 @@ import { pool_tile_material } from "../assets/components/materials/pool_tiles.mm
 import { ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
 import { looping_blink } from "../assets/components/animations/looping_blink.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Two-player LAN/loopback multiplayer: one host, one client, same arena.
 // The host owns physics (the bouncing ball); each player owns their own pose.
@@ -105,18 +102,9 @@ socket
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 
 fn make_mitten(prefix, local_player) {
-    let model = GLTF.new("assets/models/mitten.glb") {
-        name = prefix + "_model"
-        bisket_anime_shading()
-        bisket_humanoid_bone_map()
-        MorphTargetMap.new()
-            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-            .slot("viseme_aa", "Fcl_MTH_A")
-        bisket_colliders()
-        bisket_shirt_physics(false)
-        mitten_bow_secondary_motion()
-    }
+    let model = mitten_model(prefix + "_model", {
+        xr = false
+    }).model
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
         if local_player && use_xr { Pointer { name = "local_left_pointer" } }

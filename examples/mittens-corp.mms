@@ -16,13 +16,10 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -136,21 +133,10 @@ ED.active() {
 
                 T {
                     name = "mitten_xr_driver"
-                    let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
-                        bisket_anime_shading()
-                        bisket_humanoid_bone_map()
-                        HandTracking.new()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                            .slot("viseme_aa", "Fcl_MTH_A")
-                        EM.on()
-                        PoseCapture { label("mitten") asset_name("mitten") }
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        // Includes ReturnToRestWhenStill on both bow ribbons.
-                        mitten_bow_secondary_motion()
-                    }
+                    let mitten_avatar = mitten_model(false, {
+                        xr = false
+                        children = [HandTracking.new(), EM.on(), PoseCapture { label("mitten") asset_name("mitten") }]
+                    }).model
                     let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
                         name = "mitten_avatar_control"
                         // Foot-local sole landmarks for the shared mitten/Bisket shoes.

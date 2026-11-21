@@ -15,10 +15,6 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { rei_2026_9 } from "../assets/components/mouth_response/rei_2026.9.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
@@ -27,6 +23,7 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
 import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 import { button } from "../assets/components/button.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -666,20 +663,10 @@ ED.active() {
 
                 T {
                     name = "bisket_xr_driver"
-                    let bisket_avatar = GLTF.new("assets/models/mitten.glb") {
-                        HandTracking.new().source("openxr")
-                        bisket_anime_shading()
-                        bisket_humanoid_bone_map()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                            .slot("viseme_aa", "Fcl_MTH_A")
-                        EM.on()
-                        PoseCapture { label("mitten") asset_name("mitten") }
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        mitten_bow_secondary_motion()
-                    }
+                    let bisket_avatar = mitten_model(false, {
+                        xr = true
+                        children = [EM.on(), PoseCapture { label("mitten") asset_name("mitten") }]
+                    }).model
                     let bisket_avatar_control = AVC.movement_target("[name='bisket_locomotion_root']") {
                         name = "bisket_avatar_control"
                         mouth_open_from_amplitude(voice_level)

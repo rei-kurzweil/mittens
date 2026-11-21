@@ -38,14 +38,11 @@ import { pool_tile_material } from "../assets/components/materials/pool_tiles.mm
 import { pool_building, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { display_car } from "../assets/components/vehicles/display_car.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { lumae_avatar } from "../assets/components/characters/lumae/avatar.mms"
 import { pacing_and_waiting_around } from "../assets/components/characters/lumae/behavior/pacing_and_waiting_around.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -334,21 +331,11 @@ if xr_view_enabled {
                 InputXRGamepad { locomotion() speed(1.4) enable_flying(true) }
                 T {
                     name = "sakura_mitten_xr_driver"
-                    let xr_mitten = GLTF.new("assets/models/mitten.glb") {
-                        name = "sakura_xr_mitten"
-                        Raycastable.disabled()
-                        Selectable.off()
-                        HandTracking.new().source("openxr")
-                        pistol_material
-                        bisket_humanoid_bone_map()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                            .slot("viseme_aa", "Fcl_MTH_A")
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        mitten_bow_secondary_motion()
-                    }
+                    let xr_mitten = mitten_model("sakura_xr_mitten", {
+                        xr = true
+                        material = pistol_material
+                        children = [Raycastable.disabled(), Selectable.off()]
+                    }).model
                     let xr_avatar_control = AVC.movement_target("[name='sakura_mitten_locomotion_root']") {
                         name = "sakura_mitten_avatar_control"
                         crouch_enabled(true)

@@ -26,12 +26,9 @@ let pool_room_origin_z = pool_hallway_start_z + pool_hallway_length + 0.16
 import { indoor_pool } from "../assets/components/rooms/indoor-pool.mms"
 import { f32 } from "types"
 import { pose as floor_seated_pose } from "../assets/components/poses/mitten/floor-seated.pose.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
@@ -366,14 +363,11 @@ if !xr_player_avatar_enabled {
     // A separate NPC, with no avatar-control, XR camera or tracked-hand ownership.
     // Her back leans toward the left wall; low, open legs and bent elbows keep the
     // wrists above the lap. The authored pose is applied once after GLTF import.
-    let room_mitten = GLTF.new("assets/models/mitten.glb") {
-        name = "room_mitten"
-        room_shading
-        floor_seated_pose()
-        bisket_colliders()
-        bisket_shirt_physics(false)
-        mitten_bow_secondary_motion()
-    }
+    let room_mitten = mitten_model("room_mitten", {
+        xr = false
+        material = room_shading
+        children = [floor_seated_pose()]
+    }).model
     T.position(-2.22, 0.0, 0.0).rotation_euler(0.0, 1.15, 0.0) {
         name = "room_mitten_anchor"
         room_mitten
@@ -477,19 +471,10 @@ if xr_view_enabled {
                     InputXRGamepad { locomotion() speed(1.4) }
                     T {
                         name = "room_mitten_xr_driver"
-                        let xr_mitten = GLTF.new("assets/models/mitten.glb") {
-                            HandTracking.new().source("openxr")
-                            name = "xr_mitten"
-                            room_shading
-                            bisket_humanoid_bone_map()
-                            MorphTargetMap.new()
-                                .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                                .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                                .slot("viseme_aa", "Fcl_MTH_A")
-                            bisket_colliders()
-                            bisket_shirt_physics(false)
-                            mitten_bow_secondary_motion()
-                        }
+                        let xr_mitten = mitten_model("xr_mitten", {
+                            xr = true
+                            material = room_shading
+                        }).model
                         let xr_avatar_control = AVC.movement_target("[name='room_mitten_locomotion_root']") {
                             name = "room_mitten_avatar_control"
                             crouch_enabled(true)

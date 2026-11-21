@@ -44,7 +44,9 @@ keeps a canine upward curve, and then add an idle wag that still reads right.
       then holds 2.5x its swing time at each side). Attached through `mitten_model(..., { tail_wag })` in
       `assets/components/characters/mitten.mms`, used by
       `examples/mitten.mms` and `rooftop_player.mms`.
-- [ ] Move the remaining inline mitten examples onto `mitten_model`.
+- [x] Move the remaining inline mitten examples onto `mitten_model`
+      (2026-11-20). Scene-specific GLTF extras go through its `material` and
+      `children` options; the migrated scenes leave `tail_wag` off.
 - [ ] Do not combine the tail with `ReturnToRestWhenStill`; it would freeze a
       wag at rest.
 - [ ] Optional: gravity-relative limits ("never below horizontal"), alongside

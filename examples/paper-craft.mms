@@ -31,10 +31,6 @@ import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { display_car_xr, display_car_desktop } from "../assets/components/vehicles/display_car.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 import { gohei_squares } from "../assets/components/paper_craft/gohei_squares.mms"
@@ -43,6 +39,7 @@ import { gohei_naive_weights } from "../assets/components/paper_craft/gohei_naiv
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { concentric_halo } from "../assets/components/accessories/concentric_halo.mms"
 import { pose as mitten_relaxed_arms } from "../assets/components/poses/mitten/relaxed-arms.pose.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = null
@@ -255,22 +252,11 @@ if use_openxr {
                 InputXRGamepad { name="paper_craft_mitten_locomotion_input" locomotion() speed(1.4) enable_flying(true) }
                 T {
                     name = "paper_craft_mitten_xr_driver"
-                    let xr_mitten = GLTF.new("assets/models/mitten.glb") {
-                        name = "paper_craft_xr_mitten"
-                        mitten_relaxed_arms()
-                        Raycastable.disabled()
-                        Selectable.off()
-                        HandTracking.new().source("openxr")
-                        pistol_material
-                        bisket_humanoid_bone_map()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                            .slot("viseme_aa", "Fcl_MTH_A")
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        mitten_bow_secondary_motion()
-                    }
+                    let xr_mitten = mitten_model("paper_craft_xr_mitten", {
+                        xr = true
+                        material = pistol_material
+                        children = [mitten_relaxed_arms(), Raycastable.disabled(), Selectable.off()]
+                    }).model
                     let xr_avatar_control = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
                         name = "paper_craft_mitten_avatar_control"
                         idle_blink(true)
@@ -338,20 +324,11 @@ if use_openxr {
                 InputTransformMode.forward_z() {fps_rotation() roll_axis_y()}
                 T.position(0.0,1.65,0.0) {
                     name = "paper_craft_mitten_screen_driver"
-                    let model = GLTF.new("assets/models/mitten.glb") {
-                        name = "paper_craft_screen_mitten"
-                        mitten_relaxed_arms()
-                        Raycastable.disabled() Selectable.off()
-                        pistol_material
-                        bisket_humanoid_bone_map()
-                        MorphTargetMap.new()
-                            .slot("left_eye_blink","Fcl_EYE_Close_L")
-                            .slot("right_eye_blink","Fcl_EYE_Close_R")
-                            .slot("viseme_aa","Fcl_MTH_A")
-                        bisket_colliders()
-                        bisket_shirt_physics(false)
-                        mitten_bow_secondary_motion()
-                    }
+                    let model = mitten_model("paper_craft_screen_mitten", {
+                        xr = false
+                        material = pistol_material
+                        children = [mitten_relaxed_arms(), Raycastable.disabled(), Selectable.off()]
+                    }).model
                     let avatar = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
                         name = "paper_craft_mitten_avatar_control"
                         initial_yaw(3.14159265)

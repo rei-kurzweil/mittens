@@ -15,12 +15,8 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 // they do not reopen the microphone or recreate its rolling buffers.
 
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { rei_2026_9 } from "../assets/components/mouth_response/rei_2026.9.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
@@ -29,6 +25,7 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { button } from "../assets/components/button.mms"
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
 import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -405,20 +402,10 @@ T.position(3.8, 0.15, 3.2).rotation(0.0, 3.63, 0.0).scale(0.45, 0.45, 0.45) {
     GLTF.new("assets/models/color-cat.2.glb") {}
 }
 
-let bisket = GLTF.new("assets/models/mitten.glb") {
-    bisket_anime_shading()
-    bisket_humanoid_bone_map()
-    // Direct pose child applies the shared relaxed stance as the
-    // one-shot startup overlay after the model imports.
-    MorphTargetMap.new().slot("viseme_aa", "Fcl_MTH_A")
-
-    relaxed_pose_factory()
-    bisket_colliders()
-    bisket_shirt_physics(false)
-    mitten_bow_secondary_motion()
-
-    EM.on()
-}
+let bisket = mitten_model(false, {
+    xr = false
+    children = [relaxed_pose_factory(), EM.on()]
+}).model
 
 let avatar = AVC.movement_target("[name='agc_desktop_grounding_root']") {
 

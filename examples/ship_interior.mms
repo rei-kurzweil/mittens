@@ -29,13 +29,10 @@ import { ship_womens_washroom } from "../assets/components/rooms/ship_womens_was
 import { ship_park } from "../assets/components/rooms/ship_park.mms"
 import { ship_barracks } from "../assets/components/rooms/ship_barracks.mms"
 import { ship_space_sky } from "../assets/components/backgrounds/ship_space_sky.mms"
-import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ship_avatar_material, ship_environment_material } from "../assets/components/materials/ship_anime_materials.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
-import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 
 BGC.rgba(0.005, 0.009, 0.018, 1.0)
 // Low global fill preserves the dark hall and upper gallery. Local lights
@@ -93,19 +90,11 @@ T {
                                 mouth_open_smoothing(16.0)
                                 voice_level
                                 T {
-                                    GLTF.new("assets/models/mitten.glb") {
-                                        name = "ship_xr_mitten"
-                                        bisket_humanoid_bone_map()
-                                        ship_avatar_material()
-                                        HandTracking.new().source("openxr")
-                                        MorphTargetMap.new()
-                                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                                            .slot("viseme_aa", "Fcl_MTH_A")
-                                        bisket_colliders()
-                                        bisket_shirt_physics(false)
-                                        mitten_bow_secondary_motion()
-                                    }
+                                    let ship_xr_mitten = mitten_model("ship_xr_mitten", {
+                                        xr = true
+                                        material = ship_avatar_material()
+                                    }).model
+                                    ship_xr_mitten
                                 }
                                 // HTC supplies closure only; the idle gaze loop owns direction.
                                 XREyeTracking.on().priority(["htc"]).enable_pupil_direction_tracking(false)
