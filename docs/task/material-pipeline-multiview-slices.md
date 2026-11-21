@@ -341,3 +341,13 @@ avoid constructing label strings or calling clocks before the enabled check.
 GPU queries must also be opt-in, use bounded resources and avoid new blocking waits
 in the normal render loop. Include an instrumented/uninstrumented comparison in
 slice 0 if production timing scopes or labels are added.
+
+## Desktop rasterization pipeline split
+
+Move the fixed pipeline creation and shared render-state templates out of
+`vulkano_renderer.rs` into one graphics pipeline module. Keep allocation and
+creation at initialization or on custom shader compilation. Preserve the
+current pipeline identities used for batching and keep phase selection in the
+existing draw recorder. Validate with stereo readback tests for opaque geometry,
+transparent and cutout surfaces, stencil masks, sky, bloom, and mirrors. Compare
+pipeline counts and warmed frame timings before and after moving the code.

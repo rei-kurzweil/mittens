@@ -83,6 +83,7 @@ impl VulkanoState {
                         GraphicsPipeline::new(self.context.device().clone(), None, create.clone())
                             .map_err(|e| e.to_string())?;
                     let mut transparent_create = create.clone();
+                    transparent_create.rasterization_state = Some(RasterizationState::default());
                     transparent_create.depth_stencil_state = Some(DepthStencilState {
                         depth: Some(DepthState {
                             write_enable: false,

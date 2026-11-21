@@ -580,6 +580,14 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     for _ in 0..10 {
         scene.update(1.0 / 60.0, &Default::default());
     }
+    scene.systems.prepare_render(
+        &mut scene.world,
+        &mut scene.visuals,
+        &mut scene.render_assets,
+        &mut super::rocket_motion_tests::Uploader::default(),
+        &mut scene.command_queue,
+    );
+    scene.update(1.0 / 60.0, &Default::default());
     let world = &scene.world;
     let count = |predicate: &dyn Fn(ComponentId) -> bool| {
         world.all_components().filter(|&id| predicate(id)).count()
@@ -613,6 +621,29 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     ] {
         assert!(named(&scene, label).is_some(), "missing {label}");
     }
+    let grip = named(&scene, "rooftop_sta_launcher_grip").unwrap();
+    let grip_position = TransformSystem::world_position(world, grip).unwrap();
+    let model_origin = world_position(&scene, "front_half").unwrap();
+    assert!(
+        crate::utils::math::vec3_len(crate::utils::math::vec3_sub(model_origin, grip_position))
+            < 0.001,
+        "launcher GLB origin {model_origin:?} must line up with grip {grip_position:?}"
+    );
+    let hits = scene.systems.raycast.cast_against_renderables_bvh(
+        world,
+        &scene.systems.bvh,
+        [grip_position[0], grip_position[1] + 0.3, grip_position[2]],
+        [0.0, -1.0, 0.0],
+        0.0,
+        0.35,
+    );
+    assert!(
+        hits.first().is_some_and(|&(renderable, _)| {
+            crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit(world, renderable)
+                == Some(grip)
+        }),
+        "a ray over the pedestal should hit the launcher grip before the stand: {hits:?}"
+    );
     let sky = count(&|id| {
         world
             .get_component_by_id_as::<MaterialComponent>(id)
@@ -664,6 +695,94 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     // A solo session is the host: Mitten locally, the client's Lumae as remote.
     assert_eq!(model_uri(&scene, "local_model"), "assets/models/mitten.glb");
     assert_eq!(model_uri(&scene, "remote_model"), LUMAE);
+
+    // Aim the rooftop controller from the player's side, slightly above the
+    // grip center, then exercise the same ray, gesture and hold stages as XR.
+    let pointer = named(&scene, "local_right_pointer").unwrap();
+    let systems = &mut scene.systems;
+    let ray = systems.pointer.raycast_for_pointer(pointer).unwrap();
+    let mut hand = ray;
+    while scene
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(hand)
+        .is_none()
+    {
+        hand = scene.world.parent_of(hand).unwrap();
+    }
+    let mut pose = crate::utils::math::mat4_identity();
+    pose[3] = [
+        grip_position[0],
+        grip_position[1] + 0.075,
+        grip_position[2] + 0.45,
+        1.0,
+    ];
+    scene
+        .world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(hand)
+        .unwrap()
+        .transform
+        .matrix_world = pose;
+    let original_parent = scene.world.parent_of(grip);
+    let input = Default::default();
+    let activations = crate::engine::ecs::system::pointer_system::PointerActivations {
+        grip_pressed: vec![pointer],
+        grip_down: vec![pointer],
+        ..Default::default()
+    };
+    systems.gesture.begin_frame();
+    systems.raycast.tick_with_queue(
+        &mut scene.world,
+        &mut scene.visuals,
+        &input,
+        &mut systems.rx,
+        &systems.bvh,
+        &activations,
+        &systems.pointer,
+        1.0 / 60.0,
+    );
+    systems.process_signals(
+        &mut scene.world,
+        &mut scene.visuals,
+        &mut scene.render_assets,
+        &mut scene.command_queue,
+        100_000,
+    );
+    systems.gesture.tick_with_rx_and_attachments(
+        &mut scene.world,
+        &input,
+        &activations,
+        &systems.pointer,
+        &systems.raycast,
+        &mut systems.attachment,
+        &mut systems.rx,
+    );
+    systems.process_signals(
+        &mut scene.world,
+        &mut scene.visuals,
+        &mut scene.render_assets,
+        &mut scene.command_queue,
+        100_000,
+    );
+    systems.grabbable.tick(
+        &mut scene.world,
+        &scene.render_assets,
+        &mut systems.rx,
+        1.0 / 60.0,
+    );
+    let held_parent = scene
+        .world
+        .parent_of(grip)
+        .expect("launcher attached to hand");
+    assert_ne!(
+        Some(held_parent),
+        original_parent,
+        "launcher stayed on the pedestal"
+    );
+    let config = scene
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::PointerComponent>(pointer)
+        .unwrap();
+    assert!(held_parent == hand || Some(held_parent) == config.avatar_grab_attachment);
 }
 
 const LUMAE: &str = "assets/components/characters/lumae/lumae.glb";

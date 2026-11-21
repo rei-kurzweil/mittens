@@ -91,6 +91,32 @@ fn headless_scene_draws_stereo_without_surface_extensions() -> Result<(), Box<dy
             None,
             3.0,
         );
+        // Draw two back-facing quads away from the front-facing red quad.
+        // The opaque one should disappear while the blended one stays visible.
+        for (x, opacity) in [(-0.75, 1.0), (0.75, 0.5)] {
+            let mut back_face = Transform {
+                translation: [x, 0.0, 0.0],
+                scale: [-0.4, 0.4, 1.0],
+                ..Default::default()
+            };
+            back_face.recompute_model();
+            back_face.matrix_world = back_face.model;
+            visuals.register(
+                crate::engine::ecs::ComponentId::default(),
+                GpuRenderable::new(mesh, MaterialHandle::UNLIT_MESH),
+                back_face,
+                [1.0, 0.0, 0.0, 1.0],
+                opacity,
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0,
+                None,
+                3.0,
+            );
+        }
         for frame in 0..3 {
             for eye in 0..2 {
                 // Different colors make stale layers and slot reuse observable.
@@ -149,6 +175,10 @@ fn headless_scene_draws_stereo_without_surface_extensions() -> Result<(), Box<dy
                     [0, 255, 0, 255]
                 };
                 assert_eq!(&pixels[base..base + 4], &expected);
+                let left = base + ((extent[1] / 2 * extent[0] + 2) * 4) as usize;
+                let right = base + ((extent[1] / 2 * extent[0] + 14) * 4) as usize;
+                assert_eq!(&pixels[left..left + 4], &expected, "opaque back face");
+                assert!((126..=129).contains(&pixels[right + 2]), "blended back face");
             }
         }
         assert!(renderer.images_in_flight.is_empty());

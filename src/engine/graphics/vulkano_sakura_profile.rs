@@ -1,6 +1,8 @@
 // Opt-in GPU profiling fixture. Ordinary builds contain none of these hooks.
 #[path = "vulkano_twilight_profile.rs"]
 mod twilight;
+#[path = "vulkano_rooftop_culling_profile.rs"]
+mod rooftop_culling;
 
 use super::*;
 use crate::engine::graphics::{CameraData, CameraTarget, MeshUploader, TextureUploader};

@@ -128,3 +128,10 @@ See [multiplayer roadmap](multiplayer-roadmap.md) and
 - The full multiplayer scene loads the cube/gohei, establishes 21 channels per
   peer, and retains desktop/XR mode checks. Physical grip feel and Tailscale
   latency/packet-loss testing remain manual acceptance.
+
+### Test organization follow-up
+
+Group the rooftop scene interaction fixtures separately from transport and peer
+lifecycle tests when splitting multiplayer_tests.rs. Reuse one initialized
+scene per pickup scenario and the normal BVH query and event pipeline. Check
+the rooftop and multiplayer test filters before and after moving fixtures.

@@ -1,0 +1,170 @@
+{
+  "revision": "d62c71e9 plus local changes",
+  "gpu": "NVIDIA GeForce GTX 1080",
+  "driver": "580.159.04",
+  "extent_per_eye": [
+    1920,
+    1920
+  ],
+  "msaa": 4,
+  "warmup_frames_per_run": 80,
+  "measured_frames_per_run": 160,
+  "draws_per_stereo_frame": {
+    "cutout": {
+      "batch_sizes": {
+        "1": 8
+      },
+      "calls": 8,
+      "instances": 8
+    },
+    "emission": {
+      "batch_sizes": {
+        "1": 20
+      },
+      "calls": 20,
+      "instances": 20
+    },
+    "multi-transparent": {
+      "batch_sizes": {
+        "1": 2
+      },
+      "calls": 2,
+      "instances": 2
+    },
+    "opaque/other": {
+      "batch_sizes": {
+        "1": 322,
+        "10": 4,
+        "11": 2,
+        "12": 2,
+        "13": 2,
+        "14": 2,
+        "16": 2,
+        "17": 2,
+        "18": 2,
+        "2": 50,
+        "3": 22,
+        "38": 2,
+        "4": 14,
+        "5": 10,
+        "6": 6,
+        "7": 8,
+        "8": 6
+      },
+      "calls": 458,
+      "instances": 1052
+    },
+    "single-transparent": {
+      "batch_sizes": {
+        "2": 2
+      },
+      "calls": 2,
+      "instances": 4
+    },
+    "surface-batches": {
+      "batch_sizes": {
+        "1": 2
+      },
+      "calls": 2,
+      "instances": 2
+    }
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "culling": "off",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 3.9971448000000023,
+          "median_ms": 3.961824,
+          "p95_ms": 4.165696
+        },
+        "pool-floor": {
+          "mean_ms": 4.173346400000001,
+          "median_ms": 4.15888,
+          "p95_ms": 4.320288
+        }
+      }
+    },
+    {
+      "repeat": 1,
+      "culling": "on",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 2.8256585999999997,
+          "median_ms": 2.8224,
+          "p95_ms": 2.9580159999999998
+        },
+        "pool-floor": {
+          "mean_ms": 2.9746044,
+          "median_ms": 2.962496,
+          "p95_ms": 3.1319999999999997
+        }
+      }
+    },
+    {
+      "repeat": 2,
+      "culling": "on",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 2.818644200000001,
+          "median_ms": 2.808192,
+          "p95_ms": 2.9878400000000003
+        },
+        "pool-floor": {
+          "mean_ms": 2.9689205999999992,
+          "median_ms": 2.95344,
+          "p95_ms": 3.119872
+        }
+      }
+    },
+    {
+      "repeat": 2,
+      "culling": "off",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 3.989979000000001,
+          "median_ms": 3.9701440000000003,
+          "p95_ms": 4.142432
+        },
+        "pool-floor": {
+          "mean_ms": 4.162417799999999,
+          "median_ms": 4.1456,
+          "p95_ms": 4.28512
+        }
+      }
+    },
+    {
+      "repeat": 3,
+      "culling": "off",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 3.9894648000000004,
+          "median_ms": 3.964576,
+          "p95_ms": 4.141888
+        },
+        "pool-floor": {
+          "mean_ms": 4.256637199999999,
+          "median_ms": 4.2264,
+          "p95_ms": 4.395072
+        }
+      }
+    },
+    {
+      "repeat": 3,
+      "culling": "on",
+      "gpu_graphics_ms": {
+        "rooftop": {
+          "mean_ms": 2.8500815999999984,
+          "median_ms": 2.83632,
+          "p95_ms": 3.0176
+        },
+        "pool-floor": {
+          "mean_ms": 2.977574000000001,
+          "median_ms": 2.9614399999999996,
+          "p95_ms": 3.132512
+        }
+      }
+    }
+  ]
+}

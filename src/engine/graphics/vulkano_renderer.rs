@@ -160,7 +160,6 @@ mod vulkano_backend {
     #[cfg(feature = "desktop")]
     use vulkano::swapchain::{self, SwapchainPresentInfo};
     use vulkano::sync::{self, GpuFuture};
-    #[cfg(feature = "desktop")]
     use vulkano::{Validated, VulkanError};
     #[cfg(feature = "desktop")]
     use winit::window::Window;
@@ -1398,7 +1397,17 @@ mod vulkano_backend {
             pipeline_ci.vertex_input_state = Some(vertex_input_state_static);
             pipeline_ci.input_assembly_state = Some(InputAssemblyState::default());
             pipeline_ci.viewport_state = Some(ViewportState::default());
-            pipeline_ci.rasterization_state = Some(RasterizationState::default());
+            let opaque_cull_mode = CullMode::Back;
+            #[cfg(test)]
+            let opaque_cull_mode = if std::env::var_os("TWILIGHT_PROFILE_DISABLE_BACKFACE_CULLING").is_some() {
+                CullMode::None
+            } else {
+                opaque_cull_mode
+            };
+            pipeline_ci.rasterization_state = Some(RasterizationState {
+                cull_mode: opaque_cull_mode,
+                ..Default::default()
+            });
             pipeline_ci.multisample_state = Some(MultisampleState {
                 rasterization_samples: msaa_samples,
                 ..Default::default()
@@ -1514,8 +1523,9 @@ mod vulkano_backend {
                 pipeline_ci_emissive_prepass_depth_write,
             )?;
 
-            // Transparent variant: depth test ON, depth write OFF.
+            // Transparent surfaces are two-sided and depth-test without writing depth.
             let mut pipeline_ci_transparent = pipeline_ci.clone();
+            pipeline_ci_transparent.rasterization_state = Some(RasterizationState::default());
             pipeline_ci_transparent.depth_stencil_state = Some(DepthStencilState {
                 depth: Some(DepthState {
                     write_enable: false,
@@ -1555,6 +1565,7 @@ mod vulkano_backend {
             // - alpha-to-coverage enabled (requires MSAA)
             // - blending disabled (coverage handles edges)
             let mut pipeline_ci_cutout = pipeline_ci.clone();
+            pipeline_ci_cutout.rasterization_state = Some(RasterizationState::default());
             pipeline_ci_cutout.multisample_state = Some(MultisampleState {
                 rasterization_samples: msaa_samples,
                 alpha_to_coverage_enable: msaa_samples != SampleCount::Sample1,
@@ -1775,6 +1786,7 @@ mod vulkano_backend {
             stencil_dynamic_state.insert(DynamicState::StencilReference);
 
             let mut pipeline_ci_stencil_incr = pipeline_ci.clone();
+            pipeline_ci_stencil_incr.rasterization_state = Some(RasterizationState::default());
             pipeline_ci_stencil_incr.color_blend_state = Some(stencil_write_color_blend.clone());
             pipeline_ci_stencil_incr.depth_stencil_state = Some(DepthStencilState {
                 depth: None,
@@ -1795,6 +1807,7 @@ mod vulkano_backend {
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci_stencil_incr)?;
 
             let mut pipeline_ci_stencil_decr = pipeline_ci.clone();
+            pipeline_ci_stencil_decr.rasterization_state = Some(RasterizationState::default());
             pipeline_ci_stencil_decr.color_blend_state = Some(stencil_write_color_blend);
             pipeline_ci_stencil_decr.depth_stencil_state = Some(DepthStencilState {
                 depth: None,

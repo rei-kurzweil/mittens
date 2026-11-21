@@ -123,7 +123,7 @@ impl Pipeline {
             .scissor_count(1);
         let raster = vk::PipelineRasterizationStateCreateInfo::default()
             .polygon_mode(vk::PolygonMode::FILL)
-            .cull_mode(if background {
+            .cull_mode(if background || transparent {
                 vk::CullModeFlags::NONE
             } else {
                 vk::CullModeFlags::BACK

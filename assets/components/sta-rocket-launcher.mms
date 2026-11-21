@@ -19,12 +19,10 @@ export fn sta_rocket_launcher(options) {
         else { apply_rocket_impact(point, amount) }
     }
     let state = { trigger_held = false pending = false user = null }
-    // Cancel the exported handle pivot translation before turning the GLB's
-    // forward (+Z) onto the held controller and projectile axis (-Z).
-    let model = T.rotation(0, Math.pi, 0) {
-        T.position(0.191245, -1.387106, -0.449388) {
-            GLTF.new("assets/models/STA_launcher.glb") { name = label }
-        }
+    // The export faces -Z. Center its remaining X offset on the grip and
+    // level its 4.54-degree barrel pitch to match the device's muzzle axis.
+    let model = T.position(0.191245, 0, 0).rotation(0.079284, 0, 0) {
+        GLTF.new("assets/models/STA_launcher.glb") { name = label }
     }
     let muzzle = T.position(0.00031, 0.12039, -0.18366) { name = label + "_muzzle" }
     let events = T { name = label + "_events" }

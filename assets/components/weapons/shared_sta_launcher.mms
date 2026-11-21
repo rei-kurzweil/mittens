@@ -9,6 +9,10 @@ export fn shared_sta_launcher(label, options) {
         name = label + "_grip"
         Selectable.off()
         Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
+        // Give the narrow handle a hand-sized pickup target from either side.
+        T.scale(0.16, 0.16, 0.14) {
+            R.cube() { Opacity.opacity(0.0).multiple_layers() Raycastable.enabled() }
+        }
         tool.root
         tool.model
     }

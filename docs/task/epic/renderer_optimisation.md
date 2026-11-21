@@ -209,3 +209,11 @@ For each completed optimization, update its tracker row with:
   the changed path affects them.
 - Before/after evidence is recorded in the task or linked artifact.
 - This tracker is updated with the result and any follow-up work.
+
+### Procedural mesh module follow-up
+
+Move closed primitives, planar primitives, and debug wireframes out of
+`graphics/mesh.rs` into mesh-family modules. Preserve mesh handles and
+cached buffers. Compare generated topology and mesh-generation time so the
+split adds no allocations or work to draw recording. Run mesh and headless
+stereo rendering tests after the split.

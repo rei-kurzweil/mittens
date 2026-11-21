@@ -1034,9 +1034,9 @@ impl MeshFactory {
                 let i2 = (r + 1) * stride + s;
                 let i3 = i2 + 1;
 
-                // Two triangles per quad.
-                indices.extend_from_slice(&[i0, i2, i1]);
-                indices.extend_from_slice(&[i1, i2, i3]);
+                // Counter-clockwise when viewed from outside.
+                indices.extend_from_slice(&[i0, i1, i2]);
+                indices.extend_from_slice(&[i1, i3, i2]);
             }
         }
 

@@ -1,6 +1,6 @@
 use crate::engine::graphics::{CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader};
 #[derive(Default)]
-struct Uploader(u32);
+pub(super) struct Uploader(u32);
 impl MeshUploader for Uploader {
     fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
         self.0 += 1;

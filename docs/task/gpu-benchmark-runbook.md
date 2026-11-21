@@ -181,6 +181,35 @@ measured gains are in texture memory and startup. Lumae accounts for
 with and without a mip chain. Android ASTC figures above are payload
 estimates, pending a headset run.
 
+### Twilight Rooftop back-face culling
+
+GTX 1080, driver 580.159.04, at `d62c71e9` plus the local culling and scene
+changes. The offscreen fixture loads `examples/twilight_rooftop.mms` as a
+solo host and freezes simulation after setup. Both configurations use the
+same mesh winding, material pipelines, and fixed cameras. The switch changes
+only the opaque rasterizer's cull mode.
+
+Each configuration ran three times in alternating order. Each viewpoint
+received 80 warmup and 160 measured stereo frames per run at 1920×1920 per eye
+with 4× MSAA. The values below are medians of the three run medians. Both
+modes recorded 492 draw calls across the two eyes. GPU timestamps cover the
+eye graphics passes, excluding separate mirror captures, CPU scene updates,
+and the headset compositor.
+[Per-run results](results/rooftop-backface-culling-gtx1080-2026-11-21.json)
+
+| View | Culling off | Culling on | Stereo GPU time saved |
+|---|---:|---:|---:|
+| Main rooftop looking toward the north building | 3.965 ms | 2.822 ms | 1.142 ms (28.8%) |
+| Inside the main pool building | 4.159 ms | 2.961 ms | 1.197 ms (28.8%) |
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=host TWILIGHT_PROFILE_DISABLE_BACKFACE_CULLING=1 \
+cargo test --release --lib profile_rooftop_backface_culling -- --ignored --nocapture
+
+MITTENS_MULTIPLAYER_ROLE=host \
+cargo test --release --lib profile_rooftop_backface_culling -- --ignored --nocapture
+```
+
 ## 3. XR2 benchmark (Focus 3 over adb)
 
 Prerequisites: [Android host bootstrap](../../android/docs/host-bootstrap.md)
