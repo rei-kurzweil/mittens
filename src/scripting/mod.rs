@@ -125,6 +125,8 @@ mod rocket_motion_tests;
 
 #[cfg(test)]
 mod sta_reload_tests;
+#[cfg(test)]
+mod avatar_equipment_tests;
 
 #[cfg(test)]
 mod editor_settings_trigger_tests;

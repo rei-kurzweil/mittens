@@ -199,7 +199,7 @@ impl MittensHost<'_, '_> {
                     return Err(err("expected component target"));
                 };
                 let target = Self::component_id(*target);
-                let mut space = TransformSpace::World;
+                let mut space = TransformSpace::Local;
                 let mut label = None;
                 let options_index = if method == "bind_morph" { 2 } else { 1 };
                 if args.len() > options_index + 1 {

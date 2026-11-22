@@ -82,8 +82,8 @@ fn pointer_notifications_follow_successful_acquisition_and_actual_release() {
         [0., 0., -1.],
     );
     assert!(notifications(&mut queue).is_empty());
-    system.release(&mut world, &mut queue, pointer);
-    system.release(&mut world, &mut queue, pointer);
+    assert!(system.release(&mut world, &mut queue, pointer, Some(target)).is_none());
+    assert!(system.release(&mut world, &mut queue, pointer, Some(target)).is_none());
     let events = notifications(&mut queue);
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].scope, pointer);

@@ -88,6 +88,7 @@ pub struct World {
     spring_collider_revision: u64,
     /// Typed contact registry: discovery never walks unrelated scene components.
     collidable_ids: std::collections::HashSet<ComponentId>,
+    drop_zone_ids: std::collections::BTreeSet<ComponentId>,
     damage_ids: std::collections::HashSet<ComponentId>,
     destroyable_ids: std::collections::HashSet<ComponentId>,
     armature_ids: std::collections::HashSet<ComponentId>,
@@ -309,6 +310,7 @@ impl World {
         {
             self.collidable_ids.insert(id);
         }
+        self.refresh_drop_zone_index(id);
         if self
             .get_component_by_id_as::<component::TransformOperatorComponent>(id)
             .is_some()
@@ -342,6 +344,21 @@ impl World {
 
     pub(crate) fn collidable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.collidable_ids.iter().copied()
+    }
+
+    pub(crate) fn refresh_drop_zone_index(&mut self, id: ComponentId) {
+        let Some(zone) = self.get_component_by_id_as::<component::ZoneComponent>(id) else {
+            return;
+        };
+        if zone.drop_index.is_some() {
+            self.drop_zone_ids.insert(id);
+        } else {
+            self.drop_zone_ids.remove(&id);
+        }
+    }
+
+    pub(crate) fn drop_zone_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.drop_zone_ids.iter().copied()
     }
 
     pub(crate) fn take_contact_changes(&self) -> std::collections::HashSet<ComponentId> {
@@ -835,6 +852,7 @@ impl World {
         self.detach_all_parents(c);
         self.components.remove(c);
         self.collidable_ids.remove(&c);
+        self.drop_zone_ids.remove(&c);
         self.damage_ids.remove(&c);
         self.destroyable_ids.remove(&c);
         self.armature_ids.remove(&c);

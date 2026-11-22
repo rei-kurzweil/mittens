@@ -14,6 +14,7 @@ pub struct ZoneComponent {
     pub enabled: bool,
     /// Opt in to overlap enter/exit events for enabled slide collidables.
     pub events_enabled: bool,
+    pub(crate) drop_index: Option<i32>,
 }
 
 impl ZoneComponent {
@@ -36,6 +37,7 @@ impl ZoneComponent {
             roles: Vec::new(),
             enabled: true,
             events_enabled: false,
+            drop_index: None,
         }
     }
 
@@ -58,6 +60,11 @@ impl ZoneComponent {
 
     pub fn enable_events(mut self) -> Self {
         self.events_enabled = true;
+        self
+    }
+
+    pub fn receive_drops(mut self, max_attachment_index: i32) -> Self {
+        self.drop_index = Some(max_attachment_index);
         self
     }
 
@@ -119,6 +126,9 @@ impl Component for ZoneComponent {
         }
         if self.events_enabled {
             ce = ce.with_call("enable_events", vec![]);
+        }
+        if let Some(index) = self.drop_index {
+            ce = ce.with_call("receive_drops", vec![num(f64::from(index))]);
         }
         if !self.enabled {
             ce = ce.with_call("enabled", vec![b(false)]);

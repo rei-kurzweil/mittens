@@ -222,6 +222,13 @@ pub enum EventSignal {
         movement_target: ComponentId,
         movement_target_offset: [f32; 3],
     },
+    /// One-shot release overlap, scoped to the receiving zone.
+    ZoneDropped {
+        zone: ComponentId,
+        other_zone: Option<ComponentId>,
+        pointer: ComponentId,
+        target: ComponentId,
+    },
     /// A velocity-bound collidable's zone swept into static geometry during a
     /// fixed step. Observational only; scoped to the moving zone.
     ZoneContact {
@@ -484,6 +491,7 @@ impl EventSignal {
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
+            EventSignal::ZoneDropped { .. } => SignalKind::ZoneDropped,
             EventSignal::ZoneContact { .. } => SignalKind::ZoneContact,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
             EventSignal::PostureChanged { .. } => SignalKind::PostureChanged,
@@ -1353,6 +1361,7 @@ pub enum SignalKind {
     ProjectileHit,
     ZoneEntered,
     ZoneExited,
+    ZoneDropped,
     ZoneContact,
     MountStarted,
     MountEnded,

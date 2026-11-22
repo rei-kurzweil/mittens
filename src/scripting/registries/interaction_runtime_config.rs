@@ -13,5 +13,10 @@ pub(super) fn configure(name: &str, component: &mut mms::ComponentBuilder<'_, Mi
             component_signature([mms::ValueType::Bool]),
         );
         component.builder_call("hand_offset", component_signature([mms::ValueType::Array]));
+        constructor_and_builder(
+            component,
+            "attachment_index",
+            component_signature([mms::ValueType::I32]),
+        );
     }
 }

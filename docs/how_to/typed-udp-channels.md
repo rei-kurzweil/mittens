@@ -61,7 +61,8 @@ This same rule applies to the `bind_morph` example below.
 
 The second argument is an ordinary options table, not an executable block.
 name labels the local subscription component; the wire channel name remains
-left-hand.pose. space is world (default) or local. The bound value supplies the
+left-hand.pose. Bindings default to local space. Set `space = "world"` on
+publication or subscription when transferring a world pose. The bound value supplies the
 whole translation/quaternion/scale transform; the quaternion is normalized.
 The TRS schema above matches Transform.trs()/world_trs() exactly. For a hierarchy,
 prefer a world root plus explicitly local head/hand channels so application does
@@ -85,11 +86,11 @@ authored hinge axis and applies its local limits.
 let outgoing = socket.publish("launcher.breech")
     .to(peer_address)
     .type(pose_type)
-    .bind_transform(hinge, { space = "local" })
+    .bind_transform(hinge)
 let incoming = socket.subscribe("launcher.breech")
     .from(peer_address)
     .type(pose_type)
-    .bind_transform(hinge, { space = "local" })
+    .bind_transform(hinge)
 outgoing.set_binding_enabled(false)
 outgoing
 incoming

@@ -1,6 +1,32 @@
 # Task: release a held item onto a body mount point
 
-Status: planned. Design only; independent of held-size authoring.
+Status: release-triggered equipment implemented for Mitten and TDA Miku.
+Managed attachment edges, authored snap alignment, and held-size rules remain
+planned.
+
+## Release-triggered equipment slice
+
+Mitten and TDA Miku expose two outer-thigh zones and one back zone. A receiver
+authored with `Zone.receive_drops(index)` accepts a held tree whose
+`Grabbable.attachment_index(index)` is absent or at most the receiver's index.
+The avatar receivers use zero. This eligibility index belongs to the drop
+affordance and is separate from the valence of managed attachment edges.
+
+A completed grip release tests registered receivers against enabled zones on
+the held tree, or its origin when it has no zones. The closest matching
+receiver gets `ZoneDropped`, with component IDs breaking ties. The engine
+completes the ordinary release first. The avatar handler attaches the prop
+with its release world pose and scale, and a later grab can take it off again.
+
+## Responsibility boundaries
+
+Separate grab acquisition and hold following, release negotiation, and inline
+tests in `grabbable_system.rs` as follow-up. Group World component indexes and
+their lifecycle tracking together, while keeping direct typed lookups and
+topology mutation ordering. The release query must run only for actual grip
+releases, with no per-frame zone scans or allocations. Validate grip, detach,
+and regrab behavior, candidate arbitration, and mounted props under rig motion
+and avatar replacement.
 
 ## Performer workflow
 

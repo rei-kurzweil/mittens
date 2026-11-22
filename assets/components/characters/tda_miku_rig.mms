@@ -1,3 +1,5 @@
+import { install_avatar_equipment } from "./avatar_equipment.mms"
+
 // Runtime adaptation for the optional TDA export. Joint names are the names
 // retained by its importer; the numeric suffixes distinguish the two sides.
 export fn miku_twintails() {
@@ -7,6 +9,14 @@ export fn miku_twintails() {
                 .gravity(0.8, [0, -1, 0]).virtual_end_length_ratio(1.0)
         }
     }
+}
+
+export fn install_miku_equipment(model) {
+    install_avatar_equipment(model, [
+        ["���D.L_0162", [1.55, -2.0, 0.0], 1.35],
+        ["���D.R_0172", [-1.55, -2.0, 0.0], 1.35],
+        ["���������2_010", [0.0, 0.2, -2.15], 1.8]
+    ])
 }
 
 // AVC splices the head away from the torso and solves shoulder/elbow/wrist as

@@ -7,7 +7,8 @@ import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
 import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
-import { miku_twintails, prepare_miku_arms, normalize_miku_grips } from "./tda_miku_rig.mms"
+import { miku_twintails, prepare_miku_arms, normalize_miku_grips, install_miku_equipment } from "./tda_miku_rig.mms"
+import { detach_avatar_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
 
 let MIKU_SCALE = 0.09
@@ -50,6 +51,7 @@ fn make_miku(model_name, _track_hands) {
         miku_humanoid_bone_map()
         miku_twintails()
     }
+    install_miku_equipment(model)
     return { model = model eye_height = 1.59 }
 }
 
@@ -303,6 +305,7 @@ export fn make_rooftop_player(options) {
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
+            detach_avatar_equipment(state.model)
             state.head.remove_subtree()
             state.head = next_head
             state.model = spec.model

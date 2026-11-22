@@ -352,6 +352,15 @@ component identities and captured offset. Disabled or removed participants
 retire their pairs without delivering stale handles. These signals apply no
 contact response. See [Zone observation rules](../../task/zone-enter-events-and-teleport-pits.md).
 
+#### `ZoneDropped`
+<!-- catalog:signal source="ZoneDropped" kind="event" mms="observable-payload" -->
+
+On an ordinary grip release, the engine queries receivers authored with
+`Zone.receive_drops(index)`. It sends a single event to the closest compatible
+overlapping zone. Payload fields are `zone` (the receiver), `pointer`, `target`
+(the released Transform), and `other_zone` (the item's overlapping probe).
+`other_zone` is null when an item without a zone is tested at its origin.
+
 #### `ZoneContact`
 <!-- catalog:signal source="ZoneContact" kind="event" mms="observable-payload" -->
 

@@ -2716,6 +2716,7 @@ fn apply_call(
     if let Some(grabbable) = world.get_component_by_id_as_mut::<GrabbableComponent>(id) {
         match method {
             "to_hand" => grabbable.to_hand = arg_bool(args, 0)?,
+            "attachment_index" => grabbable.attachment_index = Some(interaction_registry::attachment_index(args)?),
             "hand_offset" => {
                 let offset = arg_f32_arr::<3>(args, 0)?;
                 if !offset.iter().all(|v| v.is_finite()) {
@@ -3510,6 +3511,7 @@ fn apply_call(
         let updated = match method {
             "at" => current.at(arg_component_ref(world, args, 0)?),
             "enable_events" => current.enable_events(),
+            "receive_drops" => current.receive_drops(interaction_registry::attachment_index(args)?),
             "role" => current.role(arg_str(args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             _ => return Err(format!("Zone: unknown builder '{method}'")),
@@ -3517,6 +3519,7 @@ fn apply_call(
         *world
             .get_component_by_id_as_mut::<ZoneComponent>(id)
             .expect("checked zone") = updated;
+        world.refresh_drop_zone_index(id);
         return Ok(());
     }
     if world

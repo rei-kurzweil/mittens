@@ -1284,6 +1284,22 @@ zone, collidable and its movement target. See
 [Zone events and teleport pits](../../task/zone-enter-events-and-teleport-pits.md)
 for filtering, crossing and lifecycle rules.
 
+`Zone.receive_drops(index)` checks for overlap once when a pointer releases a
+held item. A `Grabbable.attachment_index(index)` can enter receivers at its
+index or higher. Items with no authored index are eligible at any receiver.
+The matching zone gets a `ZoneDropped` event and its handler can attach the
+released transform.
+
+```mms parse-only
+let holster = Zone.sphere(0.12).receive_drops(0) {}
+T.position(0.2, 0.8, 0.0) { holster }
+on(holster, "ZoneDropped", fn(event) {
+    let pose = event.target.world_trs()
+    holster.attach(event.target)
+    event.target.world_trs(pose)
+})
+```
+
 `Velocity.reset()` clears linear speed, grounded state, and contact/observer
 sweep history for its driven transform. It preserves enabled state, rotation
 basis and gravity configuration, and does not move or animate the rig.

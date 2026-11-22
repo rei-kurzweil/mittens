@@ -1,5 +1,10 @@
 # Scripting registry module boundaries
 
+Keep drop-receiver authoring and event payloads with Zone and grab interaction
+routes in a future split. Preserve direct payload conversion and scoped event
+delivery. Validate both MMS builder round trips and release-only ZoneDropped
+delivery for zone and point probes.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation

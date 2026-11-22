@@ -733,6 +733,13 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             }
             Value::Map(payload)
         }
+        Some(crate::engine::ecs::EventSignal::ZoneDropped { zone, other_zone, pointer, target }) => {
+            let mut payload = grab_event_payload(*pointer, *target);
+            let zone_value = |id| Value::ComponentObject { id, component_type: "Zone".into() };
+            payload.insert("zone".into(), zone_value(*zone));
+            payload.insert("other_zone".into(), other_zone.map_or(Value::Null, zone_value));
+            Value::Map(payload)
+        }
         Some(crate::engine::ecs::EventSignal::ZoneEntered {
             zone,
             other_zone,

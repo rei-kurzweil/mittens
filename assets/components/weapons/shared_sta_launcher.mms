@@ -69,8 +69,8 @@ export fn shared_sta_launcher(label, options) {
         grab.connect(group, address)
         tool.network.connect(group, address)
         let channel_name = options.weapon_id + ".hinge"
-        breech.outgoing = options.socket.publish(channel_name).to(address).type(pose_type).bind_transform(tool.hinge, { space = "local" })
-        breech.incoming = options.socket.subscribe(channel_name).from(address).type(pose_type).bind_transform(tool.hinge, { space = "local" })
+        breech.outgoing = options.socket.publish(channel_name).to(address).type(pose_type).bind_transform(tool.hinge)
+        breech.incoming = options.socket.subscribe(channel_name).from(address).type(pose_type).bind_transform(tool.hinge)
         update_hinge_bindings()
         group.attach(breech.outgoing)
         group.attach(breech.incoming)

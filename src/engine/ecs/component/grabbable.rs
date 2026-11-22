@@ -12,6 +12,8 @@ pub struct GrabbableComponent {
     pub to_hand: bool,
     /// Local translation from the solved hand grip frame while in hand mode.
     pub hand_offset: [f32; 3],
+    /// Optional eligibility index for a completed release into a drop zone.
+    pub attachment_index: Option<i32>,
 }
 
 impl GrabbableComponent {
@@ -25,6 +27,7 @@ impl GrabbableComponent {
             move_parent: false,
             to_hand: false,
             hand_offset: [0.0; 3],
+            attachment_index: None,
         }
     }
 
@@ -34,6 +37,7 @@ impl GrabbableComponent {
             move_parent: false,
             to_hand: false,
             hand_offset: [0.0; 3],
+            attachment_index: None,
         }
     }
 
@@ -43,6 +47,7 @@ impl GrabbableComponent {
             move_parent: true,
             to_hand: false,
             hand_offset: [0.0; 3],
+            attachment_index: None,
         }
     }
 }
@@ -88,7 +93,7 @@ impl Component for GrabbableComponent {
         } else {
             ce("Grabbable")
         };
-        if self.to_hand {
+        let authored = if self.to_hand {
             authored.with_call("to_hand", vec![b(true)])
         } else {
             authored
@@ -101,7 +106,12 @@ impl Component for GrabbableComponent {
                     .map(|v| num(v as f64))
                     .collect(),
             )],
-        )
+        );
+        if let Some(index) = self.attachment_index {
+            authored.with_call("attachment_index", vec![num(f64::from(index))])
+        } else {
+            authored
+        }
     }
 }
 

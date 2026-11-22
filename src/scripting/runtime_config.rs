@@ -1007,6 +1007,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("at", any(1))
                         .builder_call("role", strings(1))
                         .builder_call("enable_events", any(0))
+                        .builder_call("receive_drops", component_signature([mms::ValueType::I32]))
                         .builder_call("enabled", booleans(1));
                 }
                 "Collidable" => {
@@ -1343,6 +1344,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",
+        "ZoneDropped",
         "ZoneContact",
         "PostureChanged",
         "MountStarted",

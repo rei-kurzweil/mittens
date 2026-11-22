@@ -35,7 +35,7 @@ pose
 let temperature = socket.publish("temperature").to("127.0.0.1:{b}").type(f32)
 temperature
 let source = T.position(2.0, 3.0, 4.0) {{}}
-source
+T.position(10.0, 0.0, 0.0) {{ source }}
 let bound = socket.publish("bound_pose").to("127.0.0.1:{b}").type(pose_type).bind_transform(source)
 bound
 on_global("FrameTick", fn(event) {{
@@ -55,7 +55,7 @@ target
 let pose = socket.subscribe("pose").from("127.0.0.1:{a}").type(pose_type)
 pose.bind_transform(target, {{ name = "pose_binding", space = "world" }})
 let bound_target = T {{ name = "bound_target" }}
-bound_target
+T.position(-7.0, 0.0, 0.0) {{ bound_target }}
 let bound = socket.subscribe("bound_pose").from("127.0.0.1:{a}").type(pose_type).bind_transform(bound_target)
 bound
 let temperature = socket.subscribe("temperature").from("127.0.0.1:{a}").type(f32)
@@ -84,7 +84,7 @@ on(temperature, "UdpSample", fn(event) {{ observation.update_transform([event.va
         .world
         .get_component_by_id_as::<TransformComponent>(target)
         .unwrap();
-    assert_eq!(pose.transform.translation, [2., 3., 4.]);
+    assert_eq!(pose.transform.translation, [12., 3., 4.]);
     let bound_target = named(&client, "bound_target");
     assert_eq!(
         client
@@ -94,6 +94,10 @@ on(temperature, "UdpSample", fn(event) {{ observation.update_transform([event.va
             .transform
             .translation,
         [2., 3., 4.]
+    );
+    assert_eq!(
+        crate::engine::ecs::system::TransformSystem::world_position(&client.world, bound_target),
+        Some([-5., 3., 4.]),
     );
     let binding = named(&client, "pose_binding");
     assert!(

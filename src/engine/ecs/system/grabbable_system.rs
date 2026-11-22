@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     GrabbableComponent, PointerComponent, RaycastableComponent, SerializeComponent,
-    TransformComponent,
+    TransformComponent, ZoneComponent,
 };
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
@@ -18,6 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 #[path = "controller_grab_pose.rs"]
 mod controller_grip;
+#[path = "drop_zones.rs"]
+mod drop_zones;
 use controller_grip::ControllerGripHold;
 #[path = "hinge_grab.rs"]
 mod hinge_grab;
@@ -36,6 +38,7 @@ enum GrabCommand {
     },
     End {
         pointer: ComponentId,
+        target: ComponentId,
     },
 }
 
@@ -47,6 +50,7 @@ struct ActiveGrab {
     original_parent: Option<ComponentId>,
     destination_local: [f32; 3],
     align_to_hand: bool,
+    attachment_index: Option<i32>,
 }
 
 #[derive(Debug, Default)]
@@ -92,11 +96,14 @@ impl GrabbableSystem {
         });
         let ends = self.commands.clone();
         rx.add_global_handler_closure(SignalKind::GrabEnd, move |_world, _emit, env| {
-            let Some(EventSignal::GrabEnd { pointer, .. }) = env.event.as_ref() else {
+            let Some(EventSignal::GrabEnd { pointer, target }) = env.event.as_ref() else {
                 return;
             };
             if let Ok(mut commands) = ends.lock() {
-                commands.push(GrabCommand::End { pointer: *pointer });
+                commands.push(GrabCommand::End {
+                    pointer: *pointer,
+                    target: *target,
+                });
             }
         });
         self.handlers_installed = true;
@@ -151,6 +158,8 @@ impl GrabbableSystem {
             .lock()
             .map(|mut q| std::mem::take(&mut *q))
             .unwrap_or_default();
+        // A same-frame regrab supersedes the pending zone notification.
+        let mut drops = Vec::new();
         for command in commands {
             match command {
                 GrabCommand::Start {
@@ -171,9 +180,21 @@ impl GrabbableSystem {
                             world, render_assets, emit, pointer, target, renderable, ray_origin, ray_dir,
                         );
                     }
+                    if self.owned.contains(&target) {
+                        drops.retain(|(_, dropped, _)| *dropped != target);
+                    }
                 }
-                GrabCommand::End { pointer } => self.release(world, emit, pointer),
+                GrabCommand::End { pointer, target } => {
+                    if let Some(event @ EventSignal::ZoneDropped { zone, .. }) =
+                        self.release(world, emit, pointer, Some(target))
+                    {
+                        drops.push((zone, target, event));
+                    }
+                }
             }
+        }
+        for (zone, _, event) in drops {
+            emit.push_event(zone, event);
         }
 
         let invalid: Vec<_> = self
@@ -195,7 +216,7 @@ impl GrabbableSystem {
             })
             .collect();
         for pointer in invalid {
-            self.release(world, emit, pointer);
+            let _ = self.release(world, emit, pointer, None);
         }
 
         let alpha = 1.0 - (-12.0 * dt.max(0.0)).exp();
@@ -311,11 +332,12 @@ impl GrabbableSystem {
                             .is_some()
                     })
             });
-        let hand_marker = resolve_marker::<GrabbableComponent>(world, renderable, |marker| {
+        let marker = resolve_marker::<GrabbableComponent>(world, renderable, |marker| {
             (marker.enabled, marker.move_parent)
         })
-        .filter(|(owner, marker)| *owner == target && marker.to_hand)
+        .filter(|(owner, _)| *owner == target)
         .map(|(_, marker)| *marker);
+        let hand_marker = marker.filter(|marker| marker.to_hand);
         let align_to_hand = (pointer_topology_context(world, pointer).has_controller_driver
             || attachment.is_some())
             && hand_marker.is_some();
@@ -413,6 +435,7 @@ impl GrabbableSystem {
                 original_parent,
                 destination_local,
                 align_to_hand,
+                attachment_index: marker.and_then(|marker| marker.attachment_index),
             },
         );
         emit.push_event(pointer, EventSignal::PointerGrabbed { pointer, target });
@@ -465,33 +488,43 @@ impl GrabbableSystem {
         changed
     }
 
-    fn release(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, pointer: ComponentId) {
+    fn release(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        pointer: ComponentId,
+        released_target: Option<ComponentId>,
+    ) -> Option<EventSignal> {
         if let Some(grab) = self.hinge_grabs.remove(&pointer) {
             self.owned.remove(&grab.target);
             emit.push_event(pointer, EventSignal::PointerReleased { pointer, target: grab.target });
-            return;
+            return None;
         }
-        let Some(grab) = self.active.remove(&pointer) else {
-            return;
-        };
+        let grab = self.active.remove(&pointer)?;
         self.owned.remove(&grab.target);
         emit.push_event(
             pointer,
             EventSignal::PointerReleased { pointer, target: grab.target },
         );
         if world.get_component_record(grab.target).is_none() {
-            return;
+            return None;
         }
         // A new owner may already have moved the target out of this grab.
         if world.parent_of(grab.target) != Some(grab.pointer_parent) {
-            return;
+            return None;
         }
-        let parent = grab
-            .original_parent
-            .filter(|p| world.get_component_record(*p).is_some());
+        let drop = (released_target == Some(grab.target))
+            .then(|| drop_zones::drop_event(world, pointer, grab.target, grab.attachment_index))
+            .flatten();
+        let parent = grab.original_parent.filter(|p| {
+            world.get_component_record(*p).is_some()
+                && !world.get_component_by_id_as::<ZoneComponent>(*p)
+                    .is_some_and(|zone| zone.drop_index.is_some())
+        });
         if reparent_preserving_world(world, grab.target, parent, emit).is_err() {
             let _ = reparent_preserving_world(world, grab.target, None, emit);
         }
+        drop
     }
 }
 
@@ -712,6 +745,7 @@ mod tests {
                 move_parent: false,
                 to_hand: true,
                 hand_offset: [0.0; 3],
+                attachment_index: None,
             });
             world.add_child(target, marker).unwrap();
             let mesh = world.add_component(RenderableComponent::cube());
@@ -929,6 +963,7 @@ mod tests {
                 move_parent,
                 to_hand: true,
                 hand_offset: [0.0; 3],
+                attachment_index: None,
             });
             world.add_child(handle, marker).unwrap();
             let cube = world.add_component(RenderableComponent::cube());
