@@ -416,7 +416,10 @@ fn create_component(
         let factory_only = matches!(
             (component, constructor),
             ("MaterialBase" | "MaterialDefinition" | "Material", "new")
-                | ("MaterialBase", "extracted_emissive" | "planar_reflective")
+                | (
+                    "MaterialBase",
+                    "extracted_emissive" | "planar_reflective" | "billboard" | "axial_billboard"
+                )
                 | ("MaterialDefinition", "anime" | "toon")
                 | (
                     "Animation",
