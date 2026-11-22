@@ -751,10 +751,11 @@ impl VelocitySystem {
             .set_linear_local(next)
             .map_err(str::to_string)?;
         if delta_world[1] > 0.0 {
-            world
+            let state = world
                 .get_component_by_id_as_mut::<VelocityComponent>(velocity_id)
-                .unwrap()
-                .grounded = false;
+                .unwrap();
+            state.grounded = false;
+            state.support_normal_world = None;
         }
         Ok(())
     }
@@ -816,14 +817,16 @@ impl VelocitySystem {
                 continue;
             }
             let mut linear = velocity.linear_local_mps;
-            let angular = velocity.angular_local_radps;
+            let mut angular = velocity.angular_local_radps;
+            let support = velocity.support_normal_world.filter(|_| velocity.grounded);
             if !angular.iter().all(|x| x.is_finite()) {
                 continue;
             }
-            world
+            let state = world
                 .get_component_by_id_as_mut::<VelocityComponent>(id)
-                .unwrap()
-                .grounded = false;
+                .unwrap();
+            state.grounded = false;
+            state.support_normal_world = None;
             let target = match Self::driven_transform(world, id) {
                 Ok(target) => target,
                 Err(error) => {
@@ -859,6 +862,22 @@ impl VelocitySystem {
                 }
             }
             super::projectile_motion::accelerate(world, id, &mut linear, elapsed);
+            let support_up = support.map(|normal| {
+                math::vec3_normalize(math::quat_rotate_vec3(
+                    math::quat_conjugate(parent_rotation),
+                    normal,
+                ))
+            });
+            super::velocity_drive::step(
+                world,
+                id,
+                target,
+                support_up,
+                &mut linear,
+                &mut angular,
+                elapsed,
+                emit,
+            );
             if linear == [0.0; 3] && angular == [0.0; 3] {
                 world
                     .get_component_by_id_as_mut::<VelocityComponent>(id)

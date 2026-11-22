@@ -9,8 +9,11 @@ Status: todo / design and implementation
 Allow interactive objects, renderables, transforms, panel rows, and gizmo handles to respond when a
 pointer aims at them without requiring a trigger press.
 
-The first visible use case is transform-gizmo affordance feedback: a hovered handle can brighten,
-become emissive, or enlarge slightly before drag start.
+Use the Twilight Rooftop avatar picker to validate desktop and XR hover first.
+The [panel hover task](ui-button-hover-and-avatar-picker-feedback.md) defines
+click parity, the initial sampling policy, the avatar picker appearance, and
+the performance checks. Transform gizmos can use the same lifecycle for handle
+feedback before drag start.
 
 ## Required behavior
 
@@ -52,18 +55,16 @@ The new hit-independent `PointerRaySnapshot` seam helps expose idle pointer rays
 raycasters currently need an explicit reason to cast. Hover therefore needs a deliberate sampling
 policy rather than being inferred from trigger activation.
 
-## Sampling and performance questions
+## Sampling and performance follow-ups
 
-- Should hover-capable pointers cast continuously, on pointer-pose change, or on an explicit
-  per-frame request?
-- Can stationary-pointer hover be retained until BVH/topology changes invalidate it?
-- How are interaction priority, pass-through, and click-only/drag-only raycastables interpreted for
-  hover?
-- Should targets opt into hover events, or should all enabled raycastables receive them?
-- How is hover throttled for expensive authored handlers while still keeping gizmo feedback
-  responsive?
+- Start with enabled pointers and live scoped hover consumers. Use the click
+  candidate resolver for UI and emit only enter and leave edges.
+- Share an interaction query when click, drag, or grip already needs the same
+  ray. Keep hover-only sampling out of the raw hit event stream.
+- Measure stationary-pointer reuse with invalidation for picking changes. Use
+  the panel case and a dense moving scene to guide further sampling changes.
 
-## Gizmo feedback first slice
+## Gizmo feedback follow-up
 
 1. Resolve the hovered gizmo handle independently of active drag state.
 2. Highlight only that handle's visual subtree.

@@ -152,6 +152,7 @@ mod tests {
         let provider = world.add_component(AccelerationComponent {
             local: [0.0, 0.0, -12.0],
             max_speed: 18.0,
+            ..Default::default()
         });
         let velocity = world.add_component(VelocityComponent::new());
         let nested = world.add_component(VelocityComponent::new());

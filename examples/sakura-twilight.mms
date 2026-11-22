@@ -130,7 +130,9 @@ fn roof_tree(origin, height) {
     }
 }
 
-pool_building_with_stairs("sakura_twilight_main", [roof_x, 0.0, 0.0], main_floors, 1.0, tiles, pink)
+let ramp_entry_z = -0.4
+pool_building_with_stairs("sakura_twilight_main", [roof_x, 0.0, 0.0], main_floors, 1.0, tiles, pink,
+    { side = 1.0 center = ramp_entry_z - 0.28 width = 5.0 })
 roof_tree([roof_x, 0.0, 0.0], roof_height)
 
 // Ground slab top at y = -0.23, as in twilight_rooftop.
@@ -148,6 +150,34 @@ T {
 let road_z = -13.0
 let road_width = 9.0
 let road_length = 120.0
+
+fn road_ramp(top, bottom, width) {
+    let dx = bottom[0] - top[0]
+    let dy = bottom[1] - top[1]
+    let dz = bottom[2] - top[2]
+    let run = Math.sqrt(dx * dx + dz * dz)
+    let length = Math.sqrt(run * run + dy * dy)
+    return T.position((top[0] + bottom[0]) / 2.0, (top[1] + bottom[1]) / 2.0, (top[2] + bottom[2]) / 2.0)
+        .rotation(0.0, Math.atan2(-dx, -dz), 0.0) {
+        name = "sakura_twilight_road_ramp"
+        T.rotation(Math.atan2(dy, run), 0.0, 0.0) {
+            T.position(0.0, -0.15, 0.0).scale(width, 0.30, length) {
+                R.cube() { road_material C.rgba(0.29, 0.28, 0.32, 1.0) }
+                Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.56) {} }
+            }
+            for side in [-1.0, 1.0] {
+                T.position(side * (width / 2.0 - 0.09), 0.14, 0.0).scale(0.18, 0.28, length - 0.30) {
+                    R.cube() { hardware C.rgba(0.82, 0.68, 0.69, 1.0) }
+                    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
+                }
+            }
+        }
+    }
+}
+// Overlap the top with the roof slab so the diagonal deck spans the parapet opening.
+let ramp_top = [roof_x + 6.20, roof_height, ramp_entry_z]
+let ramp_bottom = [26.0, -0.23, road_z]
+road_ramp(ramp_top, ramp_bottom, 4.25)
 T {
     name = "sakura_twilight_road"
     Raycastable.disabled()
@@ -177,7 +207,7 @@ let row = [
 ]
 for building in row {
     let origin = [building.x, 0.0, row_z]
-    pool_building(building.name, origin, building.floors, 1.0, false, tiles, building.color, false, false)
+    pool_building(building.name, origin, building.floors, 1.0, false, tiles, building.color, true, true)
     roof_tree(origin, building.floors * storey_height)
 }
 
@@ -219,8 +249,15 @@ if net.is_host() { grab_rank = 1 }
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
 let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
-    socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 })
-T.position(roof_x + 4.0, roof_height, 0.0) { name = "sakura_twilight_pickup" pickup }
+    socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 acceleration_drive = true })
+let pickup_x = roof_x + 3.0
+let ramp_dx = ramp_bottom[0] - ramp_top[0]
+let ramp_dz = ramp_bottom[2] - ramp_top[2]
+let pickup_z = ramp_top[2] + (pickup_x - ramp_top[0]) * ramp_dz / ramp_dx
+T.position(pickup_x, roof_height, pickup_z).rotation(0.0, Math.atan2(-ramp_dx, -ramp_dz), 0.0) {
+    name = "sakura_twilight_pickup"
+    pickup
+}
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
@@ -228,6 +265,7 @@ fn weapon_options(id) {
 let pistol = ship_machine_pistol("rooftop_machine_pistol", weapon_options("arena.pistol.1"))
 let second_pistol = ship_machine_pistol("rooftop_machine_pistol_2", weapon_options("arena.pistol.2"))
 let launcher = shared_sta_launcher("rooftop_sta_launcher", weapon_options("arena.sta.1"))
+let street_launcher = shared_sta_launcher("sakura_twilight_row_sta_launcher", weapon_options("arena.sta.2"))
 fn weapon_stand(x, weapon) {
     return T.position(x, roof_height, -1.1) {
         T.position(0.0, 1.04, 0.0) { weapon }
@@ -240,7 +278,12 @@ weapon_stand(roof_x + 1.55, launcher.root)
 T.position(roof_x + 2.65, roof_height, -1.55) {
     sta_ammo_cabinet("twilight_sta_ammo_cabinet")
 }
-ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip])
+T.position(row[1].x - 1.4, row[1].floors * storey_height, row_z + 1.3) {
+    T.position(0.0, 1.04, 0.0) { street_launcher.root }
+    box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
+    T.position(-1.8, 0.0, -0.4) { sta_ammo_cabinet("sakura_twilight_row_sta_ammo_cabinet") }
+}
+ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip, street_launcher.grip])
 
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
@@ -306,7 +349,7 @@ let gohei = gohei_black_spring("shared_gohei")
 gohei.update_transform([roof_x + 1.1, roof_height + 1.1, 0.0])
 let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank mounts = mounts })
 shared_gohei.root
-let shared_objects = [shared, shared_gohei, pistol, second_pistol, launcher]
+let shared_objects = [shared, shared_gohei, pistol, second_pistol, launcher, street_launcher]
 for item in shared_objects {
     if use_desktop { item.bind_pointer(query("[name='local_desktop_pointer']")) }
     if use_xr {

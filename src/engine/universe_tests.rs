@@ -1,5 +1,7 @@
 #[path = "xr_calibration_tests.rs"]
 mod xr_calibration_tests;
+#[path = "avatar_settings_tests.rs"]
+mod avatar_settings_tests;
 
 use super::*;
 use crate::engine::ecs::component::EmissiveComponent;

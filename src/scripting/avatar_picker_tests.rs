@@ -1,6 +1,6 @@
 use super::rocket_motion_tests::Uploader;
 use crate::engine::Universe;
-use crate::engine::ecs::component::TextComponent;
+use crate::engine::ecs::component::{GLTFComponent, TextComponent};
 use crate::engine::ecs::system::{TextSystem, TransformSystem, bounds_system::BoundsSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::utils::math::{vec3_normalize, vec3_sub};
@@ -102,4 +102,68 @@ fn rooftop_avatar_picker_accepts_standing_rays_through_its_labels() {
             .text,
         "lumae is active"
     );
+}
+
+#[test]
+fn rooftop_avatar_settings_apply_height_to_mitten_and_miku() {
+    let path = "examples/twilight_rooftop.mms";
+    let source = std::fs::read_to_string(path)
+        .unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
+    let mut scene = Universe::new(World::default());
+    scene.load_mms_source_at_path(&source, path).unwrap();
+    let mut uploader = Uploader::default();
+    for _ in 0..4 {
+        prepare(&mut scene, &mut uploader);
+    }
+    let original = named(&scene, "local_model");
+    let slider = named(&scene, "avatar_height_slider");
+    scene
+        .command_queue
+        .push_event(slider, EventSignal::SliderCommitted { slider, value: 1.8 });
+    for _ in 0..8 {
+        prepare(&mut scene, &mut uploader);
+    }
+    let mitten = named(&scene, "local_model");
+    assert_ne!(mitten, original);
+    let mitten = scene
+        .world
+        .get_component_by_id_as::<GLTFComponent>(mitten)
+        .unwrap();
+    assert!(mitten.spawned);
+    assert_eq!(mitten.default_height_if_outside, Some([1.8; 3]));
+    assert_eq!(
+        scene.systems.avatar_settings.desired_height_meters(),
+        Some(1.8)
+    );
+
+    let miku = "assets/models/local/third_party/TDA_Hatsune_Miku/tda_miku_with_bones.glb";
+    if std::path::Path::new(miku).is_file() {
+        let button = named(&scene, "avatar_picker_miku");
+        let background = scene.world.find_component(button, "#__bg").unwrap();
+        let renderable = scene
+            .world
+            .find_component(background, "renderable")
+            .unwrap();
+        scene.command_queue.push_event(
+            renderable,
+            EventSignal::Click {
+                raycaster: named(&scene, "local_desktop_pointer"),
+                renderable,
+                hit_point: TransformSystem::world_position(&scene.world, renderable).unwrap(),
+                screen_pos_px: None,
+            },
+        );
+        for _ in 0..8 {
+            prepare(&mut scene, &mut uploader);
+        }
+        let model = named(&scene, "local_model");
+        let model = scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(model)
+            .unwrap();
+        assert_eq!(model.uri, miku);
+        assert!((model.import_scale * 20.393234 - 1.8).abs() < 1e-4);
+    }
 }

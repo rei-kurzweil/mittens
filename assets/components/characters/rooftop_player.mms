@@ -33,12 +33,13 @@ let model_uris = {
     succubus = "assets/models/local/succubus.glb"
 }
 
-fn make_mitten(model_name, track_hands, bucket) {
-    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket) })
+fn make_mitten(model_name, track_hands, bucket, target_meters) {
+    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket) target_height = target_meters })
 }
 
-fn make_lumae(model_name, track_hands, bucket) {
+fn make_lumae(model_name, track_hands, bucket, target_meters) {
     let model = GLTF.new(model_uris.lumae) {
+        if target_meters != null { target_height(target_meters) }
         name = model_name
         if track_hands { HandTracking.new().source("openxr") }
         bisket_anime_shading(bucket)
@@ -51,8 +52,9 @@ fn make_lumae(model_name, track_hands, bucket) {
     return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
-fn make_miku(model_name, track_hands, bucket) {
-    let model = GLTF.new(model_uris.miku).default_height_if_outside(1.0, 3.0, MIKU_HEIGHT) {
+fn make_miku(model_name, track_hands, bucket, target_meters) {
+    let model = GLTF.new(model_uris.miku) {
+        if target_meters != null { target_height(target_meters) } else { default_height_if_outside(1.0, 3.0, MIKU_HEIGHT) }
         name = model_name
         // The finger chains are mapped in tda_miku.mms; the curl axes are not
         // yet checked against this rig (see miku_rig_report.rs).
@@ -65,8 +67,9 @@ fn make_miku(model_name, track_hands, bucket) {
     return { model = model eye_height = MIKU_EYE_GLB * MIKU_ASSUMED_SCALE import_scale = MIKU_ASSUMED_SCALE }
 }
 
-fn make_succubus(model_name, track_hands, bucket) {
+fn make_succubus(model_name, track_hands, bucket, target_meters) {
     let model = GLTF.new(model_uris.succubus) {
+        if target_meters != null { target_height(target_meters) }
         name = model_name
         if track_hands { HandTracking.new().source("openxr") }
         bisket_anime_shading(bucket)
@@ -89,7 +92,7 @@ export fn make_rooftop_player(options) {
     let initial_factory = factories[options.avatar]
     // Optional opaque depth bucket for every body this player wears.
     let bucket = options["opaque_bucket"]
-    let initial = initial_factory(prefix + "_model", track_hands, bucket)
+    let initial = initial_factory(prefix + "_model", track_hands, bucket, null)
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
         if track_hands {
@@ -242,7 +245,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null capsule = null }
+    let state = { head = head model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -258,23 +261,25 @@ export fn make_rooftop_player(options) {
         }
     }
     fn select_avatar(choice, report) {
+        let target_meters = null
+        if local_player { target_meters = AvatarSettings.height.meters() }
         if state.pending {
-            if state.pending.choice == choice {
+            if state.pending.choice == choice && state.pending.height == target_meters {
                 report("Loading " + choice + "…")
                 return
             }
             cancel_avatar_load()
         }
-        if choice == state.choice { report(choice + " is active", true) return }
+        if choice == state.choice && target_meters == state.height { report(choice + " is active", true) return }
         if !factories[choice] { report("Avatar unavailable", false) return }
         if !can_swap(report) { return }
         // Load and validate away from the play area while the live body and camera stay mounted.
         let factory = factories[choice]
-        let spec = factory(prefix + "_model", track_hands, bucket)
+        let spec = factory(prefix + "_model", track_hands, bucket, target_meters)
         let probe = spec.model
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         spec.staging = staging
-        state.pending = { staging = staging elapsed = 0.0 choice = choice report = report }
+        state.pending = { staging = staging elapsed = 0.0 choice = choice height = target_meters report = report }
         on(probe, "GLTFInitialized", fn(event) {
             if !state.pending || state.pending.staging != staging { return }
             if !can_swap(report) {
@@ -282,10 +287,14 @@ export fn make_rooftop_player(options) {
                 state.pending = null
                 return
             }
+            let scale = event.gltf.import_scale()
             if choice == "miku" {
-                // GLB-unit constants follow the scale the import baked.
-                spec.import_scale = event.gltf.import_scale()
+                spec.import_scale = scale
                 spec.eye_height = MIKU_EYE_GLB * spec.import_scale
+            } else {
+                let sole = spec.sole_offset
+                spec.sole_offset = [sole[0] * scale, sole[1] * scale, sole[2] * scale]
+                spec.eye_height = spec.eye_height * scale
             }
             if choice == "miku" && !prepare_miku_arms(event.gltf, spec.import_scale) {
                 staging.remove_subtree()
@@ -304,11 +313,12 @@ export fn make_rooftop_player(options) {
             let next_head = T { name = prefix + "_head_target" body }
             if state.capsule { state.capsule.remove_subtree() state.capsule = null }
             if choice == "miku" {
-                // The TDA skinned meshes store their vertex bounds sideways.
-                // Keep the capsule upright on the movement root on both peers.
-                let capsule = T.position(0, 0.91, 0) {
+                // Keep the authored capsule proportional to the imported avatar.
+                let capsule_scale = 1.0
+                if target_meters != null { capsule_scale = target_meters / MIKU_HEIGHT }
+                let capsule = T.position(0, 0.91 * capsule_scale, 0) {
                     name = prefix + "_miku_capsule"
-                    Zone.capsule_y(0.28, 0.63) {
+                    Zone.capsule_y(0.28 * capsule_scale, 0.63 * capsule_scale) {
                         Collidable.slide().movement_target(root) {
                             if !local_player { response("read_only") }
                         }
@@ -327,12 +337,18 @@ export fn make_rooftop_player(options) {
             state.head = next_head
             state.model = spec.model
             state.choice = choice
+            state.height = target_meters
             state.pending = null
             if state.changed { state.changed(next_head, spec.model, choice) }
             report(choice + " is active", true)
         })
         root.attach(staging)
         report("Loading " + choice + "…")
+    }
+    fn apply_desired_height(report) {
+        let choice = state.choice
+        if state.pending { choice = state.pending.choice }
+        select_avatar(choice, report)
     }
     if local_player {
         on_global("MountStarted", fn(event) { held.mounted = true })
@@ -362,6 +378,7 @@ export fn make_rooftop_player(options) {
         root = root locomotion = locomotion head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
+        apply_desired_height = apply_desired_height
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load
     }
 }

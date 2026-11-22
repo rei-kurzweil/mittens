@@ -14,6 +14,27 @@ type Frame = [[f32; 4]; 4];
 type AxisShape = ([f32; 3], CollisionShape);
 type YawBox = ([f32; 3], [f32; 3], [[f32; 3]; 3]);
 
+fn inclined_box_mesh(
+    shape: CollisionShape,
+    mut frame: Frame,
+) -> Option<std::sync::Arc<super::triangle_collision::TriangleMesh>> {
+    use super::triangle_collision::TriangleMesh;
+
+    let CollisionShape::Cube { half_extents } = shape else {
+        return None;
+    };
+    // Use the retained triangle narrow phase for capsules and spheres on a slope.
+    static CUBE: std::sync::OnceLock<TriangleMesh> = std::sync::OnceLock::new();
+    let cube =
+        CUBE.get_or_init(|| TriangleMesh::new(&crate::engine::graphics::mesh::MeshFactory::cube()));
+    for (column, extent) in frame.iter_mut().zip(half_extents) {
+        for value in column {
+            *value *= 2.0 * extent;
+        }
+    }
+    Some(std::sync::Arc::new(cube.transformed(frame)))
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Surface {
     pub collidable: ComponentId,
@@ -155,7 +176,7 @@ impl Surface {
         start: &super::box_sweep::OrientedBox,
         delta: [f32; 3],
     ) -> Option<zone_query::ZoneSweepHit> {
-        if self.mesh.is_some() {
+        if self.local_mesh.is_some() {
             return None;
         }
         let hit = super::box_sweep::sweep(start, delta, self.oriented_box.as_ref()?)?;
@@ -373,7 +394,22 @@ impl CollidableBvh {
             }) {
                 continue;
             }
-            let world_mesh = local_mesh.as_ref().map(|mesh| mesh.world(frame));
+            let axis_shape = collision_geometry::axis_aligned_world_shape(shape, frame);
+            let yaw_box = collision_geometry::yaw_box(shape, frame);
+            let oriented_box = super::box_sweep::oriented_box(shape, frame);
+            let world_mesh = local_mesh
+                .as_ref()
+                .map(|mesh| mesh.world(frame))
+                .or_else(|| {
+                    if axis_shape.is_none()
+                        && yaw_box.is_none()
+                        && oriented_box.is_some()
+                        && motion == CollidableMode::Static
+                    {
+                        return inclined_box_mesh(shape, frame);
+                    }
+                    None
+                });
             let (min, max) = world_mesh
                 .as_ref()
                 .map(|mesh| (mesh.bounds.min, mesh.bounds.max))
@@ -399,9 +435,9 @@ impl CollidableBvh {
                 response,
                 mesh: world_mesh,
                 local_mesh,
-                axis_shape: collision_geometry::axis_aligned_world_shape(shape, frame),
-                yaw_box: collision_geometry::yaw_box(shape, frame),
-                oriented_box: super::box_sweep::oriented_box(shape, frame),
+                axis_shape,
+                yaw_box,
+                oriented_box,
                 bounds: bounds(min, max),
                 node: existing.map(|i| self.surfaces[i].node).unwrap_or(0),
             };

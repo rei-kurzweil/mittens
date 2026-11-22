@@ -615,6 +615,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
                     component.builder_call("default_height_if_outside", floats(3));
+                    component.builder_call("target_height", floats(1));
                     host_method(
                         component,
                         canonical,
@@ -1064,8 +1065,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     );
                 }
                 "Acceleration" => {
+                    constructor_and_builder(component, "drive", no_args());
                     constructor_and_builder(component, "local", any(1));
                     constructor_and_builder(component, "max_speed", any(1));
+                    host_method(component, canonical, "set_drive", mms::ValueSignature::new(
+                        vec![mms::ValueType::F32, mms::ValueType::F32, mms::ValueType::Bool], mms::ValueType::Null));
+                    host_method(component, canonical, "bind_wheel", mms::ValueSignature::new(
+                        vec![mms::ValueType::Component, mms::ValueType::Component, mms::ValueType::F32, mms::ValueType::Bool], mms::ValueType::Null));
                 }
                 "Gravity" => gravity_binding::register(component, canonical),
                 "SkinnedMesh" => {

@@ -4,6 +4,8 @@ pub(super) mod benchmark_api;
 pub(super) mod graphics_settings_api;
 #[path = "xr_settings_api.rs"]
 pub(super) mod xr_settings_api;
+#[path = "avatar_settings_api.rs"]
+pub(super) mod avatar_settings_api;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -229,6 +231,10 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                 };
                 match binding {
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::AvatarHeightGet
+                        | super::runtime_config::MittensApi::AvatarHeightSet,
+                    ) => self.invoke_avatar_settings(&args),
                     super::runtime_config::MittensBinding::Api(api)
                         if xr_settings_api::supports(*api) =>
                     {

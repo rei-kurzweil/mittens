@@ -206,7 +206,7 @@ fn storey_layout(spec) {
     return { count = count levels = levels roof = y }
 }
 
-fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings) {
+fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings, roof_exit) {
     let width = 14.0
     let depth = 12.0
     let layout = storey_layout(floor_spec)
@@ -316,7 +316,11 @@ fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tile
     }
     // Low rooftop parapets leave the city visible and the edge reachable.
     for side in [-1.0, 1.0] {
-        building_box(roof_data, [side * width / 2.0, height + 0.30, 0.0], [0.22, 0.60, depth], true)
+        if roof_exit && side == roof_exit.side {
+            facade_band(roof_data, roof_exit, "x", side, width / 2.0, depth, height + 0.30, 0.60, true)
+        } else {
+            building_box(roof_data, [side * width / 2.0, height + 0.30, 0.0], [0.22, 0.60, depth], true)
+        }
         building_box(roof_data, [0.0, height + 0.30, side * depth / 2.0], [width, 0.60, 0.22], true)
     }
     let detail_label = "_full_detail"
@@ -352,6 +356,6 @@ export fn pool_building_with_openings(label, origin, floors, street_side, tiles,
 
 // Full-detail, floor-batched variant with a continuous ground-to-roof stairwell.
 // Existing pool_building callers retain their original slabs and top-floor stairs.
-export fn pool_building_with_stairs(label, origin, floors, street_side, tiles, trim_color) {
-    return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true, null)
+export fn pool_building_with_stairs(label, origin, floors, street_side, tiles, trim_color, roof_exit) {
+    return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true, null, roof_exit)
 }

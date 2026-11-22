@@ -442,10 +442,14 @@ fn resolve_contact_velocity(
     }
     let normal = normal.map(|value| value / length);
     if normal[1] > 0.5 {
-        world
+        let velocity = world
             .get_component_by_id_as_mut::<VelocityComponent>(owner)
-            .unwrap()
-            .grounded = true;
+            .unwrap();
+        velocity.grounded = true;
+        velocity.support_normal_world = Some(crate::utils::math::vec3_add(
+            velocity.support_normal_world.unwrap_or([0.0; 3]),
+            normal,
+        ));
     }
     let mut speed = crate::utils::math::quat_rotate_vec3(rotation, linear);
     let inward = speed

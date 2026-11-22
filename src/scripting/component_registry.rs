@@ -2420,10 +2420,7 @@ fn create_component(
             add!(RaycastableShapeComponent::new(shape))
         }
         "Acceleration" => {
-            let id = world.add_component(crate::engine::ecs::component::AccelerationComponent {
-                local: [0.0; 3],
-                max_speed: f32::MAX,
-            });
+            let id = world.add_component(crate::engine::ecs::component::AccelerationComponent::default());
             if let Some(method) = ctor {
                 apply_call(world, id, method, args)?;
             }
@@ -3328,6 +3325,7 @@ fn apply_call(
         world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
     {
         match method {
+            "drive" => a.configure_drive(),
             "local" => a.local = arg_f32_arr::<3>(args, 0)?,
             "max_speed" => a.max_speed = arg_f32(args, 0)?,
             _ => return Err(format!("Acceleration: unknown builder {method}")),
@@ -3788,6 +3786,13 @@ fn apply_call(
     if let Some(gltf) = world.get_component_by_id_as_mut::<GLTFComponent>(id) {
         if method == "with_visualized_transforms" {
             *gltf = gltf.clone().with_visualized_transforms(arg_bool(args, 0)?);
+        }
+        if method == "target_height" {
+            let meters = arg_f32(args, 0)?;
+            if !meters.is_finite() || meters <= 0.0 {
+                return Err("GLTF.target_height expects a positive finite height in meters".into());
+            }
+            *gltf = gltf.clone().target_height(meters);
         }
         if method == "default_height_if_outside" {
             let (min, max, target) = (arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?);

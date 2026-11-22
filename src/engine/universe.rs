@@ -106,6 +106,7 @@ impl Universe {
         .with_benchmarks(&mut self.systems.benchmarks)
         .with_graphics_settings(&mut self.systems.graphics_settings)
         .with_xr_settings(&mut self.systems.xr_settings)
+        .with_avatar_settings(&mut self.systems.avatar_settings)
     }
 
     /// Load and retain one MMS source file through the engine-owned scripting
@@ -119,6 +120,7 @@ impl Universe {
         self.systems.benchmarks.reset();
         let previous_settings = self.systems.graphics_settings.clone();
         let previous_xr_settings = self.systems.xr_settings.clone();
+        let previous_avatar_settings = std::mem::take(&mut self.systems.avatar_settings);
         self.systems.graphics_settings.reset();
         self.systems.xr_settings.reset();
         let mut intents = Vec::new();
@@ -132,6 +134,7 @@ impl Universe {
                     self.systems.benchmarks = previous_benchmarks;
                     self.systems.graphics_settings = previous_settings;
                     self.systems.xr_settings = previous_xr_settings;
+                    self.systems.avatar_settings = previous_avatar_settings;
                     return Err(error);
                 }
             }
@@ -162,6 +165,7 @@ impl Universe {
         }
         self.systems.graphics_settings.reset();
         self.systems.xr_settings.reset();
+        self.systems.avatar_settings = Default::default();
         self.drain_pending_signals();
     }
 

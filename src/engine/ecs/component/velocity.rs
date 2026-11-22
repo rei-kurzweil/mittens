@@ -11,6 +11,8 @@ pub struct VelocityComponent {
     pub angular_local_radps: [f32; 3],
     /// Runtime support contact from the latest fixed substep; not serialized.
     pub grounded: bool,
+    /// Up-facing normal reported by the previous static-contact step.
+    pub(crate) support_normal_world: Option<[f32; 3]>,
     pub rotation_basis: Option<ComponentRef>,
     pub horizontal: bool,
     pub component_id: Option<ComponentId>,

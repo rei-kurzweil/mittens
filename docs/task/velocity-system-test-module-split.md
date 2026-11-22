@@ -20,6 +20,9 @@ velocity step only snapshots poses and calls it.
 - Keep `step` as one function. Do not split integration, the projectile sweep,
   and the swept-zone hook into separate passes: each fixed step must keep one
   enumeration of velocities and no per-step allocations.
+- Keep vehicle drive acceleration and retained wheel bindings together under
+  the velocity step. Sample them only for a configured provider. Compare
+  idle and driven pickup CPU time and mesh uploads before a split.
 
 ## Validation
 

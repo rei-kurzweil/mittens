@@ -6,7 +6,7 @@ let UNIT_SCALE = 0.08
 let TEXT_COLOR = [0.0, 0.0, 0.0, 1.0]
 let BODY_COLOR = [0.98, 0.95, 0.84, 1.0]
 let GOLD = [0.57, 0.47, 0.31, 1.0]
-let TRACK_WIDTH = 10.5 * UNIT_SCALE
+let XR_TRACK_WIDTH_GU = 10.5
 let THUMB_RADIUS = 0.075
 
 fn correction_text(meters) {
@@ -18,9 +18,10 @@ fn correction_text(meters) {
     return sign + cm + "." + fraction + " cm"
 }
 
-fn settings_content(calibration_file) {
-    let correction = XrSettings.floor.correction_meters()
-    let track = T.scale(TRACK_WIDTH * 0.5, 0.025, 0.10) {
+export fn settings_slider(name, low, high, step, value, track_width_gu) {
+    let track_width = track_width_gu * UNIT_SCALE
+    let base_travel = XR_TRACK_WIDTH_GU * UNIT_SCALE - THUMB_RADIUS * 2.0 - 0.04
+    let track = T.scale(track_width * 0.5, 0.025, 0.10) {
         R.cube() {
             C.rgba(0.35, 0.30, 0.17, 1.0)
             Raycastable.enabled() { interaction_priority(120.0) }
@@ -32,10 +33,45 @@ fn settings_content(calibration_file) {
             Raycastable.enabled() { interaction_priority(120.0) }
         }
     }
-    let slider = Slider.range(-1.0, 1.0).step(0.005).value(correction)
-        .width(TRACK_WIDTH - THUMB_RADIUS * 2.0 - 0.04).track(track).thumb(thumb) {
-            name = "xr_floor_correction_slider"
+    return Slider.range(low, high).step(step).value(value)
+        .width(base_travel * track_width_gu / XR_TRACK_WIDTH_GU).track(track).thumb(thumb) { name = name }
+}
+
+export fn settings_slider_row(label, slider, readout, track_width_gu) {
+    return T {
+        Style {
+            display("flex") flex_direction("row") width(100%) height(3.2)
+            align_items("center") gap(0.35)
+            background_color([0.95, 0.91, 0.79, 1.0]) background_z(-0.02)
         }
+        T {
+            Style {
+                display("flex") width(12.0) height(3.2)
+                align_items("center") padding_xy(0.35, 0.0) font_size(0.62)
+            }
+            T.position(0.0, 0.0, 0.03) { Text { label } }
+        }
+        T {
+            Grabbable.off()
+            Style {
+                display("flex") width(track_width_gu) height(3.2) flex_grow(1.0)
+                align_items("center") justify_content("center")
+            }
+            slider
+        }
+        T {
+            Style {
+                display("flex") width(6.5) height(3.2)
+                align_items("center") justify_content("center") font_size(0.65)
+            }
+            T.position(0.0, 0.0, 0.03) { readout }
+        }
+    }
+}
+
+export fn xr_floor_settings_content(calibration_file, track_width_gu) {
+    let correction = XrSettings.floor.correction_meters()
+    let slider = settings_slider("xr_floor_correction_slider", -1.0, 1.0, 0.005, correction, track_width_gu)
     let readout = Text { name = "xr_floor_correction_readout" correction_text(correction) }
     let reset = T {
         name = "xr_floor_correction_reset"
@@ -68,36 +104,7 @@ fn settings_content(calibration_file) {
     return T {
         name = "xr_settings_content"
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) }
-        T {
-            Style {
-                display("flex") flex_direction("row") width(100%) height(3.2)
-                align_items("center") gap(0.35)
-                background_color([0.95, 0.91, 0.79, 1.0]) background_z(-0.02)
-            }
-            T {
-                Style {
-                    display("flex") width(12.0) height(3.2)
-                    align_items("center") padding_xy(0.35, 0.0) font_size(0.62)
-                }
-                T.position(0.0, 0.0, 0.03) { Text { "Floor correction" } }
-            }
-            T {
-                // Floor calibration must not inherit the panel's grip target.
-                Grabbable.off()
-                Style {
-                    display("flex") width(10.5) height(3.2) flex_grow(1.0)
-                    align_items("center") justify_content("center")
-                }
-                slider
-            }
-            T {
-                Style {
-                    display("flex") width(6.5) height(3.2)
-                    align_items("center") justify_content("center") font_size(0.65)
-                }
-                T.position(0.0, 0.0, 0.03) { readout }
-            }
-        }
+        settings_slider_row("Floor correction", slider, readout, track_width_gu)
         T {
             Style { display("block") width(100%) font_size(0.55) }
             Text { "Positive lowers view and hands; negative raises them." }
@@ -110,6 +117,14 @@ fn settings_content(calibration_file) {
             reset
         }
     }
+}
+
+export fn sync_xr_floor_settings(panel) {
+    let value = XrSettings.floor.correction_meters()
+    let slider = panel.query("#xr_floor_correction_slider")
+    let readout = panel.query("#xr_floor_correction_readout")
+    if slider { slider.sync_value(value) }
+    if readout { readout.set_text(correction_text(value)) }
 }
 
 // Required: root_name. Optional: title and calibration_file (save on commit/reset).
@@ -130,7 +145,7 @@ export fn xr_settings_panel(options) {
         toggle_icon_glow_intensity = 0.0
         body_background_color = BODY_COLOR
         body_text_color = TEXT_COLOR
-        content = settings_content(calibration_file)
+        content = xr_floor_settings_content(calibration_file, XR_TRACK_WIDTH_GU)
     })
     let panel_root = panel.query("#" + options.root_name)
     let selection_guard = Selectable.off()
@@ -139,7 +154,7 @@ export fn xr_settings_panel(options) {
     on(panel_root, "DataEvent", fn(event) {
         if event == "AccordionRestoreRequested" {
             body_mount.attach(info_panel_body({
-                content = settings_content(calibration_file)
+                content = xr_floor_settings_content(calibration_file, XR_TRACK_WIDTH_GU)
                 body_background_color = BODY_COLOR
                 body_text_color = TEXT_COLOR
             }))
@@ -148,13 +163,7 @@ export fn xr_settings_panel(options) {
     on_global("DataEvent", fn(event) {
         if event == "XrSettingsChanged" {
             let current_panel = query("#" + options.root_name)
-            if current_panel {
-                let value = XrSettings.floor.correction_meters()
-                let slider = current_panel.query("#xr_floor_correction_slider")
-                let readout = current_panel.query("#xr_floor_correction_readout")
-                if slider { slider.sync_value(value) }
-                if readout { readout.set_text(correction_text(value)) }
-            }
+            if current_panel { sync_xr_floor_settings(current_panel) }
         }
     })
     return panel

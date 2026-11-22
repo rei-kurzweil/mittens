@@ -105,6 +105,7 @@ pub struct SystemWorld {
     pub mirror: MirrorSystem,
     pub graphics_settings: crate::engine::ecs::system::GraphicsSettingsSystem,
     pub xr_settings: crate::engine::ecs::system::XrSettingsSystem,
+    pub avatar_settings: crate::engine::ecs::system::AvatarSettingsSystem,
 
     pub text: TextSystem,
     pub text_input: TextInputSystem,

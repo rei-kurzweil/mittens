@@ -1,6 +1,6 @@
 // Input and heading refreshes publish commands to existing native Velocity.
 // This removable asset registers no global callback or MMS pose integration.
-export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed) {
+export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acceleration) {
     if driver_eye==null { driver_eye=[-0.48,1.90,-0.20] }
     let entry_frame=T.position(-1.2,1.05,-0.25) { name="pickup_entry_frame" }
     let entry=Zone.cube([0.85,1.05,1.0]).at(entry_frame).role("vehicle_entry") { name="pickup_entry_zone" }
@@ -23,6 +23,10 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed) {
         if Math.abs(steering)<0.16 { steering=0 }
         if !refresh && throttle==state.last_throttle && steering==state.last_steering && state.brake==state.last_brake {return}
         state.last_throttle=throttle state.last_steering=steering state.last_brake=state.brake
+        if acceleration {
+            acceleration.set_drive(throttle,steering,state.brake)
+            return
+        }
         clear_drive_motion()
         if !state.brake {
             motion.translate([0,0,-throttle*5.0])
@@ -31,6 +35,7 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed) {
     }
     // Clear input latches without changing existing physical velocity.
     fn reset_inputs() {
+        if acceleration {acceleration.set_drive(0,0,false)}
         state.axis=[0,0] state.w=false state.a=false state.s=false state.d=false state.brake=false
         state.last_throttle=0 state.last_steering=0 state.last_brake=false
     }
@@ -93,8 +98,10 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed) {
         }
     }
     truck.refresh_heading=fn() {
+        if acceleration {return}
         if state.powered && state.mounted && !state.brake && state.last_throttle!=0 && state.last_steering!=0 {publish(true)}
     }
+    truck.needs_heading_refresh=acceleration==null
     truck.drive_command=fn(throttle,steering,braking) {
         if !state.powered {return}
         state.axis=[Math.clamp(steering,-1,1),Math.clamp(throttle,-1,1)] state.brake=braking publish(false)

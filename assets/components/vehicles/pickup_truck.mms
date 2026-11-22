@@ -24,6 +24,10 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     if options && options["vehicle_id"] {vehicle_id=options.vehicle_id}
     let doors=pickup_doors(vehicle_id)
     let bindings=pickup_model_suspension_bindings()
+    let drive=null
+    if options && options["acceleration_drive"] {
+        drive=Acceleration.drive() {name="pickup_drive_acceleration"}
+    }
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
         // Untextured body: the baked atlas replaces uv0 and paint colour stays
@@ -44,7 +48,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
                 tire.attach(tread)
             }
         }
-        bind_pickup_model_suspension(event.gltf,bindings)
+        bind_pickup_model_suspension(event.gltf,bindings,drive)
         let chassis=event.gltf.query("#truck")
         if chassis {
             let cabin=event.gltf.query("#truck > renderable")
@@ -150,12 +154,13 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     // A direct child is an existing body-local Velocity gravity override.
     let gravity=Gravity.enabled(gravity_enabled!=false) {name="pickup_gravity"}
     motion.attach(gravity)
+    if drive {motion.attach(drive)}
     truck.attach(pickup_sliding_colliders(truck))
     let power=pickup_power_panel(fn() {if can_control() {truck.set_powered(!truck.powered())}})
     fn mount_changed(occupied) {
         if network.link {network.link.mount_changed(occupied)}
     }
-    body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed))
+    body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed,drive))
     body.attach(power)
     // Ride-only seats beside the driver's on the truck root; see pickup_ride_seats.
     for ride in [pickup_passenger_seat(), pickup_bed_seat()] {
@@ -165,7 +170,10 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     if options && options["socket"] {
         fn follow_peer(following,occupied) {
             truck.set_remote_occupied(occupied)
-            if following {motion.reset()}
+            if following {
+                motion.reset()
+                if drive {drive.set_drive(0,0,false)}
+            }
             gravity.set_enabled(!following && gravity_enabled!=false)
         }
         fn apply_controls(powered,ratios) {

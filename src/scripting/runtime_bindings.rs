@@ -60,6 +60,8 @@ pub enum MittensApi {
     XrFloorCorrectionSet,
     XrFloorCorrectionGet,
     XrFloorDefaultFile,
+    AvatarHeightGet,
+    AvatarHeightSet,
     FileReadText,
     FileListDir,
     BrowserLocal,

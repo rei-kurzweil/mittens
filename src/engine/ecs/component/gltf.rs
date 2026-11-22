@@ -77,6 +77,11 @@ impl GLTFComponent {
         self.default_height_if_outside = Some([min, max, target]);
         self
     }
+
+    /// Bake a measurable rest height to this target in meters at import.
+    pub fn target_height(self, meters: f32) -> Self {
+        self.default_height_if_outside(meters, meters, meters)
+    }
 }
 
 impl Component for GLTFComponent {
@@ -116,10 +121,14 @@ impl Component for GLTFComponent {
             ce = ce.with_call("with_visualized_transforms", vec![b(true)]);
         }
         if let Some([min, max, target]) = self.default_height_if_outside {
-            ce = ce.with_call(
-                "default_height_if_outside",
-                vec![num(min as f64), num(max as f64), num(target as f64)],
-            );
+            ce = if min == target && max == target {
+                ce.with_call("target_height", vec![num(target as f64)])
+            } else {
+                ce.with_call(
+                    "default_height_if_outside",
+                    vec![num(min as f64), num(max as f64), num(target as f64)],
+                )
+            };
         }
         ce
     }

@@ -14,6 +14,7 @@ import { install_avatar_equipment } from "./avatar_equipment.mms"
 //   tail_wag         "canine", "feline", or false for a still tail
 //   beats_per_second scene Clock BPM / 60 (default 2.0, a 120 BPM clock)
 //   material         replaces the default bisket_anime_shading()
+//   target_height    optional imported rest height in meters
 //   children         array of extra components attached to the GLTF root,
 //                    such as poses, EM.on(), PoseCapture, or Raycastable
 // The caller owns the body (AVC), cameras, and other scene-specific nodes.
@@ -23,8 +24,10 @@ export fn mitten_model(model_name, options) {
     let beats_per_second = options["beats_per_second"]
     if !beats_per_second { beats_per_second = 2.0 }
     let material = options["material"]
+    let target_meters = options["target_height"]
     let children = options["children"]
     let model = GLTF.new("assets/models/mitten.glb") {
+        if target_meters != null { target_height(target_meters) }
         if model_name { name = model_name }
         if xr { HandTracking.new().source("openxr") }
         if material { material }

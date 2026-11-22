@@ -10,7 +10,7 @@ export fn pickup_model_suspension_bindings() {
     ]
 }
 
-fn bind_wheel(chassis, spring, wheel, corner) {
+fn bind_wheel(chassis, spring, wheel, corner, acceleration) {
     let hub=wheel.translation()
     let spin=T { name="wheel_"+corner }
     let steering=T { name="steering_"+corner spin }
@@ -35,6 +35,8 @@ fn bind_wheel(chassis, spring, wheel, corner) {
     spring.update_transform([0,0,0],[0,0,0],[1,1,1])
     spin.attach(wheel)
     wheel.update_transform([0,0,0])
+    // The imported tire is 0.60 m across in its radial axes.
+    if acceleration { acceleration.bind_wheel(steering,spin,0.30,corner=="fl" || corner=="fr") }
     mount.set_compression=fn(ratio) {
         let compression=Math.clamp(ratio,0.35,1.35)
         spring_control.update_transform([0,0,0],[0,0,0],[1,compression,1])
@@ -51,14 +53,14 @@ fn bind_wheel(chassis, spring, wheel, corner) {
     return mount
 }
 
-export fn bind_pickup_model_suspension(model, bindings) {
+export fn bind_pickup_model_suspension(model, bindings, acceleration) {
     let chassis=model.query("#truck")
     if !chassis { print("Pickup GLB: truck node is missing") return }
     for binding in bindings {
         let spring=model.query("[name='"+binding.spring+"']")
         let wheel=model.query("[name='"+binding.wheel+"']")
         if spring && wheel {
-            binding.actuator=bind_wheel(chassis,spring,wheel,binding.corner)
+            binding.actuator=bind_wheel(chassis,spring,wheel,binding.corner,acceleration)
             if binding.raw==false {binding.actuator.set_ride_compression(binding.ratio)}
             else {binding.actuator.set_compression(binding.ratio)}
         } else { print("Pickup GLB: missing suspension nodes for "+binding.corner) }

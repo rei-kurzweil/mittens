@@ -171,6 +171,29 @@ pub(crate) fn invoke_component_method(
         ("Mirror" | "mirror", "set_enabled") => super::mirror_binding::set_enabled(world,id,args,emit_intent),
         ("Gravity" | "gravity", "set_enabled" | "on" | "off" | "auto") =>
             super::component_registry::gravity_registry::call(world, id, method, args),
+        ("Acceleration" | "acceleration", "set_drive") => {
+            let [_, _, Value::Bool(braking)] = args else {
+                return Err("Acceleration.set_drive expects throttle, steering, and braking".into());
+            };
+            let acceleration = world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
+                .ok_or("set_drive requires Acceleration")?;
+            acceleration.set_drive(arg_f32(args, 0)?, arg_f32(args, 1)?, *braking)?;
+            Ok(Value::Null)
+        }
+        ("Acceleration" | "acceleration", "bind_wheel") => {
+            let [Value::ComponentObject { id: steering, .. }, Value::ComponentObject { id: spin, .. }, _, Value::Bool(front)] = args else {
+                return Err("Acceleration.bind_wheel expects steering and spin transforms, radius, and front flag".into());
+            };
+            for wheel in [*steering, *spin] {
+                if world.get_component_by_id_as::<TransformComponent>(wheel).is_none() {
+                    return Err("Acceleration.bind_wheel requires live transforms".into());
+                }
+            }
+            let acceleration = world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
+                .ok_or("bind_wheel requires Acceleration")?;
+            acceleration.bind_drive_wheel(*steering, *spin, arg_f32(args, 2)?, *front)?;
+            Ok(Value::Null)
+        }
         ("Velocity" | "velocity", "reset") => {
             if !args.is_empty() {
                 return Err("reset(): expected no arguments".into());

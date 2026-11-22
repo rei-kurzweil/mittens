@@ -16,7 +16,7 @@ import { controller_hand_curls } from "../assets/components/network/controller_h
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
-import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
+import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building_with_openings, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
 import { round_aperture_wall } from "../assets/components/buildings/round_aperture.mms"
@@ -275,12 +275,22 @@ remote.root
 T.position(roof_x - 4.6, roof_height + 2.3, -4.8) {
     graphics_settings_panel({ root_name = "twilight_rooftop_graphics_settings" })
 }
+let xr_calibration_file = null
 if use_xr {
-    let xr_calibration_file = XrSettings.floor.default_file()
+    xr_calibration_file = XrSettings.floor.default_file()
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
-    T.position(roof_x + spawn_x - 3.65, roof_height + 2.3, -2.2) {
-        xr_settings_panel({ root_name = "twilight_rooftop_xr_settings", calibration_file = xr_calibration_file })
-    }
+}
+fn apply_avatar_height() { local.apply_desired_height(report_avatar_status) }
+on_global("DataEvent", fn(event) {
+    if event == "AvatarSettingsChanged" { apply_avatar_height() }
+})
+T.position(roof_x + spawn_x - 4.65, roof_height + 2.3, -2.2) {
+    avatar_settings_panel({
+        root_name = "twilight_rooftop_avatar_settings"
+        show_xr = use_xr
+        calibration_file = xr_calibration_file
+        on_height_recommitted = apply_avatar_height
+    })
 }
 // Grab this cyan cube with the desktop pointer or either XR hand. The latest
 // grab/release transition wins; simultaneous claims favor the client in this demo.
