@@ -133,6 +133,8 @@ mod truck_bed_tests;
 mod avatar_picker_tests;
 #[cfg(test)]
 mod miku_rig_report;
+#[cfg(test)]
+mod sakura_twilight_tests;
 
 #[cfg(test)]
 mod editor_settings_trigger_tests;

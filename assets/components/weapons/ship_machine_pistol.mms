@@ -12,7 +12,10 @@ import { shared_impact } from "../network/shared_impact.mms"
 export fn ship_machine_pistol(label, options) {
     let scale = 0.085
     let hand_offset = 0.05
-    let material = ship_environment_material()
+    // options.opaque_bucket draws a hand-held pistol before the scenery.
+    let bucket = null
+    if options { bucket = options["opaque_bucket"] }
+    let material = ship_environment_material(bucket)
     let sharing = { grab = null socket = null id = label }
     let left_pointer = "#ship_left_hand_pointer"
     let right_pointer = "#ship_right_hand_pointer"

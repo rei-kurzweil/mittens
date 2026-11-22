@@ -26,15 +26,15 @@ let model_uris = {
     succubus = "assets/models/local/succubus.glb"
 }
 
-fn make_mitten(model_name, track_hands) {
-    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" })
+fn make_mitten(model_name, track_hands, bucket) {
+    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket) })
 }
 
-fn make_lumae(model_name, track_hands) {
+fn make_lumae(model_name, track_hands, bucket) {
     let model = GLTF.new(model_uris.lumae) {
         name = model_name
         if track_hands { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
+        bisket_anime_shading(bucket)
         vroid_humanoid_bone_map()
         vroid_face()
         lumae_relaxed_pose()
@@ -44,13 +44,13 @@ fn make_lumae(model_name, track_hands) {
     return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
-fn make_miku(model_name, track_hands) {
+fn make_miku(model_name, track_hands, bucket) {
     let model = GLTF.new(model_uris.miku) {
         name = model_name
         // The finger chains are mapped in tda_miku.mms; the curl axes are not
         // yet checked against this rig (see miku_rig_report.rs).
         if track_hands { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
+        bisket_anime_shading(bucket)
         miku_humanoid_bone_map()
         miku_twintails()
     }
@@ -58,11 +58,11 @@ fn make_miku(model_name, track_hands) {
     return { model = model eye_height = 1.59 }
 }
 
-fn make_succubus(model_name, track_hands) {
+fn make_succubus(model_name, track_hands, bucket) {
     let model = GLTF.new(model_uris.succubus) {
         name = model_name
         if track_hands { HandTracking.new().source("openxr") }
-        bisket_anime_shading()
+        bisket_anime_shading(bucket)
         vroid_humanoid_bone_map()
         vroid_face()
     }
@@ -80,7 +80,9 @@ export fn make_rooftop_player(options) {
     let mouth_tuning = options["mouth_tuning"]
     let track_hands = local_player && use_xr
     let initial_factory = factories[options.avatar]
-    let initial = initial_factory(prefix + "_model", track_hands)
+    // Optional opaque depth bucket for every body this player wears.
+    let bucket = options["opaque_bucket"]
+    let initial = initial_factory(prefix + "_model", track_hands, bucket)
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
         if track_hands {
@@ -261,7 +263,7 @@ export fn make_rooftop_player(options) {
         if !can_swap(report) { return }
         // Load and validate away from the play area while the live body and camera stay mounted.
         let factory = factories[choice]
-        let spec = factory(prefix + "_model", track_hands)
+        let spec = factory(prefix + "_model", track_hands, bucket)
         let probe = spec.model
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         spec.staging = staging
