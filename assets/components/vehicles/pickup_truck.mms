@@ -12,6 +12,10 @@ import { pickup_replication } from "../network/pickup_replication.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, gravity_enabled, options) {
+    let damage_threshold = 16.0
+    if options && options["damage_threshold"] != null {
+        damage_threshold = options.damage_threshold
+    }
     let gauges=pickup_dashboard_gauges()
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
@@ -51,7 +55,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // open lower cabin intact; wheels and springs remain independent.
             for part_mesh in event.gltf.query_all("renderable") {
                 if part_mesh!=cabin {
-                    let damage=Destroyable.threshold(3.0) {name="pickup_imported_part_damage"}
+                    let damage=Destroyable.threshold(damage_threshold) {name="pickup_imported_part_damage"}
                     part_mesh.attach(damage)
                 }
             }
@@ -89,7 +93,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let truck=T {
         name="pickup_truck"
         // Owns the static batches and the separate procedural dashboard pieces.
-        Destroyable.threshold(3.0)
+        Destroyable.threshold(damage_threshold)
         pose
         // Rounded movement zones and static proxies remain an upright collision
         // approximation while the visible chassis is raised or tilted.
@@ -156,6 +160,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
 
 // For a shared pickup pass { socket, vehicle_id, rank }, then call
 // connect(group, address) and disconnect() with the scene's peer lifecycle.
+// options.damage_threshold overrides the default damage per cell before a cut.
 export fn pickup_truck(color, cargo, gravity_enabled, options) {
     return make_pickup(color,cargo,gravity_enabled,options)
 }

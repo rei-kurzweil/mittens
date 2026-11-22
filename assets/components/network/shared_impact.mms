@@ -3,30 +3,45 @@ import { f32, vec4 } from "types"
 // Each weapon has a fixed blast radius. A sample carries up to four
 // consecutive impacts so the latest-value transport can recover a burst.
 export fn shared_impact(options) {
+    let oriented = options["oriented"]
     let kind = { first: f32, count: f32, a: vec4, b: vec4, c: vec4, d: vec4 }
+    if oriented {
+        kind = { first: f32, count: f32, a: vec4, b: vec4, c: vec4, d: vec4,
+            qa: vec4, qb: vec4, qc: vec4, qd: vec4 }
+    }
     let empty = [0.0, 0.0, 0.0, 0.0]
     let state = { generation = 0 outgoing = null queue = {} first = 1 next = 1 received = 0 elapsed = 0.0 pump = null }
 
     fn queue_key(sequence) { return "" + (sequence % 64) }
-    fn queued(sequence) {
+    fn queued(sequence, field) {
         if sequence >= state.next { return empty }
-        return state.queue[queue_key(sequence)]
+        return state.queue[queue_key(sequence)][field]
     }
 
     fn send() {
         if !state.outgoing || !state.outgoing.ready() || state.first == state.next { return }
         let first = state.first
         let count = Math.clamp(state.next - first, 0, 4)
-        state.outgoing.write({
+        let sample = {
             first = first count = count
-            a = queued(first) b = queued(first + 1) c = queued(first + 2) d = queued(first + 3)
-        })
+            a = queued(first, "impact") b = queued(first + 1, "impact")
+            c = queued(first + 2, "impact") d = queued(first + 3, "impact")
+        }
+        if oriented {
+            sample.qa = queued(first, "rotation")
+            sample.qb = queued(first + 1, "rotation")
+            sample.qc = queued(first + 2, "rotation")
+            sample.qd = queued(first + 3, "rotation")
+        }
+        state.outgoing.write(sample)
     }
 
-    fn hit(position, amount) {
-        options.apply(position, amount)
+    fn hit(position, amount, rotation) {
+        options.apply(position, amount, rotation)
         if !state.outgoing || state.next - state.first >= 64 { return }
-        state.queue[queue_key(state.next)] = [position[0], position[1], position[2], amount]
+        state.queue[queue_key(state.next)] = {
+            impact = [position[0], position[1], position[2], amount] rotation = rotation
+        }
         state.next = state.next + 1
         if state.next == state.first + 1 { state.pump.bypass(false) }
         send()
@@ -61,11 +76,13 @@ export fn shared_impact(options) {
             if generation != state.generation { return }
             let sample = event.value
             let slots = [sample.a, sample.b, sample.c, sample.d]
+            let rotations = []
+            if oriented { rotations = [sample.qa, sample.qb, sample.qc, sample.qd] }
             for i in range(Math.clamp(Math.floor(sample.count), 0, 4)) {
                 let sequence = sample.first + i
                 if sequence == state.received + 1 {
                     let impact = slots[i]
-                    options.apply([impact[0], impact[1], impact[2]], impact[3])
+                    options.apply([impact[0], impact[1], impact[2]], impact[3], rotations[i])
                     state.received = sequence
                 }
             }

@@ -35,11 +35,9 @@ fn exhaust_trail(material) {
     }
 }
 
-export fn apply_rocket_impact(point, amount) {
+export fn apply_rocket_impact(point, amount, rotation) {
     Damage.at(point[0], point[1], point[2], 1.5, amount)
-    let effect = rocket_explosion(point)
-    effect.root
-    effect.animation.play()
+    rocket_explosion(point, rotation)
 }
 
 // All flight acceleration and collision checks run in native fixed steps.
@@ -76,7 +74,7 @@ export fn launch_rocket(round, spec) {
     round.attach(trail)
     motion.attach(round)
     root.world_trs({ translation = spec.pose.translation rotation_quat_xyzw = spec.pose.rotation_quat_xyzw scale = [1.0, 1.0, 1.0] })
-    motion.translate([0.0, 0.0, -2.0])
+    motion.translate([0.0, 0.0, -2.5])
     let expiry = Animation.paused().length(12.0) {
         Keyframe.at(0.0) {}
         Keyframe.at(12.0) {
@@ -88,8 +86,9 @@ export fn launch_rocket(round, spec) {
         if !state.alive { return }
         state.alive = false
         let point = event.point
-        if spec["impact"] { spec.impact(point, 8.0) }
-        else { apply_rocket_impact(point, 8.0) }
+        let rotation = root.world_trs().rotation_quat_xyzw
+        if spec["impact"] { spec.impact(point, 8.0, rotation) }
+        else { apply_rocket_impact(point, 8.0, rotation) }
         if spec["on_hit"] != null {
             spec.on_hit({ hit_point = point normal = event.normal other_zone = event.other_zone source_tool = spec.source_tool source_user = spec.source_user projectile = root damage = 8.0 })
         }

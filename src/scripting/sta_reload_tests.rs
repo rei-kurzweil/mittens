@@ -361,3 +361,55 @@ device.connect(group, "{peer}")
     );
     assert_eq!(angle(&a), 0.0);
 }
+
+#[test]
+fn shared_rocket_impact_keeps_its_orientation_on_the_peer() {
+    use std::{
+        net::UdpSocket,
+        time::{Duration, Instant},
+    };
+
+    let addresses = ["127.0.0.1:0"; 2].map(|address| UdpSocket::bind(address).unwrap());
+    let [a, b] = addresses.map(|socket| socket.local_addr().unwrap());
+    let load = |address, peer| {
+        let mut scene = Universe::new(World::default());
+        let source = format!(
+            r#"
+            import {{ shared_impact }} from "../assets/components/network/shared_impact.mms"
+            import {{ apply_rocket_impact }} from "../assets/components/projectiles/rocket.mms"
+            let socket = UdpSocket.bind("{address}") {{}}
+            socket
+            let group = T {{}}
+            group
+            let impacts = shared_impact({{ socket = socket name = "test.rocket" apply = apply_rocket_impact oriented = true }})
+            impacts.connect(group, "{peer}")
+            on_global("DataEvent", fn(event) {{
+                if event == "hit" {{ impacts.hit([1, 2, 3], 8.0, [0, 0.70710678, 0, 0.70710678]) }}
+            }})
+            "#,
+        );
+        scene
+            .load_mms_source_at_path(&source, "examples/_rocket_impact_sync_test.mms")
+            .unwrap();
+        scene
+    };
+    let (mut a, mut b) = (load(a, b), load(b, a));
+    let clock = TestClock::default();
+    event(&mut a, &clock, "hit");
+    assert!(find(&a.world, "rocket_explosion").is_some());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        advance(&mut a, &clock);
+        advance(&mut b, &clock);
+        if let Some(effect) = find(&b.world, "rocket_explosion") {
+            let pose = TransformSystem::world_trs(&b.world, effect).unwrap();
+            assert_eq!(pose.translation, [1.0, 2.0, 3.0]);
+            assert!(
+                (pose.rotation_quat_xyzw[1].abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5
+            );
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    panic!("rocket impact did not arrive at the peer");
+}

@@ -15,11 +15,11 @@ export fn sta_rocket_launcher(options) {
     if options["socket"] {
         let weapon_id = label
         if options["weapon_id"] { weapon_id = options.weapon_id }
-        network = shared_impact({ socket = options.socket name = weapon_id apply = apply_rocket_impact })
+        network = shared_impact({ socket = options.socket name = weapon_id apply = apply_rocket_impact oriented = true })
     }
-    fn impact(point, amount) {
-        if network { network.hit(point, amount) }
-        else { apply_rocket_impact(point, amount) }
+    fn impact(point, amount, rotation) {
+        if network { network.hit(point, amount, rotation) }
+        else { apply_rocket_impact(point, amount, rotation) }
     }
     let initial_round = sta_rocket_body(label + "_initial_round")
     let state = { trigger_held = false pending = false user = null round = initial_round }

@@ -54,7 +54,96 @@ fn has(world: &World, name: &str) -> bool {
 }
 
 #[test]
-fn rocket_native_flight_hits_thin_wall_and_spawns_explosion_without_frame_bindings() {
+fn rocket_bursts_use_second_based_timing_and_fade_the_outer_burst() {
+    use crate::engine::ecs::system::TransformSystem;
+    use crate::engine::ecs::{ComponentId, SignalKind, component::ColorComponent};
+
+    let mut scene = crate::engine::Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            r#"
+            import { rocket_explosion } from "../assets/components/projectiles/rocket_explosion.mms"
+            Clock.bpm(60)
+            rocket_explosion([1, 2, 3], [0.0, 0.70710678, 0.0, 0.70710678])
+            "#,
+            "examples/_rocket_bursts_test.mms",
+        )
+        .unwrap();
+    let clock = TestClock::default();
+    let find = |scene: &crate::engine::Universe, label| {
+        scene
+            .world
+            .all_components()
+            .find(|&id| scene.world.component_label(id) == Some(label))
+    };
+    let color = |scene: &crate::engine::Universe, burst: ComponentId| {
+        let id = scene.world.find_component(burst, "color").unwrap();
+        scene
+            .world
+            .get_component_by_id_as::<ColorComponent>(id)
+            .unwrap()
+            .rgba
+    };
+    let near = |actual: f32, expected: f32| {
+        assert!((actual - expected).abs() < 1e-4, "{actual} != {expected}");
+    };
+
+    let inner = find(&scene, "rocket_explosion_inner").unwrap();
+    near(color(&scene, inner)[3], 0.75);
+    for _ in 0..30 {
+        advance(&mut scene, &clock);
+    }
+    let inner_scale = TransformSystem::world_trs(&scene.world, inner)
+        .unwrap()
+        .scale;
+    for _ in 30..47 {
+        advance(&mut scene, &clock);
+    }
+    assert!(find(&scene, "rocket_explosion_outer").is_none());
+    advance(&mut scene, &clock);
+    let outer = find(&scene, "rocket_explosion_outer").unwrap();
+    let at_start = TransformSystem::world_trs(&scene.world, outer).unwrap();
+    assert_eq!(at_start.translation, [1.0, 2.0, 3.0]);
+    near(
+        at_start.rotation_quat_xyzw[1].abs(),
+        std::f32::consts::FRAC_1_SQRT_2,
+    );
+    for (actual, expected) in color(&scene, outer)
+        .into_iter()
+        .zip([1.0, 1.0, 1.0, 2.0 / 3.0])
+    {
+        near(actual, expected);
+    }
+
+    for _ in 48..78 {
+        advance(&mut scene, &clock);
+    }
+    assert!(find(&scene, "rocket_explosion_inner").is_none());
+    let outer_scale = TransformSystem::world_trs(&scene.world, outer)
+        .unwrap()
+        .scale;
+    for i in 0..3 {
+        near(outer_scale[i] / inner_scale[i], [4.0, 4.0, 2.0][i]);
+    }
+    for (actual, expected) in color(&scene, outer)
+        .into_iter()
+        .zip([1.0, 1.0, 0.0, 1.0 / 3.0])
+    {
+        near(actual, expected);
+    }
+
+    for _ in 78..107 {
+        advance(&mut scene, &clock);
+    }
+    let [r, g, b, a] = color(&scene, outer);
+    assert!(r < 0.04 && g < 0.04 && b == 0.0 && a < 0.012);
+    advance(&mut scene, &clock);
+    assert!(!has(&scene.world, "rocket_explosion"));
+    assert!(!scene.systems.rx.has_global_handlers(SignalKind::FrameTick));
+}
+
+#[test]
+fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
     let mut scene = crate::engine::Universe::new(World::default());
     scene.load_mms_source_at_path(r#"
         import { rocket } from "../assets/components/projectiles/rocket.mms"
@@ -63,7 +152,7 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_explosion_without_frame_bindin
             R.cube()
             Zone.cube([0.5,0.5,0.5]) { Collidable.static() {} }
         }
-        rocket({pose={translation=[0,0,0] rotation_quat_xyzw=[0,0,0,1] scale=[1,1,1]} source_tool=null source_user=null})
+        rocket({pose={translation=[0,0,0] rotation_quat_xyzw=[0,0,0.70710678,0.70710678] scale=[1,1,1]} source_tool=null source_user=null})
     "#, "examples/_rocket_native_test.mms").unwrap();
     let clock = Arc::new(TestClock::default());
     scene.systems.clock.set_driver(clock.clone());
@@ -100,8 +189,17 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_explosion_without_frame_bindin
     // Impact fades the trail for one beat before removing the flight root.
     for _ in 0..140 {
         advance(&mut scene, &clock);
-        if has(&scene.world, "rocket_explosion") {
+        if let Some(effect) = scene
+            .world
+            .all_components()
+            .find(|&id| scene.world.component_label(id) == Some("rocket_explosion"))
+        {
             explosion = true;
+            let pose = crate::engine::ecs::system::TransformSystem::world_trs(&scene.world, effect)
+                .unwrap();
+            assert!(
+                (pose.rotation_quat_xyzw[2].abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5
+            );
             assert!(
                 !has(&scene.world, "sta_rocket_nozzle"),
                 "impact removes the nozzle glow"
@@ -141,6 +239,19 @@ fn rocket_native_acceleration_caps_speed_and_expires_in_empty_space() {
         import { rocket } from "../assets/components/projectiles/rocket.mms"
         rocket({pose={translation=[0,0,0] rotation_quat_xyzw=[0,0.70710678,0,0.70710678] scale=[1,1,1]} source_tool=null source_user=null})
     "#, "examples/_rocket_cruise_test.mms").unwrap();
+    let initial_speed = scene
+        .world
+        .all_components()
+        .find_map(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .map(|v| v.linear_local_mps)
+        })
+        .unwrap();
+    for (actual, expected) in initial_speed.into_iter().zip([0.0, 0.0, -2.5]) {
+        assert!((actual - expected).abs() < 1e-5);
+    }
     let clock = Arc::new(TestClock::default());
     scene.systems.clock.set_driver(clock.clone());
     for _ in 0..240 {

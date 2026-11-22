@@ -141,7 +141,7 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
             r#"
         import {pickup_truck} from "../assets/components/vehicles/pickup_truck.mms"
         T {name="first_truck" pickup_truck(null,null,false)}
-        T.position(12,0,0) {name="second_truck" pickup_truck(null,null,false)}
+        T.position(12,0,0) {name="second_truck" pickup_truck(null,null,false,{damage_threshold=24.0})}
     "#,
             "examples/_pickup_imported_damage.mms",
         )
@@ -178,6 +178,17 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
     }
     let first = named(&scene.world, "first_truck");
     let second = named(&scene.world, "second_truck");
+    for (scope, expected) in [(first, 16.0), (second, 24.0)] {
+        let chassis = query(&scene.world, scope, "#pickup_truck > destroyable");
+        let part = query(&scene.world, scope, "#pickup_imported_part_damage");
+        for id in [chassis, part] {
+            let marker = scene
+                .world
+                .get_component_by_id_as::<DestroyableComponent>(id)
+                .unwrap();
+            assert_eq!(marker.threshold, expected);
+        }
+    }
     let source = query(&scene.world, first, "[name='door_left'] > renderable");
     let other = query(&scene.world, second, "[name='door_left'] > renderable");
     let marker_count = |scene: &Universe, scope| {
@@ -257,7 +268,7 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
     let second_batch = query(&scene.world, second, "#pickup_painted_body");
     let untouched = visual_mesh(&scene, second_batch).unwrap();
     let (point, local, normal) = target_point(&scene, source);
-    damage(&mut scene, point, 1.0);
+    damage(&mut scene, point, 8.0);
     for _ in 0..3 {
         prepare(&mut scene, &mut upload);
     }
@@ -266,7 +277,7 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
         visual_mesh(&scene, batch).is_some(),
         "subthreshold damage retains batching"
     );
-    damage(&mut scene, point, 2.0);
+    damage(&mut scene, point, 8.0);
     finish_cut(&mut scene, &mut upload, 0);
     assert!(
         visual_mesh(&scene, batch).is_none(),
@@ -333,7 +344,7 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
     );
     let (point, _, _) = target_point(&scene, wheel);
     let before = scene.systems.destroyable.cuts;
-    damage(&mut scene, point, 3.0);
+    damage(&mut scene, point, 16.0);
     finish_cut(&mut scene, &mut upload, before);
     assert_eq!(visual_mesh(&scene, second_batch), Some(untouched));
 }
