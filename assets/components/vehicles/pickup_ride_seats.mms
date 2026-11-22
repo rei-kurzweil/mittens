@@ -21,10 +21,17 @@ fn ride_seat(prefix, entry_center, entry_half_extents, eye, exit, auto_zone) {
     let entry=Zone.cube(entry_half_extents).at(entry_frame).role("vehicle_entry") { name=prefix+"_entry_zone" }
     let seat=T.position(eye[0],eye[1],eye[2]) { name=prefix+"_rider_eye_anchor" }
     let dismount=T.position(exit[0],exit[1],exit[2]) { name=prefix+"_dismount_anchor" }
-    let mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).on_grip() {
-        name=prefix+"_mountable"
+    // Builders run only in the constructor chain, not on a live component.
+    let mountable=null
+    if auto_zone {
+        mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).auto_mount_zone(auto_zone).on_grip() {
+            name=prefix+"_mountable"
+        }
+    } else {
+        mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).on_grip() {
+            name=prefix+"_mountable"
+        }
     }
-    if auto_zone { mountable.auto_mount_zone(auto_zone) }
     return { frames=T { name=prefix+"_seat" entry_frame entry seat dismount } mountable=mountable }
 }
 
