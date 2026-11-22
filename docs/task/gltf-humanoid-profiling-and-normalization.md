@@ -29,16 +29,18 @@ three different results depending on which geometry is measured.
 | --- | --- |
 | Midpoint of the mapped foot pivots to the head pivot | About 2.9° from `+Y` |
 | Rest mesh after applying each vertex's skin weights, joint transforms, and inverse binds | About 20.39 source units tall along `+Y` |
-| Current first-joint transformed primitive boxes | About 7.04 units along `+Y` and 20.39 along `Z` |
+| Previous estimator's first-joint transformed primitive boxes | About 7.04 units along `+Y` and 20.39 along `Z` |
 
 The weighted rest pose is upright. The first joint's placement matrix rotates
 the bounds by a quarter turn about X, while the weighted mesh stays upright.
 For the rooftop's 1.70 m target, the weighted Y measurement implies a scale of
-about `0.0834` (roughly 12× smaller). The current height estimator's 7.04-unit
-measurement would select about `0.2413`, yielding a weighted mesh about 4.92 m
-tall before any other scene adjustments. Reproduce the comparison from the
-selected scene using its composed node matrices and primitive `POSITION`,
-`JOINTS_n`, `WEIGHTS_n`, and inverse-bind accessors.
+about `0.0834` (roughly 12× smaller). The previous height estimator measured
+7.04 units and selected about `0.2413`, yielding a weighted mesh about 4.92 m
+tall before other scene adjustments. The weighted-height fix now measures
+20.393234 units and logs the expected `0.0834` scale in the local rig report.
+Reproduce the comparison from the selected scene using its composed node
+matrices and primitive `POSITION`, `JOINTS_n`, `WEIGHTS_n`, and inverse-bind
+accessors.
 
 The Miku skin lists 293 joints. Its mapped center chain is `hips → spine →
 chest → neck → head`, with three torso joints through the chest. The Bisket

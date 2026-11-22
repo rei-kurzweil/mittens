@@ -1,6 +1,7 @@
 # Humanoid profile and in-memory normalization
 
-Status: proposed 2026-11-22. Not started.
+Status: weighted rest-height fix implemented. Humanoid profiling and
+profile-driven normalization are proposed.
 Related: [body solver horizontal mode](body-solver-horizontal-mode.md),
 [GLTF system module split](gltf-system-module-split.md), and
 [GLTF profile fields and configuration](gltf-humanoid-profiling-and-normalization.md).
@@ -19,7 +20,7 @@ humanoid on their own, from different sources, and assume +Y:
 | Torso spheres | `avatar_control_system/detail_collision.rs` | Hip width | Sphere radius |
 | Import height rule | `gltf_height.rs` (`default_height_if_outside`) | Mesh bounds through the bind pose, before spawn | Baked unit scale |
 
-TDA Miku shows the failure mode. The height estimator places her entire mesh
+TDA Miku shows the failure mode. The old height estimator placed her entire mesh
 using the first skin joint, which influences zero vertices in this export and
 rotates its bounds onto Z. The local rig-report test logged a Y extent of
 7.04 units and applied a scale of 0.2413. The weighted rest mesh is upright
@@ -99,8 +100,10 @@ Keep the existing bone-map-ready path for unprofiled avatars.
 
 ## Slices
 
-1. Fix weighted rest height and add a regression fixture. Verify Miku imports
-   at 1.70 m with the existing height rule.
+1. Complete. Weighted rest height uses decoded skin and morph data, with a
+   synthetic regression for an unused first joint. The local Miku rig report
+   measures 20.393234 units and applies the 0.0834 scale for the 1.70 m target.
+   The Mitten and Miku equipment scene tests pass.
 2. Add opt-in profiling and `model.profile()` readback. Exercise source
    measurements with `normalize(false)` on Miku, Lumae, and Mitten.
 3. Apply profile-driven scale correction by default. Migrate the rooftop and

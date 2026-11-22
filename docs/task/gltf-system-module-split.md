@@ -21,6 +21,8 @@ dumps beside import. Tests move with their responsibility.
 
 Performance constraints: import stays once per cache key; spawn keeps
 reading node transforms from the cached document without re-reading
-buffers; uploads stay batched in `flush_imports`. Validation: the existing
-GLTF system tests and a scene load of a skinned avatar (twilight rooftop) with
-identical mesh/texture cache counts before and after.
+buffers; uploads stay batched in `flush_imports`. Keep weighted rest-height
+measurement on the opt-in import path and reuse the decoded CPU meshes and
+skin matrices without adding work at spawn or per frame. Validate using the
+existing GLTF system tests and a scene load of a skinned avatar on the twilight
+rooftop, with identical mesh and texture cache counts before and after.

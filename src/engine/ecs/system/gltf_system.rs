@@ -751,6 +751,7 @@ impl GLTFSystem {
 
         // Build mesh table.
         let mut meshes: Vec<ImportedMesh> = Vec::new();
+        let mut height_mesh_indices = height_rule.map(|_| HashMap::new());
         for (mesh_index, mesh) in doc.meshes().enumerate() {
             let mesh_name_or_index = mesh
                 .name()
@@ -916,6 +917,9 @@ impl GLTFSystem {
                 };
 
                 let key = format!("{}:{}:prim{}", gltf_name, mesh_name_or_index, prim_index);
+                if let Some(indices) = &mut height_mesh_indices {
+                    indices.insert((mesh_index, prim_index), meshes.len());
+                }
                 meshes.push(ImportedMesh {
                     key,
                     mesh: Some({
@@ -1086,12 +1090,14 @@ impl GLTFSystem {
         // unchanged and keep their shared keys.
         let mut gltf_name = gltf_name;
         let mut import_scale = 1.0;
-        if let Some([min, max, target]) = height_rule {
-            let inverse_binds: Vec<Vec<TransformMatrix>> = skins
+        if let (Some([min, max, target]), Some(mesh_indices)) = (height_rule, height_mesh_indices) {
+            let inverse_binds: Vec<_> = skins
                 .iter()
-                .map(|skin| skin.inverse_bind_matrices.clone())
+                .map(|skin| skin.inverse_bind_matrices.as_slice())
                 .collect();
-            let height = super::gltf_height::rest_height(&doc, &inverse_binds);
+            let height = super::gltf_height::rest_height(&doc, &inverse_binds, |mesh, primitive| {
+                meshes[*mesh_indices.get(&(mesh, primitive))?].mesh.as_ref()
+            });
             import_scale = super::gltf_height::height_scale(height, min, max, target);
             // Always report the measurement so a rule that did not fire is visible.
             println!(
