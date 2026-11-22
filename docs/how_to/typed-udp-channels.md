@@ -42,7 +42,7 @@ Writing before compatible registration completes is an error. MMS chooses the
 sampling event/rate; the avatar demo publishes at most 20 times per simulated
 second from FrameTick. The native socket stays nonblocking and has bounded work.
 
-## Declarative receive binding
+## Transform bindings
 
 ```mms parse-only
 let incoming = socket.subscribe("left-hand.pose")
@@ -74,6 +74,42 @@ replacement component with a reused slot. Removing the subscription releases
 its native receive participation. Removing the socket closes I/O and releases
 its dependent runtime channels. Runtime channel handles are excluded from scene
 serialization; the owning MMS code recreates their declarations.
+
+Publications also support `bind_transform(target, options?)`. While enabled,
+a publication samples the transform natively and sends changes using the
+same TRS schema. A local-space binding can target `TOP.hinge`. Its translation
+and scale are identity, and the receiver projects the rotation onto its
+authored hinge axis and applies its local limits.
+
+```mms parse-only
+let outgoing = socket.publish("launcher.breech")
+    .to(peer_address)
+    .type(pose_type)
+    .bind_transform(hinge, { space = "local" })
+let incoming = socket.subscribe("launcher.breech")
+    .from(peer_address)
+    .type(pose_type)
+    .bind_transform(hinge, { space = "local" })
+outgoing.set_binding_enabled(false)
+outgoing
+incoming
+on(pointer, "PointerGrabbed", fn(event) {
+    if event.target != rear_half { return }
+    incoming.set_binding_enabled(false)
+    outgoing.set_binding_enabled(true)
+})
+on(pointer, "PointerReleased", fn(event) {
+    if event.target != rear_half { return }
+    outgoing.set_binding_enabled(false)
+    incoming.set_binding_enabled(true)
+})
+```
+
+`set_binding_enabled(bool)` can run after activation and keeps the channel
+registered. Disabling an active transform publication queues one final
+snapshot. The receiver keeps its last pose and discards samples received while
+its binding is paused. Delivery, including the final snapshot, uses
+best-effort UDP.
 
 ## Imperative receiving and partial writes
 

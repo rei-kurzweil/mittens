@@ -36,6 +36,8 @@ let temperature = socket.publish("temperature").to("127.0.0.1:{b}").type(f32)
 temperature
 let source = T.position(2.0, 3.0, 4.0) {{}}
 source
+let bound = socket.publish("bound_pose").to("127.0.0.1:{b}").type(pose_type).bind_transform(source)
+bound
 on_global("FrameTick", fn(event) {{
     if pose.ready() {{ pose.write(source.world_trs()) }}
     if temperature.ready() {{ temperature.write(22.0) }}
@@ -52,6 +54,10 @@ let target = T {{ name = "remote_target" }}
 target
 let pose = socket.subscribe("pose").from("127.0.0.1:{a}").type(pose_type)
 pose.bind_transform(target, {{ name = "pose_binding", space = "world" }})
+let bound_target = T {{ name = "bound_target" }}
+bound_target
+let bound = socket.subscribe("bound_pose").from("127.0.0.1:{a}").type(pose_type).bind_transform(bound_target)
+bound
 let temperature = socket.subscribe("temperature").from("127.0.0.1:{a}").type(f32)
 temperature
 let observation = T {{ name = "observation" }}
@@ -79,6 +85,16 @@ on(temperature, "UdpSample", fn(event) {{ observation.update_transform([event.va
         .get_component_by_id_as::<TransformComponent>(target)
         .unwrap();
     assert_eq!(pose.transform.translation, [2., 3., 4.]);
+    let bound_target = named(&client, "bound_target");
+    assert_eq!(
+        client
+            .world
+            .get_component_by_id_as::<TransformComponent>(bound_target)
+            .unwrap()
+            .transform
+            .translation,
+        [2., 3., 4.]
+    );
     let binding = named(&client, "pose_binding");
     assert!(
         client

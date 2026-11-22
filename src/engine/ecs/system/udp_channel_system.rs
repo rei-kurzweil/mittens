@@ -1,11 +1,13 @@
 //! Typed-channel scene adapter. Raw I/O belongs to UdpSystem; no pose replication policy.
+use super::TransformSystem;
 use crate::engine::ecs::component::{
-    GLTFComponent, MorphTargetMapComponent, UdpBinding, UdpChannelComponent, UdpSocketComponent,
+    GLTFComponent, MorphTargetMapComponent, TransformComponent, TransformOperatorComponent,
+    UdpBinding, UdpChannelComponent, UdpSocketComponent,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
-use crate::engine::transform::TransformTrs;
+use crate::engine::transform::{TransformSpace, TransformTrs};
 use crate::engine::udp_channels::{
-    ChannelId, ChannelSocket, PublicationId, Schema, SubscriptionId,
+    ChannelId, ChannelSocket, PublicationId, Sample, Schema, SubscriptionId,
 };
 use std::{
     collections::{BTreeSet, HashMap},
@@ -25,6 +27,7 @@ enum Channel {
     Publication {
         socket: ComponentId,
         id: PublicationId,
+        last_transform: Option<TransformTrs>,
     },
     Subscription {
         socket: ComponentId,
@@ -77,15 +80,21 @@ impl UdpChannelSystem {
             c.active = false;
             c.ready = false;
             c.pending = None;
+            c.final_transform = None;
         }
         if let Some(channel) = self.channels.remove(&id) {
             match channel {
-                Channel::Publication { socket, id } => {
+                Channel::Publication { socket, id, .. } => {
                     if let Some(s) = self.sockets.get_mut(&socket) {
                         let _ = s.remove_publication(id);
                     }
                 }
-                Channel::Subscription { socket, id, binding, .. } => {
+                Channel::Subscription {
+                    socket,
+                    id,
+                    binding,
+                    ..
+                } => {
                     if let Some(UdpBinding::Morph { target, slot }) = binding {
                         clear_morph(world, target, &slot);
                     }
@@ -140,7 +149,24 @@ impl UdpChannelSystem {
                     let peer = config.peer.ok_or("channel has no peer address")?;
                     if let Some(binding) = &config.binding {
                         let expected = match binding {
-                            UdpBinding::Transform { .. } => transform_schema(),
+                            UdpBinding::Transform { target, space } => {
+                                if world
+                                    .get_component_by_id_as::<TransformComponent>(*target)
+                                    .is_none()
+                                    && (*space != TransformSpace::Local
+                                        || world
+                                            .get_component_by_id_as::<TransformOperatorComponent>(
+                                                *target,
+                                            )
+                                            .and_then(TransformOperatorComponent::hinge_settings)
+                                            .is_none())
+                                {
+                                    return Err(
+                                        "expected a transform or a local TOP.hinge target".into()
+                                    );
+                                }
+                                transform_schema()
+                            }
                             UdpBinding::Morph { .. } => {
                                 Schema::primitive(meow_meow_script::TypeTag::F32)
                             }
@@ -148,13 +174,17 @@ impl UdpChannelSystem {
                         if schema != expected {
                             return Err("binding payload type does not match target".to_string());
                         }
-                        if self
-                            .channels
-                            .keys()
-                            .filter_map(|id| {
-                                world.get_component_by_id_as::<UdpChannelComponent>(*id)
-                            })
-                            .any(|c| c.binding.as_ref().is_some_and(|b| same_target(b, binding)))
+                        if !config.publishing
+                            && self
+                                .channels
+                                .keys()
+                                .filter_map(|id| {
+                                    world.get_component_by_id_as::<UdpChannelComponent>(*id)
+                                })
+                                .filter(|c| !c.publishing)
+                                .any(|c| {
+                                    c.binding.as_ref().is_some_and(|b| same_target(b, binding))
+                                })
                         {
                             return Err("target already has a channel writer".into());
                         }
@@ -165,6 +195,7 @@ impl UdpChannelSystem {
                             .map(|native| Channel::Publication {
                                 socket: config.socket,
                                 id: native,
+                                last_transform: None,
                             })
                             .map_err(|e| e.to_string())
                     } else {
@@ -233,9 +264,10 @@ impl UdpChannelSystem {
             }
         }
         for (component, channel) in &mut self.channels {
-            let (socket_id, publishing) = match channel {
-                Channel::Publication { socket, .. } => (*socket, true),
-                Channel::Subscription { socket, .. } => (*socket, false),
+            let socket_id = match channel {
+                Channel::Publication { socket, .. } | Channel::Subscription { socket, .. } => {
+                    *socket
+                }
             };
             let Some(socket) = self.sockets.get_mut(&socket_id) else {
                 state(
@@ -247,38 +279,17 @@ impl UdpChannelSystem {
                 );
                 continue;
             };
-            let ready = match channel {
-                Channel::Publication { id, .. } => socket.is_publication_ready(*id),
-                Channel::Subscription { id, .. } => socket.channel(*id).is_some(),
-            };
-            let retained_error = (!publishing)
-                .then(|| {
-                    world
-                        .get_component_by_id_as::<UdpChannelComponent>(*component)
-                        .and_then(|c| c.error.clone())
-                })
-                .flatten();
-            state(
-                world,
-                emit,
-                *component,
-                ready && retained_error.is_none(),
-                retained_error,
-            );
-            if !ready {
-                continue;
-            }
-            if publishing {
-                if let Channel::Publication { id, .. } = channel {
-                    let value = world
-                        .get_component_by_id_as_mut::<UdpChannelComponent>(*component)
-                        .and_then(|c| c.pending.take());
-                    if let Some(value) = value {
-                        if let Err(e) = socket.write(*id, &value) {
-                            state(world, emit, *component, false, Some(e.to_string()));
-                        }
-                    }
+            if let Channel::Publication {
+                id, last_transform, ..
+            } = channel
+            {
+                if !socket.is_publication_ready(*id) {
+                    *last_transform = None;
+                    state(world, emit, *component, false, None);
+                    continue;
                 }
+                let result = publish(world, socket, *component, *id, last_transform);
+                state(world, emit, *component, result.is_ok(), result.err());
             } else if let Channel::Subscription {
                 id,
                 last,
@@ -287,21 +298,33 @@ impl UdpChannelSystem {
                 ..
             } = channel
             {
+                let ready = socket.channel(*id).is_some();
+                let retained_error = world
+                    .get_component_by_id_as::<UdpChannelComponent>(*component)
+                    .and_then(|c| c.error.clone());
+                state(
+                    world,
+                    emit,
+                    *component,
+                    ready && retained_error.is_none(),
+                    retained_error,
+                );
                 if let Some(sample) = socket.sample(*id) {
                     let identity = (sample.channel, sample.sequence);
                     if *last == Some(identity) {
                         continue;
                     }
+                    if binding.is_some()
+                        && world
+                            .get_component_by_id_as::<UdpChannelComponent>(*component)
+                            .is_some_and(|c| !c.binding_enabled)
+                    {
+                        *last = Some(identity);
+                        continue;
+                    }
                     let result = match binding.as_ref() {
                         Some(UdpBinding::Transform { target, space }) => {
-                            let mut values = [0.; 10];
-                            sample.schema.decode_numeric(sample.bytes, &mut values).map_err(|e| e.to_string()).and_then(|_| {
-                                let norm = values[..4].iter().map(|v| v*v).sum::<f32>();
-                                if !norm.is_finite() { return Err("quaternion norm outside finite f32 range".into()); }
-                                let pose = TransformTrs::new(values[7..10].try_into().unwrap(), values[..4].try_into().unwrap(), values[4..7].try_into().unwrap()).normalized().map_err(|e| e.to_string())?;
-                                if world.get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(*target).is_none() { return Err("transform target removed".into()); }
-                                emit.push_intent_now(*target, IntentValue::SetTransformTrs { component_id: *target, space: *space, value: pose }); Ok(())
-                            })
+                            apply_transform_sample(world, emit, *target, *space, sample)
                         }
                         Some(UdpBinding::Morph { target, slot }) => {
                             let mut value = [0.];
@@ -349,6 +372,132 @@ impl UdpChannelSystem {
         }
     }
 }
+
+pub(crate) fn read_bound_transform(
+    world: &World,
+    target: ComponentId,
+    space: TransformSpace,
+) -> Result<TransformTrs, String> {
+    match space {
+        TransformSpace::World => {
+            TransformSystem::world_trs(world, target).map_err(|e| e.to_string())
+        }
+        TransformSpace::Local => {
+            if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(target) {
+                return Ok(transform.trs());
+            }
+            world
+                .get_component_by_id_as::<TransformOperatorComponent>(target)
+                .and_then(TransformOperatorComponent::hinge_settings)
+                .map(|hinge| hinge.local_trs())
+                .ok_or_else(|| "transform target removed".into())
+        }
+    }
+}
+
+fn publish(
+    world: &mut World,
+    socket: &mut ChannelSocket,
+    component: ComponentId,
+    id: PublicationId,
+    last_transform: &mut Option<TransformTrs>,
+) -> Result<(), String> {
+    let config = world
+        .get_component_by_id_as_mut::<UdpChannelComponent>(component)
+        .ok_or("publication removed")?;
+    let Some(UdpBinding::Transform { target, space }) = config.binding else {
+        if let Some(value) = config.pending.take() {
+            socket.write(id, &value).map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    };
+    let enabled = config.binding_enabled;
+    let pose = if enabled {
+        let pose = read_bound_transform(world, target, space)?;
+        if *last_transform == Some(pose) {
+            return Ok(());
+        }
+        pose
+    } else {
+        *last_transform = None;
+        let Some(pose) = config.final_transform else {
+            return Ok(());
+        };
+        pose
+    };
+    let [x, y, z, w] = pose.rotation_quat_xyzw;
+    let [sx, sy, sz] = pose.scale;
+    let [tx, ty, tz] = pose.translation;
+    // The record schema orders fields by name.
+    let sent = socket
+        .write_numeric(id, &[x, y, z, w, sx, sy, sz, tx, ty, tz])
+        .map_err(|e| e.to_string())?;
+    if sent {
+        if enabled {
+            *last_transform = Some(pose);
+        } else if let Some(config) =
+            world.get_component_by_id_as_mut::<UdpChannelComponent>(component)
+        {
+            config.final_transform = None;
+        }
+    }
+    Ok(())
+}
+
+fn apply_transform_sample(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    target: ComponentId,
+    space: TransformSpace,
+    sample: Sample<'_>,
+) -> Result<(), String> {
+    let mut values = [0.; 10];
+    sample
+        .schema
+        .decode_numeric(sample.bytes, &mut values)
+        .map_err(|e| e.to_string())?;
+    let [x, y, z, w, sx, sy, sz, tx, ty, tz] = values;
+    let rotation = [x, y, z, w];
+    let norm = rotation.iter().map(|v| v * v).sum::<f32>();
+    if !norm.is_finite() {
+        return Err("quaternion norm outside finite f32 range".into());
+    }
+    let value = TransformTrs::new([tx, ty, tz], rotation, [sx, sy, sz])
+        .normalized()
+        .map_err(|e| e.to_string())?;
+    if world
+        .get_component_by_id_as::<TransformComponent>(target)
+        .is_some()
+    {
+        emit.push_intent_now(
+            target,
+            IntentValue::SetTransformTrs {
+                component_id: target,
+                space,
+                value,
+            },
+        );
+        return Ok(());
+    }
+    if space == TransformSpace::Local {
+        if let Some(hinge) = world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(target)
+            .and_then(TransformOperatorComponent::hinge_settings_mut)
+        {
+            if hinge.set_local_rotation(value.rotation_quat_xyzw)? {
+                emit.push_intent_now(
+                    target,
+                    IntentValue::UpdateTransformWorld {
+                        component_id: target,
+                    },
+                );
+            }
+            return Ok(());
+        }
+    }
+    Err("transform target removed".into())
+}
+
 fn state(
     world: &mut World,
     emit: &mut dyn SignalEmitter,

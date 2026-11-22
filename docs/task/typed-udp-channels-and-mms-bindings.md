@@ -1,8 +1,8 @@
 # Typed UDP channels and MMS bindings
 
 Status: native foundation and MMS adapter implemented, with ordinary socket/
-channel methods, whole-transform and morph receive bindings, partial transform
-writes, external avatar pose inputs, and the two-peer Mitten demo. Physical XR
+channel methods, whole-transform publication and receive bindings, morph receive
+bindings, partial transform writes, external avatar pose inputs, and the two-peer Mitten demo. Physical XR
 and two-machine Tailscale validation remain manual follow-up. See
 [the MMS API](../how_to/typed-udp-channels.md).
 
@@ -24,9 +24,9 @@ transform-property methods remain follow-up work.
 
 ## Goal
 
-Expose first-class socket values and typed channels in MMS. Publish explicitly
-with `.write(value)`; receive through UdpSample handlers or subscription-owned
-`.bind_transform(target)`. Use type tags imported from `"types"` and structural
+Expose first-class socket values and typed channels in MMS. Publish with
+`.write(value)` or `.bind_transform(target)`. Receive through UdpSample handlers
+or a binding. Use type tags imported from `"types"` and structural
 record types, compact binary payloads and channel identities. Keep local scene
 and physics policy in MMS. Do not introduce a global Bind component/table.
 
@@ -141,10 +141,21 @@ arena to local handles; never transmit ComponentId as cross-process identity.
 Before adding to oversized source files, update the relevant responsibility-split
 tickets under docs/task; scoped implementation does not authorize those splits.
 
-Automatic source publication is deferred. AudioStream, writable Rust producer
-handles, subscription audio binding, nested AudioSourceKind and voice chat are
+Automatic publication beyond transforms is deferred. AudioStream, writable
+Rust producer handles, subscription audio binding, nested AudioSourceKind and voice chat are
 phase 2, after basic channels and whole/property transform bindings. See the
 design draft for that scope.
+
+## Scene adapter boundaries
+
+Split socket and channel registration, readiness, and cleanup from typed binding
+validation and sample application in `src/engine/ecs/system/udp_channel_system.rs`.
+Keep the existing per-socket poll and per-channel pass, direct component lookups,
+and allocation-free numeric samples. Group loopback fixtures by channel lifecycle
+and bound scene properties when the MMS test module grows further. Validate with
+registration, lifecycle, transform, morph, and hinge loopback tests, and compare
+steady-state update cost with multiple active numeric bindings before and after
+the split.
 
 ## Intermediate milestone after local avatar testing: compressed audio
 

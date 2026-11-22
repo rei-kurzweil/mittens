@@ -1,5 +1,8 @@
 import { sta_rocket_launcher } from "../sta-rocket-launcher.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
+import { vec3, vec4 } from "types"
+
+let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 
 // The grip and impacts share the scene's peer lifecycle. Only the holder
 // creates a rocket; its final contact is replicated by the launcher device.
@@ -41,7 +44,43 @@ export fn shared_sta_launcher(label, options) {
         }
     }
     if !grab { return { root = grip grip = grip } }
-    return { root = grab.root grip = grip bind_pointer = grab.bind_pointer
-        connect = fn(group, address) { grab.connect(group, address) tool.network.connect(group, address) }
-        disconnect = fn() { tool.use_end() grab.disconnect() tool.network.disconnect() } }
+    let breech = { pointer = null target = null outgoing = null incoming = null }
+    fn update_hinge_bindings() {
+        let local = breech.pointer != null
+        if breech.outgoing { breech.outgoing.set_binding_enabled(local) }
+        if breech.incoming { breech.incoming.set_binding_enabled(!local) }
+    }
+    fn bind_pointer(pointer) {
+        grab.bind_pointer(pointer)
+        on(pointer, "PointerGrabbed", fn(event) {
+            if event.target != tool.hinge.query("[name='back_half']") { return }
+            breech.pointer = event.pointer
+            breech.target = event.target
+            update_hinge_bindings()
+        })
+        on(pointer, "PointerReleased", fn(event) {
+            if event.pointer != breech.pointer || event.target != breech.target { return }
+            breech.pointer = null
+            breech.target = null
+            update_hinge_bindings()
+        })
+    }
+    fn connect(group, address) {
+        grab.connect(group, address)
+        tool.network.connect(group, address)
+        let channel_name = options.weapon_id + ".hinge"
+        breech.outgoing = options.socket.publish(channel_name).to(address).type(pose_type).bind_transform(tool.hinge, { space = "local" })
+        breech.incoming = options.socket.subscribe(channel_name).from(address).type(pose_type).bind_transform(tool.hinge, { space = "local" })
+        update_hinge_bindings()
+        group.attach(breech.outgoing)
+        group.attach(breech.incoming)
+    }
+    fn disconnect() {
+        tool.use_end()
+        grab.disconnect()
+        tool.network.disconnect()
+        breech.outgoing = null
+        breech.incoming = null
+    }
+    return { root = grab.root grip = grip bind_pointer = bind_pointer connect = connect disconnect = disconnect }
 }

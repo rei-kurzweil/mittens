@@ -1,5 +1,7 @@
 use super::{Component, ComponentRef, QueryRootMode, resolve_component_ref};
 use crate::engine::ecs::{ComponentId, World};
+use crate::engine::transform::TransformTrs;
+use crate::utils::math::{quat_from_axis_angle, vec3_dot};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TransformVec3Op {
@@ -376,6 +378,25 @@ impl TransformHingeSettings {
         }
         let angle = self.limits.map_or(angle, |[min, max]| angle.clamp(min, max));
         Ok(std::mem::replace(&mut self.angle, angle) != angle)
+    }
+
+    pub fn local_trs(&self) -> TransformTrs {
+        TransformTrs {
+            rotation_quat_xyzw: quat_from_axis_angle(self.axis, self.angle),
+            ..TransformTrs::IDENTITY
+        }
+    }
+
+    pub fn set_local_rotation(&mut self, [x, y, z, w]: [f32; 4]) -> Result<bool, String> {
+        let projected = vec3_dot(self.axis, [x, y, z]);
+        if projected.abs() <= f32::EPSILON && w.abs() <= f32::EPSILON {
+            return Ok(false);
+        }
+        let angle = 2.0 * projected.atan2(w);
+        // A quaternion represents an orientation modulo a full turn. Continue
+        // from the nearest angle so crossing ±π does not jump the hinge.
+        let turn = ((self.angle - angle) / std::f32::consts::TAU).round();
+        self.set_angle(angle + turn * std::f32::consts::TAU)
     }
 }
 

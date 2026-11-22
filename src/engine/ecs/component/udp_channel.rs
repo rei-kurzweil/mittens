@@ -1,7 +1,7 @@
 //! Authored socket/channel handles. Native I/O belongs to UdpChannelSystem.
 use super::Component;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
-use crate::engine::transform::TransformSpace;
+use crate::engine::transform::{TransformSpace, TransformTrs};
 use crate::engine::udp_channels::Schema;
 
 #[derive(Debug)]
@@ -40,6 +40,8 @@ pub struct UdpChannelComponent {
     pub peer: Option<std::net::SocketAddr>,
     pub schema: Option<Schema>,
     pub binding: Option<UdpBinding>,
+    pub binding_enabled: bool,
+    pub final_transform: Option<TransformTrs>,
     pub active: bool,
     pub ready: bool,
     pub error: Option<String>,
@@ -54,6 +56,8 @@ impl UdpChannelComponent {
             peer: None,
             schema: None,
             binding: None,
+            binding_enabled: true,
+            final_transform: None,
             active: false,
             ready: false,
             error: None,

@@ -1,8 +1,9 @@
-//! Socket values, ordinary channel methods, and options-table receive binding.
+//! Socket values, ordinary channel methods, and scene bindings.
 use super::host::MittensHost;
 use crate::engine::ecs::{
     ComponentId,
     component::{UdpBinding, UdpChannelComponent, UdpSocketComponent},
+    system::udp_channel_system::read_bound_transform,
 };
 use crate::engine::transform::TransformSpace;
 use crate::engine::udp_channels::Schema;
@@ -105,6 +106,11 @@ impl MittensHost<'_, '_> {
             if !channel.publishing {
                 return Err(err("only publications accept writes"));
             }
+            if channel.binding.is_some() {
+                return Err(err(
+                    "bound publications source their samples from the binding",
+                ));
+            }
             if !channel.ready {
                 return Err(err("channel is not ready"));
             }
@@ -120,11 +126,45 @@ impl MittensHost<'_, '_> {
         }
         let channel = self
             .world
-            .get_component_by_id_as_mut::<UdpChannelComponent>(id)
+            .get_component_by_id_as::<UdpChannelComponent>(id)
             .ok_or_else(|| err("stale channel"))?;
+        if method == "set_binding_enabled" {
+            let [V::Bool(enabled)] = args.as_slice() else {
+                return Err(err("set_binding_enabled expects one boolean"));
+            };
+            let binding = channel
+                .binding
+                .as_ref()
+                .ok_or_else(|| err("channel has no binding"))?;
+            // Capture the release pose before other writers can change it again.
+            let final_transform = match *binding {
+                UdpBinding::Transform { target, space }
+                    if channel.publishing
+                        && channel.active
+                        && channel.binding_enabled
+                        && !enabled =>
+                {
+                    read_bound_transform(self.world, target, space).ok()
+                }
+                _ => None,
+            };
+            let channel = self
+                .world
+                .get_component_by_id_as_mut::<UdpChannelComponent>(id)
+                .unwrap();
+            channel.binding_enabled = *enabled;
+            if *enabled || final_transform.is_some() {
+                channel.final_transform = final_transform;
+            }
+            return Ok(R::Value(V::Null));
+        }
         if channel.active {
             return Err(err("configure channels before attachment/activation"));
         }
+        let channel = self
+            .world
+            .get_component_by_id_as_mut::<UdpChannelComponent>(id)
+            .unwrap();
         match method {
             "type" => {
                 let [value] = args.as_slice() else {
@@ -152,8 +192,8 @@ impl MittensHost<'_, '_> {
                 );
             }
             "bind_transform" | "bind_morph" => {
-                if channel.publishing {
-                    return Err(err("receive bindings require a subscription"));
+                if method == "bind_morph" && channel.publishing {
+                    return Err(err("morph bindings require a subscription"));
                 }
                 let Some(V::ComponentObject { id: target, .. }) = args.first() else {
                     return Err(err("expected component target"));
@@ -241,15 +281,21 @@ pub(super) fn configure(
             );
         }
         host_method(component, canonical, "ready", S::new(vec![], T::Bool));
+        host_method(
+            component,
+            canonical,
+            "bind_transform",
+            S::with_optional(vec![T::Component, T::Any], 1, T::Component),
+        );
+        host_method(
+            component,
+            canonical,
+            "set_binding_enabled",
+            S::new(vec![T::Bool], T::Null),
+        );
         if canonical == "UdpPublication" {
             host_method(component, canonical, "write", S::new(vec![T::Any], T::Null));
         } else {
-            host_method(
-                component,
-                canonical,
-                "bind_transform",
-                S::with_optional(vec![T::Component, T::Any], 1, T::Component),
-            );
             host_method(
                 component,
                 canonical,

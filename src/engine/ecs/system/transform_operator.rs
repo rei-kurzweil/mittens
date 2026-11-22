@@ -182,8 +182,7 @@ impl TransformOperatorSystem {
         let rebased_world = self.apply_transform_parent_basis(world, root, input_world);
         let operator = world.get_component_by_id_as::<TransformOperatorComponent>(root);
         if let Some(hinge) = operator.and_then(TransformOperatorComponent::hinge_settings) {
-            let rotation = math::quat_from_axis_angle(hinge.axis(), hinge.angle());
-            let local = Self::recompose_matrix(TransformTrs::new([0.0; 3], rotation, [1.0; 3]));
+            let local = Self::recompose_matrix(hinge.local_trs());
             return Some((math::mat4_mul(rebased_world, local), world.children_of(root).to_vec()));
         }
         if let Some(settings) = operator.and_then(TransformOperatorComponent::sample_translation_settings)

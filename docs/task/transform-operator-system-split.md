@@ -37,4 +37,6 @@ operator refresh paths a shared boundary for replaying upstream operators
 after a local edit. Keep local rotation composition with the stateless
 operators. Preserve the current traversal and indexed dependency refresh.
 Validate pivot and local-axis composition, live angle writes under nested
-operators, and MMS round trips alongside the existing operator tests.
+operators, and MMS round trips alongside the existing operator tests. Keep
+conversion between the hinge's local TRS and constrained angle with the
+operator settings and validate it through the UDP transform binding.

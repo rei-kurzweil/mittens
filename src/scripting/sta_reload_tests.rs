@@ -210,3 +210,154 @@ fn sta_cabinet_round_reloads_only_in_an_open_empty_launcher() {
     assert_eq!(scene.world.find_component(round, "GLTF"), Some(model));
     assert!(position(&scene, "test_cabinet_round_0_0")[2] < -0.18366);
 }
+
+#[test]
+fn sta_launcher_transform_binding_follows_local_rear_grabs() {
+    use crate::engine::ecs::{SignalEmitter, component::UdpChannelComponent};
+    use std::{net::UdpSocket, time::Duration};
+
+    let addresses = ["127.0.0.1:0"; 2].map(|address| UdpSocket::bind(address).unwrap());
+    let [a, b] = addresses.map(|socket| socket.local_addr().unwrap());
+    let load = |address, peer, rank| {
+        let mut scene = Universe::new(World::default());
+        let source = format!(
+            r#"
+import {{ shared_sta_launcher }} from "../assets/components/weapons/shared_sta_launcher.mms"
+let socket = UdpSocket.bind("{address}") {{}}
+socket
+let pointer = Pointer {{ name = "pointer" }}
+T {{ pointer }}
+let device = shared_sta_launcher("fixture", {{ socket = socket rank = {rank} weapon_id = "test.sta" }})
+device.root
+device.bind_pointer(pointer)
+let group = T {{}}
+group
+device.connect(group, "{peer}")
+"#
+        );
+        scene
+            .load_mms_source_at_path(&source, "examples/_sta_sync_test.mms")
+            .unwrap();
+        scene.update(1.0 / 60.0, &Default::default());
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut Uploader::default(),
+            &mut scene.command_queue,
+        );
+        scene
+    };
+    let (mut a, mut b) = (load(a, b, 1), load(b, a, 2));
+    let tick = |a: &mut Universe, b: &mut Universe, frames| {
+        for _ in 0..frames {
+            a.update(1.0 / 60.0, &Default::default());
+            b.update(1.0 / 60.0, &Default::default());
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    let angle = |scene: &Universe| {
+        let hinge = find(&scene.world, "fixture_hinge").unwrap();
+        scene
+            .world
+            .get_component_by_id_as::<TransformOperatorComponent>(hinge)
+            .unwrap()
+            .hinge_settings()
+            .unwrap()
+            .angle()
+    };
+    let set_angle = |scene: &mut Universe, angle| {
+        let hinge = find(&scene.world, "fixture_hinge").unwrap();
+        scene
+            .world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(hinge)
+            .unwrap()
+            .hinge_settings_mut()
+            .unwrap()
+            .set_angle(angle)
+            .unwrap();
+        scene
+            .systems
+            .transform_changed(&mut scene.world, &mut scene.visuals, hinge);
+    };
+    let grab = |scene: &mut Universe| {
+        let pointer = find(&scene.world, "pointer").unwrap();
+        let target = find(&scene.world, "back_half").unwrap();
+        let renderable = scene.world.find_component(target, "renderable").unwrap();
+        scene.command_queue.push_event(
+            renderable,
+            EventSignal::GrabStart {
+                pointer,
+                target,
+                renderable,
+                raycaster: pointer,
+                ray_origin_world: [0.0, 0.0, 2.0],
+                ray_dir_world: [0.0, 0.0, -1.0],
+            },
+        );
+    };
+    let release = |scene: &mut Universe| {
+        let pointer = find(&scene.world, "pointer").unwrap();
+        let target = find(&scene.world, "back_half").unwrap();
+        scene
+            .command_queue
+            .push_event(target, EventSignal::GrabEnd { pointer, target });
+    };
+    let bindings = |scene: &Universe| {
+        let mut enabled = [false; 2];
+        let mut count = 0;
+        for id in scene.world.all_components() {
+            if let Some(channel) = scene
+                .world
+                .get_component_by_id_as::<UdpChannelComponent>(id)
+                && channel.channel_name == "test.sta.hinge"
+            {
+                assert!(channel.ready, "{:?}", channel.error);
+                enabled[usize::from(channel.publishing)] = channel.binding_enabled;
+                count += 1;
+            }
+        }
+        assert_eq!(count, 2);
+        enabled
+    };
+
+    tick(&mut a, &mut b, 150);
+    assert_eq!(bindings(&a), [true, false]);
+    let closed = position(&b, "back_half");
+    grab(&mut a);
+    tick(&mut a, &mut b, 4);
+    assert_eq!(bindings(&a), [false, true]);
+    set_angle(&mut a, 1.0);
+    tick(&mut a, &mut b, 4);
+    assert!((angle(&b) - 1.0).abs() < 1e-6);
+    let open = position(&b, "back_half");
+    assert!(crate::utils::math::vec3_len(crate::utils::math::vec3_sub(open, closed)) > 0.15);
+    assert_position(&b, "back_half", position(&a, "back_half"));
+
+    grab(&mut b);
+    tick(&mut a, &mut b, 4);
+    set_angle(&mut a, 0.5);
+    tick(&mut a, &mut b, 4);
+    assert!(
+        (angle(&b) - 1.0).abs() < 1e-6,
+        "receive binding paused during local grab"
+    );
+    release(&mut b);
+    tick(&mut a, &mut b, 4);
+    assert_eq!(bindings(&b), [true, false]);
+    assert!(
+        (angle(&b) - 1.0).abs() < 1e-6,
+        "paused samples are discarded"
+    );
+
+    release(&mut a);
+    tick(&mut a, &mut b, 1);
+    assert_eq!(bindings(&a), [true, false]);
+    set_angle(&mut a, 0.0);
+    tick(&mut a, &mut b, 4);
+    assert!(
+        (angle(&b) - 0.5).abs() < 1e-6,
+        "release sends one final snapshot"
+    );
+    assert_eq!(angle(&a), 0.0);
+}
