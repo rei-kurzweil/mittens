@@ -128,6 +128,8 @@ mod sta_reload_tests;
 #[cfg(test)]
 mod avatar_equipment_tests;
 #[cfg(test)]
+mod truck_bed_tests;
+#[cfg(test)]
 mod avatar_picker_tests;
 
 #[cfg(test)]

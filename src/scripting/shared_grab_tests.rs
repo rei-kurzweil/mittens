@@ -254,3 +254,116 @@ fn mms_shared_grab_late_receiver_gets_final_release_snapshot() {
     assert_eq!(position(&b, "observed"), [2.0, 1.0, 0.0]);
     same_pose(&a, &b);
 }
+
+/// Like `load`, plus a moving "cart" whose zone is shared mount 7.
+fn load_with_cart(port: u16, other: u16, rank: u32) -> Universe {
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            &format!(
+                r#"
+import {{ shared_grabbable }} from "../assets/components/network/shared_grabbable.mms"
+import {{ shared_mounts, attach_drops }} from "../assets/components/network/shared_mounts.mms"
+let socket = UdpSocket.bind("127.0.0.1:{port}") {{}}
+socket
+let mounts = shared_mounts()
+let pointer = Pointer {{ name = "pointer" }}
+T.position(0.0, 1.0, 2.0) {{ name = "driver" pointer }}
+// No to_hand snap, so the test can place the held prop directly.
+let prop = T.position(0.0, 1.0, 0.0) {{ name = "prop"
+    Grabbable {{}}
+    R.cube() {{ name = "mesh" Raycastable.enabled() }}
+}}
+let bed = Zone.cube([0.5, 0.5, 0.5]).receive_drops(0) {{ name = "cart_bed" }}
+let cart = T.position(3.0, 1.0, 0.0) {{ name = "cart" bed }}
+cart
+attach_drops(bed, mounts, 7)
+let shared = shared_grabbable({{ socket = socket name = "prop.1" target = prop rank = {rank} mounts = mounts }})
+shared.root
+shared.bind_pointer(pointer)
+let channels = T {{ name = "channels" }}
+channels
+shared.connect(channels, "127.0.0.1:{other}")
+"#
+            ),
+            "examples/_shared-mount-test.mms",
+        )
+        .unwrap();
+    scene
+}
+fn set_world_translation(scene: &mut Universe, name: &str, translation: [f32; 3]) {
+    let id = named(scene, name);
+    let mut value = TransformSystem::world_trs(&scene.world, id).unwrap();
+    value.translation = translation;
+    scene.command_queue.push_intent_now(
+        id,
+        IntentValue::SetTransformTrs {
+            component_id: id,
+            space: TransformSpace::World,
+            value,
+        },
+    );
+}
+
+#[test]
+fn mms_shared_mount_drop_attaches_on_both_peers_and_rides_without_streaming() {
+    let a = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let b = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let ports = (
+        a.local_addr().unwrap().port(),
+        b.local_addr().unwrap().port(),
+    );
+    drop((a, b));
+    let (mut a, mut b) = (
+        load_with_cart(ports.0, ports.1, 1),
+        load_with_cart(ports.1, ports.0, 2),
+    );
+    tick(&mut a, &mut b, 100);
+
+    // Peer A carries the prop into its cart and lets go.
+    grab(&mut a);
+    tick(&mut a, &mut b, 5);
+    set_world_translation(&mut a, "prop", [3.0, 1.1, 0.1]);
+    tick(&mut a, &mut b, 5);
+    release(&mut a);
+    tick(&mut a, &mut b, 30);
+    assert_eq!(a.world.parent_of(named(&a, "prop")), Some(named(&a, "cart_bed")));
+    assert_eq!(
+        b.world.parent_of(named(&b, "prop")),
+        Some(named(&b, "cart_bed")),
+        "the drop event must mount B's copy in B's own cart"
+    );
+    same_pose(&a, &b);
+
+    // Each peer moves its own cart (as truck replication would). The prop
+    // follows locally on both sides.
+    for scene in [&mut a, &mut b] {
+        set_world_translation(scene, "cart", [6.0, 1.0, 1.0]);
+    }
+    tick(&mut a, &mut b, 5);
+    let p = position(&a, "prop");
+    assert!(
+        (p[0] - 6.0).abs() < 1e-3 && (p[1] - 1.1).abs() < 1e-3 && (p[2] - 1.1).abs() < 1e-3,
+        "{p:?}"
+    );
+    same_pose(&a, &b);
+
+    // Peer B takes it out of the cart and drops it in the open.
+    grab(&mut b);
+    tick(&mut a, &mut b, 20);
+    assert_eq!(
+        a.world.parent_of(named(&a, "prop")),
+        Some(named(&a, "prop.1_mount")),
+        "a grab on B must unmount A's copy"
+    );
+    move_driver(&mut b, -2.0);
+    tick(&mut a, &mut b, 10);
+    release(&mut b);
+    tick(&mut a, &mut b, 30);
+    assert_ne!(b.world.parent_of(named(&b, "prop")), Some(named(&b, "cart_bed")));
+    same_pose(&a, &b);
+    let resting = position(&a, "prop");
+    set_world_translation(&mut a, "cart", [9.0, 1.0, 0.0]);
+    tick(&mut a, &mut b, 5);
+    assert_eq!(position(&a, "prop"), resting, "an unmounted prop stays put");
+}

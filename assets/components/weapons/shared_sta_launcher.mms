@@ -21,7 +21,7 @@ export fn shared_sta_launcher(label, options) {
     }
     let grab = null
     if options["socket"] {
-        grab = shared_grabbable({ socket = options.socket name = options.weapon_id + ".grip" target = grip rank = options.rank })
+        grab = shared_grabbable({ socket = options.socket name = options.weapon_id + ".grip" target = grip rank = options.rank mounts = options["mounts"] })
     }
     let held = { pointer = null hand = "" }
     on(grip, "GrabStart", fn(event) {

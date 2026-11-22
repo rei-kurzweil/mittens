@@ -11,6 +11,7 @@ import { f32, str, vec3, vec4 } from "types"
 
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
@@ -206,10 +207,13 @@ let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 let grab_rank = 2
 if net.is_host() { grab_rank = 1 }
 // Use the imported hood's yellow base color for the combined paint.
-let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, { socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank })
+// Shared items mounted on these frames (the truck bed) sync by one event each.
+let mounts = shared_mounts()
+let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
+    socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
 fn weapon_options(id) {
-    return { socket = socket weapon_id = id rank = grab_rank
+    return { socket = socket weapon_id = id rank = grab_rank mounts = mounts
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
 }
 let pistol = ship_machine_pistol("rooftop_machine_pistol", weapon_options("arena.pistol.1"))
@@ -287,11 +291,11 @@ let shared_prop = T.position(roof_x, roof_height + 1.1, 0.0) {
         R.cube() { C.rgba(0.12, 0.85, 0.95, 1.0) Raycastable.enabled() }
     }
 }
-let shared = shared_grabbable({ socket = socket name = "arena.prop.1" target = shared_prop rank = grab_rank })
+let shared = shared_grabbable({ socket = socket name = "arena.prop.1" target = shared_prop rank = grab_rank mounts = mounts })
 shared.root
 let gohei = gohei_black_spring("shared_gohei")
 gohei.update_transform([roof_x + 1.1, roof_height + 1.1, 0.0])
-let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank })
+let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank mounts = mounts })
 shared_gohei.root
 let shared_objects = [shared, shared_gohei, pistol, second_pistol, launcher]
 for item in shared_objects {

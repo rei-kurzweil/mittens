@@ -1,6 +1,7 @@
 import { pickup_power_panel } from "./pickup_power_panel.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
+import { pickup_bed_seat } from "./pickup_bed_seat.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
 import { pickup_anime_material } from "../materials/pickup_anime.mms"
@@ -9,6 +10,7 @@ import { pickup_sliding_colliders } from "./pickup_sliding_colliders.mms"
 import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height.mms"
 import { pickup_hydraulics_panel } from "./pickup_hydraulics_panel.mms"
 import { pickup_replication } from "../network/pickup_replication.mms"
+import { attach_drops } from "../network/shared_mounts.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, gravity_enabled, options) {
@@ -72,6 +74,15 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             }
         }
     })
+    // Items released over the bed attach to it and ride the truck. Interior
+    // of the authored bed in chassis space: floor ~0.6, walls to ~1.36.
+    let bed_zone=Zone.cube([0.78,0.45,0.92]).receive_drops(0) {name="pickup_bed_cargo_zone"}
+    let bed_cargo=T.position(0,1.05,1.68) {name="pickup_bed_cargo_frame" bed_zone}
+    let mounts=null
+    let bed_mount=null
+    if options && options["mounts"] {mounts=options.mounts}
+    if options && options["bed_mount"]!=null {bed_mount=options.bed_mount}
+    attach_drops(bed_zone,mounts,bed_mount)
     let body=T.position(0.047,0,-0.568) {
         name="pickup_chassis_frame"
         T.position(0,0.180146,0).rotation(0,Math.pi,0) {
@@ -91,6 +102,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             name="pickup_bed_cargo_mount"
             if cargo!=null { cargo }
         }
+        bed_cargo
     }
     let pose=T.position(-0.047,0,0.568) {name="pickup_chassis_pose" pickup_ride_transition() body}
     let truck=T {
@@ -139,6 +151,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     }
     body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed))
     body.attach(power)
+    body.attach(pickup_bed_seat())
     if options && options["socket"] {
         fn follow_peer(following,occupied) {
             truck.set_remote_occupied(occupied)
@@ -163,6 +176,8 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
 
 // For a shared pickup pass { socket, vehicle_id, rank }, then call
 // connect(group, address) and disconnect() with the scene's peer lifecycle.
+// Pass { mounts, bed_mount } (shared_mounts() and a numeric id unique in the
+// scene) to sync items dropped in the bed; without them the bed is local.
 // options.damage_threshold overrides the default damage per cell before a cut.
 export fn pickup_truck(color, cargo, gravity_enabled, options) {
     return make_pickup(color,cargo,gravity_enabled,options)
