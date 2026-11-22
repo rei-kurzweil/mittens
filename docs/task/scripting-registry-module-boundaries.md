@@ -9,6 +9,10 @@ Group Collidable constructors and builders with the Zone interaction registry.
 Keep the direct component construction path and validate MMS round trips for
 static, slide, and sensor collidables, including their movement-target references.
 
+Group the AmbientOcclusion constructor/builders (added for
+`docs/task/ambient-occlusion-baking.md`) with the rendering/materials family.
+Validate MMS round trips for `texcoord0`, the numeric builders and debug modes.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation
@@ -18,9 +22,9 @@ The scripting entry points remain large after grouping focused modules in
 
 | File | Approximate lines |
 | --- | ---: |
-| `src/scripting/component_registry.rs` | 4,817 |
+| `src/scripting/component_registry.rs` | 4,933 |
 | `src/scripting/component_method_registry.rs` | 1,774 |
-| `src/scripting/runtime_config.rs` | 1,641 |
+| `src/scripting/runtime_config.rs` | 1,701 |
 
 These are review signals, not automatic refactoring thresholds. The current
 organization change moves existing focused modules and groups all Renderable

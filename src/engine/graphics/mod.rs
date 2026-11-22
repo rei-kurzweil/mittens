@@ -1,3 +1,4 @@
+pub mod ao_bake;
 pub mod bounds;
 pub mod csg_mesh;
 pub mod custom_material;

@@ -45,6 +45,7 @@ impl SystemWorld {
             &mut self.renderable,
             &mut self.mesh_bounds,
         );
+        self.combine_mesh.flush_occlusion_textures(visuals, uploader);
         for source_root in collapse_roots {
             if let Some(old_parent) = world.parent_of(source_root) {
                 queue.push_event(

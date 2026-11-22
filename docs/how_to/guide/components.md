@@ -184,6 +184,14 @@ TransformSampleAncestor {}
 
 ## Rendering and appearance
 
+### `AmbientOcclusionComponent`
+<!-- catalog:component source="AmbientOcclusionComponent" mms="direct" names="AmbientOcclusion" -->
+Bakes ambient occlusion for the `CombineMesh` it is attached to: an automatic UV atlas, proximity between nearby surfaces, and darkening around concave creases. `texcoord0()` replaces `uv0` and uses the AO image as the surface's only texture; the default `uv1` mode is not implemented yet. Builders: `resolution`, `strength`, `proximity_radius`, `cavity_radius`, `cavity_angle`, `one_sided`, and `debug_checker` / `debug_proximity` / `debug_cavity`. Design: [AO baking task](../../task/ambient-occlusion-baking.md).
+**Directly constructible** as `AmbientOcclusion`. Sources: [Rust implementation](../../../src/engine/ecs/component/ambient_occlusion.rs), [bake](../../../src/engine/graphics/ao_bake/mod.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+AmbientOcclusion.texcoord0()
+```
+
 ### `BackgroundColorComponent`
 <!-- catalog:component source="BackgroundColorComponent" mms="direct" names="BackgroundColor" -->
 Carries background color state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Rendering systems; lifecycle registration/removal intents connect it to visual state.

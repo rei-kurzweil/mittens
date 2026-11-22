@@ -1,6 +1,40 @@
 # Ambient occlusion baking
 
-Status: design. No code yet. The pickup truck body is the first target.
+Status: slices 2–4 implemented for case B (untextured `Texcoord0`) with the
+built-in UV generator, unbuilt and unvalidated in the engine. The pickup truck
+body enables it. Nothing is cached on disk yet, and bakes run synchronously.
+
+## Implementation (2026-11-21)
+
+- `src/engine/graphics/ao_bake/`: `surface` (weld, adjacency), `atlas`
+  (`UvGenerator` trait, `BuiltinUvGenerator`), `texels` (rasterize, dilate),
+  `occlusion` (proximity + cavity with uniform grids), `tests`.
+- `AmbientOcclusionComponent` and its MMS builders: `texcoord0`, `resolution`,
+  `strength`, `proximity_radius`, `cavity_radius`, `cavity_angle`,
+  `one_sided`, `debug_checker` / `debug_proximity` / `debug_cavity`.
+- `CombineMeshSystem` bakes when the combined mesh rebuilds, through
+  `combine_mesh_occlusion.rs`. Bakes are shared by content and settings, and
+  the texture is bound after `reconcile_and_build`.
+- `xatlas` is not bound yet. The built-in generator is the only one, so it
+  came first, because it could be prototyped and checked here
+  (`ao_proto.py`-style NumPy prototype on the real truck: 187 charts, no
+  overlap, ~44 texels/m at 512²).
+
+### Findings from the truck prototype
+
+- The cabin is an open single-sheet shell with inward normals, while about
+  half of the body is solidified panels (a second layer 1–2 cm behind).
+  Two-sided bakes therefore measure both sides of every texel. A side with a
+  parallel facing layer within 0.4 × `proximity_radius` is inside the
+  material and is ignored; otherwise the more open side wins. Consequence:
+  single-sheet surfaces (and a lone ground plane) get no AO on their enclosed
+  side. `one_sided()` trusts the winding instead.
+- Proximity uses face normals. Smoothed normals tilt at fan centres and made
+  coplanar neighbours self-occlude (dark dots).
+- A crease darkens only as far as its walls extend, so a 1 cm lip does not
+  shade 7 cm of floor.
+- Default radii are absolute mesh-space units (0.15 proximity, 0.07 cavity),
+  tuned for the truck in metres.
 
 ## Goal
 
@@ -171,7 +205,7 @@ Facts from `assets/models/mitten_pickup.glb` and
 ## Slices
 
 1. **Tracker and design** (this file).
-2. **UV generation and checker look.** Add the `UvGenerator` trait and the
+2. **UV generation and checker look.** (done, built-in generator only) Add the `UvGenerator` trait and the
    `xatlas` FFI. Add `AmbientOcclusionComponent` with `Texcoord0` and
    `AoDebug::Checker` only; it bakes a checkerboard into the atlas and swaps
    it in. Add a runtime-generated texture path (today's `TextureComponent`
@@ -179,12 +213,12 @@ Facts from `assets/models/mitten_pickup.glb` and
    *Validate:* atlas validation tests; the truck shows an even checker with
    no stretching smears and no overlap; verify built-in Anime samples the
    texture.
-3. **Cavity AO on the truck.** Weld, rasterize texels, add the signed
+3. **Cavity AO on the truck.** (done) Weld, rasterize texels, add the signed
    dihedral cavity term, dilate. No BVH is needed yet. *Validate:* panel
    seams, wheel-well lips and the bed corners darken, and there are no dark
    lines along convex edges. Decide the double-sided sheet policy.
    `AoDebug::Cavity` view.
-4. **Proximity AO.** Add a per-primitive triangle BVH and the nearest-point
+4. **Proximity AO.** (done; grid instead of a BVH) Add a per-primitive triangle BVH and the nearest-point
    query. *Validate:* seat-to-floor, bed-to-wheel-well and the cabin interior
    darken. `AoDebug::Proximity` view. Record bake time for the truck body
    on desktop.

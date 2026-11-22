@@ -1,6 +1,7 @@
 pub mod destroyable;
 pub use destroyable::{CutGeometryComponent, DamageComponent, DestroyableComponent};
 pub mod ambient_light;
+pub mod ambient_occlusion;
 pub mod amplitude;
 pub mod animation;
 pub mod asset_payload;
@@ -128,6 +129,7 @@ pub mod uv;
 pub use self::gltf::GLTFComponent;
 pub use crate::engine::ecs::system::model::collision_types::CollisionShape;
 pub use ambient_light::AmbientLightComponent;
+pub use ambient_occlusion::{AmbientOcclusionComponent, AoUvChannel};
 pub use amplitude::{AmplitudeComponent, AmplitudeSample, AmplitudeStatus};
 pub use volume_normalization::{VolumeNormalizationComponent, VolumeNormalizationReason};
 

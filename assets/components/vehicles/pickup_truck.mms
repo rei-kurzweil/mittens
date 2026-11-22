@@ -20,6 +20,9 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
+        // Untextured body: the baked atlas replaces uv0 and paint colour stays
+        // an instance multiplier, so every truck shares one bake.
+        AmbientOcclusion.texcoord0()
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"

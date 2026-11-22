@@ -18,11 +18,16 @@ use crate::engine::graphics::primitives::{
 use crate::engine::graphics::{MeshUploader, RenderAssets, VisualWorld};
 use crate::utils::math::{mat4_inverse, mat4_mul, mat4_mul_vec4, vec3_normalize};
 
+#[path = "combine_mesh_occlusion.rs"]
+mod occlusion;
+use occlusion::CombinedOcclusion;
+
 #[derive(Debug, Default)]
 pub struct CombineMeshSystem {
     outputs: HashMap<ComponentId, CombinedOutput>,
     // Runtime only: damage unpacks retained sources without editing authored state.
     unpacked: HashSet<ComponentId>,
+    occlusion: CombinedOcclusion,
 }
 
 #[derive(Debug)]
@@ -168,7 +173,11 @@ impl CombineMeshSystem {
             let Some(root_inverse) = mat4_inverse(root_model) else {
                 continue;
             };
-            let fingerprint = fingerprint(world, assets, root, &sources, keep_transforms);
+            let fingerprint = CombinedOcclusion::fingerprint(
+                world,
+                root,
+                fingerprint(world, assets, root, &sources, keep_transforms),
+            );
             if let Some(old) = self.outputs.get_mut(&root)
                 && old.fingerprint == fingerprint
             {
@@ -183,6 +192,7 @@ impl CombineMeshSystem {
             let Some((mesh, material)) = bake(world, assets, root_inverse, &sources) else {
                 continue;
             };
+            let (mesh, occlusion) = self.occlusion.apply(world, root, mesh);
             let Some(local_bounds) = local_bounds(&mesh) else {
                 continue;
             };
@@ -232,6 +242,9 @@ impl CombineMeshSystem {
                 fallback_material: material,
             };
             Self::bind_material(visuals, &output, material_source);
+            if let Some(key) = occlusion {
+                self.occlusion.bind_when_uploaded(handle, key);
+            }
             self.outputs.insert(root, output);
             if !keep_transforms {
                 collapse_roots.extend(
@@ -242,11 +255,22 @@ impl CombineMeshSystem {
                         .filter(|child| Some(*child) != material_source
                             && world.get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(*child).is_none()
                             && world.get_component_by_id_as::<crate::engine::ecs::component::TextureFilteringComponent>(*child).is_none()
-                            && world.get_component_by_id_as::<crate::engine::ecs::component::TransparentCutoutComponent>(*child).is_none()),
+                            && world.get_component_by_id_as::<crate::engine::ecs::component::TransparentCutoutComponent>(*child).is_none()
+                            && !CombinedOcclusion::is_occlusion_component(world, *child)),
                 );
             }
         }
         collapse_roots
+    }
+
+    /// Uploads finished AO bakes and binds them to their combined instances.
+    /// Runs after `reconcile_and_build`, which publishes those instances.
+    pub fn flush_occlusion_textures(
+        &mut self,
+        visuals: &mut VisualWorld,
+        uploader: &mut dyn crate::engine::graphics::TextureUploader,
+    ) {
+        self.occlusion.flush_textures(visuals, uploader);
     }
 
     pub(crate) fn unpack(
@@ -689,6 +713,94 @@ mod tests {
             let instance = visuals.instance(system.outputs[&batch].handle).unwrap();
             assert_eq!(instance.renderable.material, MaterialHandle::ANIME_MESH);
             assert_eq!(instance.material_instance, Some(binding));
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingMeshUploader(Vec<CpuMesh>);
+
+    impl MeshUploader for RecordingMeshUploader {
+        fn upload_mesh(
+            &mut self,
+            mesh: &CpuMesh,
+        ) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            self.0.push(mesh.clone());
+            Ok(MeshHandle(self.0.len() as u32 - 1))
+        }
+    }
+
+    #[derive(Default)]
+    struct TestTextureUploader {
+        uploads: Vec<(u32, u32)>,
+    }
+
+    impl crate::engine::graphics::TextureUploader for TestTextureUploader {
+        fn upload_texture_rgba8(
+            &mut self,
+            rgba: &[u8],
+            width: u32,
+            height: u32,
+        ) -> Result<crate::engine::graphics::TextureHandle, Box<dyn std::error::Error>> {
+            assert_eq!(rgba.len(), (width * height * 4) as usize);
+            self.uploads.push((width, height));
+            Ok(crate::engine::graphics::TextureHandle(40 + self.uploads.len() as u32))
+        }
+
+        fn upload_texture_bc7(
+            &mut self,
+            _bc7_blocks: &[u8],
+            _width: u32,
+            _height: u32,
+            _srgb: bool,
+        ) -> Result<crate::engine::graphics::TextureHandle, Box<dyn std::error::Error>> {
+            unreachable!("AO bakes upload RGBA8")
+        }
+    }
+
+    #[test]
+    fn occlusion_bakes_once_per_identical_batch_and_binds_its_texture() {
+        use crate::engine::ecs::component::AmbientOcclusionComponent;
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let mut roots = Vec::new();
+        for x in [0.0, 5.0] {
+            let place = world.add_component(TransformComponent::new().with_position(x, 0., 0.));
+            let root = world.add_component(CombineMeshComponent::keep_transforms());
+            let ao = world.add_component(AmbientOcclusionComponent::texcoord0().with_resolution(64));
+            let source = world.add_component(RenderableComponent::cube());
+            for (a, b) in [(scene, place), (place, root), (root, ao), (root, source)] {
+                world.add_child(a, b).unwrap();
+            }
+            roots.push(root);
+        }
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut uploader = RecordingMeshUploader::default();
+        let mut textures = TestTextureUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        let mut combine = CombineMeshSystem::default();
+        let mut systems = crate::engine::ecs::SystemWorld::default();
+        systems.transform_changed(&mut world, &mut visuals, scene);
+        combine.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        combine.flush_occlusion_textures(&mut visuals, &mut textures);
+
+        assert_eq!(textures.uploads, vec![(64, 64)], "identical batches share one bake");
+        assert_eq!(uploader.0.len(), 1, "identical baked meshes share one upload");
+        let cube_vertices = assets.cpu_mesh(CpuMeshHandle::CUBE).unwrap().vertices.len();
+        for root in roots {
+            let instance = visuals.instance(combine.outputs[&root].handle).unwrap();
+            assert_eq!(instance.texture, Some(crate::engine::graphics::TextureHandle(41)));
+            let baked = &uploader.0[instance.renderable.mesh.0 as usize];
+            assert!(baked.vertices.len() >= cube_vertices);
+            assert!(baked.vertices.iter().all(|v| v.uv.iter().all(|c| (0.0..=1.0).contains(c))));
         }
     }
 

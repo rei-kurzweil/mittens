@@ -983,6 +983,27 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "LightQuantization" => {
                     component.constructor("steps", floats(1));
                 }
+                "AmbientOcclusion" => {
+                    no_arg_constructors_and_builders(
+                        component,
+                        &[
+                            "texcoord0",
+                            "one_sided",
+                            "debug_checker",
+                            "debug_proximity",
+                            "debug_cavity",
+                        ],
+                    );
+                    for method in [
+                        "resolution",
+                        "strength",
+                        "proximity_radius",
+                        "cavity_radius",
+                        "cavity_angle",
+                    ] {
+                        constructor_and_builder(component, method, floats(1));
+                    }
+                }
                 "ToonOutline" => {
                     constructor_and_builder(component, "width", floats(1));
                     constructor_and_builder(component, "color", any(1));

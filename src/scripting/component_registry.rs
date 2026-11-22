@@ -7,6 +7,7 @@ mod renderable_registry;
 #[path = "registries/spring_registry.rs"]
 mod spring_registry;
 use crate::engine::ecs::SignalEmitter;
+use crate::engine::ecs::component::AmbientOcclusionComponent;
 use crate::engine::ecs::component::AssetPayloadComponent;
 use crate::engine::ecs::component::TransformCameraSpecificMode;
 use crate::engine::ecs::component::style::VerticalAlign;
@@ -107,6 +108,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "MaterialDefinition",
     "Material",
     "AmbientLight",
+    "AmbientOcclusion",
     "Amplitude",
     "VolumeNormalization",
     "ToonOutline",
@@ -1863,6 +1865,13 @@ fn create_component(
             )),
             _ => add!(AmbientLightComponent::new()),
         },
+        "AmbientOcclusion" => {
+            let id = world.add_component(AmbientOcclusionComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "RenderGraph" => match ctor {
             Some("off") => add!(RenderGraphComponent::off()),
             Some("on") => add!(RenderGraphComponent::on()),
@@ -2944,6 +2953,16 @@ fn apply_call(
             .get_component_by_id_as_mut::<ToonOutlineComponent>(id)
             .unwrap() = updated;
         return Ok(());
+    }
+    if world
+        .get_component_by_id_as::<AmbientOcclusionComponent>(id)
+        .is_some()
+    {
+        let value = if args.is_empty() { None } else { Some(arg_f32(args, 0)?) };
+        return world
+            .get_component_by_id_as_mut::<AmbientOcclusionComponent>(id)
+            .unwrap()
+            .apply_builder(method, value);
     }
     if let Some(component) = world.get_component_by_id_as_mut::<RefractionComponent>(id) {
         component.apply_builder(method, arg_f32(args, 0)?)?;

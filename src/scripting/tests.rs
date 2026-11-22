@@ -10176,6 +10176,30 @@ fn roundtrip_light_quantization() {
 }
 
 #[test]
+fn roundtrip_ambient_occlusion() {
+    use crate::engine::ecs::component::AmbientOcclusionComponent;
+    use crate::engine::graphics::ao_bake::AoDebug;
+    let original = AmbientOcclusionComponent::texcoord0()
+        .with_resolution(1024)
+        .with_strength(0.6)
+        .with_proximity_radius(0.2)
+        .with_cavity(40.0, 0.05)
+        .with_one_sided()
+        .with_debug(AoDebug::Cavity);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<AmbientOcclusionComponent>(id)
+        .unwrap();
+    assert_eq!(*got, original);
+
+    let (world, id) = roundtrip_component(AmbientOcclusionComponent::new());
+    let got = world
+        .get_component_by_id_as::<AmbientOcclusionComponent>(id)
+        .unwrap();
+    assert_eq!(*got, AmbientOcclusionComponent::new());
+}
+
+#[test]
 fn roundtrip_normal_visualisation() {
     use crate::engine::ecs::component::NormalVisualisationComponent;
     let (world, id) = roundtrip_component(NormalVisualisationComponent::new().with_thickness(0.05));
