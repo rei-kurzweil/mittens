@@ -1093,11 +1093,11 @@ impl GLTFSystem {
                 .collect();
             let height = super::gltf_height::rest_height(&doc, &inverse_binds);
             import_scale = super::gltf_height::height_scale(height, min, max, target);
+            // Always report the measurement so a rule that did not fire is visible.
+            println!(
+                "[GLTFSystem] '{uri}' default_height_if_outside({min}, {max}, {target}): rest height {height:?}, baking scale {import_scale:.4}"
+            );
             if import_scale != 1.0 {
-                println!(
-                    "[GLTFSystem] '{uri}' rest height {:.3} is outside {min}..{max}: baking scale {import_scale:.4} for {target}",
-                    height.unwrap_or(0.0)
-                );
                 for imported in &mut meshes {
                     if let Some(mesh) = &mut imported.mesh {
                         super::gltf_height::bake_mesh_scale(mesh, import_scale);
