@@ -22,7 +22,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         name="pickup_painted_body"
         // Untextured body: the baked atlas replaces uv0 and paint colour stays
         // an instance multiplier, so every truck shares one bake.
-        AmbientOcclusion.texcoord0()
+        AmbientOcclusion.texcoord0().proximity_radius(0.60).cavity_radius(0.28).strength(0.85 * 2.0 / 3.0)
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
