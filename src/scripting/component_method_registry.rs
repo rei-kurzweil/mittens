@@ -3,7 +3,8 @@ use crate::engine::ecs::component::{
     AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
     BoneRestPoseComponent, EmissiveComponent, InputComponent,
     InputXRGamepadComponent, RayCastComponent, SliderComponent,
-    TextComponent, ToggleComponent, TransformComponent, TransitionComponent, VelocityComponent,
+    TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
+    TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
@@ -44,6 +45,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "local_bounds"
         ))
         || (component_type == "TransformWorld" && method == "trs")
+        || (matches!(component_type, "TOP" | "TransformOperator" | "transform_operator")
+            && matches!(method, "axis_angle" | "set_angle"))
         || (matches!(component_type, "PoseCapturePose" | "pose_capture_pose")
             && matches!(method, "apply" | "overlay" | "apply_blended"))
         || (matches!(component_type, "EM" | "Emissive" | "emissive")
@@ -132,6 +135,28 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("TOP" | "TransformOperator" | "transform_operator", "axis_angle" | "set_angle") => {
+            let hinge = world
+                .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                .and_then(|operator| operator.hinge_settings_mut())
+                .ok_or_else(|| format!("{method}(): expected a TOP.hinge"))?;
+            match (method, args) {
+                ("axis_angle", []) => Ok(Value::Map(std::collections::HashMap::from([
+                    (
+                        "axis".into(),
+                        Value::Array(hinge.axis().map(|value| Value::Number(f64::from(value))).into()),
+                    ),
+                    ("angle".into(), Value::Number(f64::from(hinge.angle()))),
+                ]))),
+                ("set_angle", [_]) => {
+                    if hinge.set_angle(arg_f32(args, 0)?)? {
+                        emit_intent(IntentValue::UpdateTransformWorld { component_id: id });
+                    }
+                    Ok(Value::Null)
+                }
+                _ => Err(format!("{method}(): invalid arguments")),
+            }
+        }
         ("AvatarControl" | "AVC" | "avatar_control", "capsule_ready") => {
             if !args.is_empty() {
                 return Err("capsule_ready(): expected no arguments".into());

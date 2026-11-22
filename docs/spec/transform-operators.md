@@ -40,6 +40,7 @@ Referenced transforms are data sources, not additional topology parents.
 | `TOP.parent(source)` | Route a referenced transform's world basis to downstream content. `.source(ref)` changes the source; `.root(ref)` scopes query resolution. `TOP.parent()` retains the existing unconfigured behavior. |
 | `TOP.inverse_local(source)` | Postmultiply the inherited matrix by the inverse of a referenced T's authored local matrix: `input_world * inverse(source_local)`. `.source(ref)` changes the source. |
 | `TOP.sample_translation().source(ref)` | Replace selected world translation coordinates from exactly one referenced structural ancestor T during normal propagation. `.axes("y")` or any nonempty set of x/y/z chooses coordinates; default xyz. `.root(ref)` scopes queries. Preserve the full incoming linear basis and apply downstream T offsets afterward. |
+| `TOP.hinge([x, y, z])` | Rotate the incoming local basis about its origin. The axis must be finite and nonzero. `.limits(min, max)` clamps the signed angle in radians. `.initial_angle(angle)` sets the starting angle, which defaults to zero and is clamped by any configured limits. |
 | `TOP.camera_specific("monoscopic" / "stereoscopic")` | Select a settings T under a marker attached directly to an anchor T. See the exception below. |
 
 `TOP.drop(channel)` is also a constructor. It creates a fork with the selected
@@ -53,6 +54,22 @@ stored on the live operator, not encoded as nested configuration components.
 Translation, rotation, and scale remain independent. Configuration and temporal
 state identity must not be confused: two operators with identical settings have
 separate retained state.
+
+## Hinge angle and grabbing
+
+Place the hinge under a `T` at the pivot. The output basis is the incoming
+matrix multiplied by the local axis rotation. Children compose their local
+offsets after that rotation. `hinge.axis_angle()` returns a table with `axis`,
+a normalized local direction, and `angle`, the current signed radians.
+`hinge.set_angle(angle)` applies the configured limits and refreshes the
+output subtree. Omitting `limits` leaves the angle unbounded. Scene dumps
+preserve the effective angle, axis, and limits.
+
+`Grabbable {}` on a hinge-driven `T` lets a pointer rotate the joint without
+changing parentage. The grab system uses the first operator on the path up
+to the next ancestor `T`. If that operator is a hinge, it captures the current
+pointer position relative to the hinge and updates the angle from the pointer's
+motion around the axis. The angle stays at its last value after release.
 
 ## Sources and refresh
 
@@ -112,8 +129,9 @@ their exceptional role remains explicit at this API checkpoint.
 ## Runtime representation and state
 
 Every TOP constructor creates a `TransformOperatorComponent` with a typed
-`TransformOperatorKind`: `ForkTrs`, `Parent`, `SampleTranslation`, `InverseLocal`, or `CameraSpecific`.
-Fork, parent-source, inverse-source, and camera settings are plain values inside
+`TransformOperatorKind`: `ForkTrs`, `Parent`, `SampleTranslation`, `InverseLocal`,
+`Hinge`, or `CameraSpecific`.
+Fork, parent-source, inverse-source, hinge, and camera settings are plain values inside
 the enum. They are not separate ECS components. A live operator keeps its own
 identity and temporal state, regardless of whether its settings equal another's.
 

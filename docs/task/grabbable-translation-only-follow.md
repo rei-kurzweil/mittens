@@ -50,3 +50,12 @@ restoring parentage.
 4. Translation-only following composes predictably with the proposed
    [held-size policy](grabbable-held-size.md) and
    [hand-relative placement](grab-hand-relative-bounds-placement.md).
+
+## Grab system split follow-up
+
+The grabbable system combines target resolution, capture lifecycle, rigid
+following, and motion-specific math. Group shared capture and release in the
+system, with rigid and joint motion in cohesive modules. Keep the rigid path
+direct and avoid walking unrelated transforms or allocating work for inactive
+joints. Validate both grab modes, capture cancellation, and two-hand motion
+with the primary pose applied first.

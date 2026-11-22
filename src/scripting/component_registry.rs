@@ -2007,13 +2007,14 @@ fn create_component(
                 mode => return Err(format!("TOP.camera_specific: unknown mode {mode:?}")),
             }),
             Some("fork_trs") => add!(TransformOperatorComponent::fork_trs()),
+            Some("hinge") => add!(TransformOperatorComponent::hinge(arg_f32_arr::<3>(args, 0)?)?),
             Some("sample_translation") => add!(TransformOperatorComponent { kind: crate::engine::ecs::component::transform_operator::TransformOperatorKind::SampleTranslation(Default::default()) }),
             Some(method @ ("drop" | "smooth" | "sample_ancestor" | "extract_yaw" | "yaw_follow")) => {
                 let id = world.add_component(TransformOperatorComponent::fork_trs());
                 apply_call(world, id, method, args)?;
                 Ok(id)
             }
-            _ => Err("TOP requires an operator constructor (fork_trs, parent, inverse_local, camera_specific, drop, smooth, sample_ancestor, extract_yaw, or yaw_follow)".into()),
+            _ => Err("TOP requires an operator constructor (fork_trs, hinge, parent, inverse_local, camera_specific, sample_translation, drop, smooth, sample_ancestor, extract_yaw, or yaw_follow)".into()),
         },
         "GLTF" => match ctor {
             Some("new") => add!(GLTFComponent::new(arg_str(args, 0)?)),
@@ -2727,6 +2728,16 @@ fn apply_call(
         return Ok(());
     }
 
+    if let Some(hinge) = world
+        .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.hinge_settings_mut())
+    {
+        return match (method, args.len()) {
+            ("limits", 2) => hinge.set_limits(arg_f32(args, 0)?, arg_f32(args, 1)?),
+            ("initial_angle", 1) => hinge.set_angle(arg_f32(args, 0)?).map(|_| ()),
+            _ => Err(format!("TOP.hinge does not support builder {method:?} with {} arguments", args.len())),
+        };
+    }
     if world
         .get_component_by_id_as::<TransformOperatorComponent>(id)
         .and_then(|operator| operator.sample_translation_settings())

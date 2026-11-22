@@ -122,3 +122,11 @@ Reuse the existing scene setup and callback delivery helpers. Preserve the
 number of scene loads and per-frame updates so the split adds no work to the
 test suite or engine. Validate with the focused scene filters and the full
 library suite.
+
+## Transform operator bindings
+
+Group TOP constructors, builders, and runtime method declarations into one
+transform-operator family. Keep angle reads and writes on the typed host
+dispatch path and refresh the affected transform subtree through the existing
+intent. Validate constructor signatures, live angle updates, and scene
+round trips after moving the family.

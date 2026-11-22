@@ -28,3 +28,13 @@ now uses the head's up axis when forward points steeply up or down.
 - `cargo test --lib transform_operator` and the avatar body-yaw tests pass
   unchanged.
 - No new allocations or dispatch in the per-frame evaluation path.
+
+## Hinge follow-up
+
+Group authored operator settings and serialization in the component layer by
+family. Keep structural basis propagation in `transform_system.rs` and give
+operator refresh paths a shared boundary for replaying upstream operators
+after a local edit. Keep local rotation composition with the stateless
+operators. Preserve the current traversal and indexed dependency refresh.
+Validate pivot and local-axis composition, live angle writes under nested
+operators, and MMS round trips alongside the existing operator tests.

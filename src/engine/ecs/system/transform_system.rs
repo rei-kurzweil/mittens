@@ -105,7 +105,7 @@ impl TransformSystem {
         out
     }
 
-    fn effective_local_model(
+    pub(super) fn effective_local_model(
         world: &World,
         transform_id: ComponentId,
         authored_local: TransformMatrix,
@@ -627,9 +627,8 @@ impl TransformSystem {
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
     ) {
-        // A local write to the first T below a sampler must recompose its
-        // offset from the operator output, rather than reuse that T's old world
-        // matrix. Start above intervening fork stages as for a direct sample edit.
+        // The first T below a sampler or hinge must recompose local edits from
+        // the current operator output. Replay intervening operators first.
         if world
             .get_component_by_id_as::<TransformComponent>(component)
             .is_some()
@@ -644,7 +643,10 @@ impl TransformSystem {
                 }
                 if world
                     .get_component_by_id_as::<TransformOperatorComponent>(id)
-                    .is_some_and(|operator| operator.sample_translation_settings().is_some())
+                    .is_some_and(|operator| {
+                        operator.sample_translation_settings().is_some()
+                            || operator.hinge_settings().is_some()
+                    })
                 {
                     self.transform_changed(
                         world,
@@ -677,14 +679,16 @@ impl TransformSystem {
                 ancestor = world.parent_of(id);
             }
         }
-        if world
+        if let Some(operator) = world
             .get_component_by_id_as::<TransformOperatorComponent>(component)
-            .is_some_and(|operator| {
+            .filter(|operator| {
                 operator.inverse_local_settings().is_some()
                     || operator.sample_translation_settings().is_some()
                     || operator.fork_trs_settings().is_some()
+                    || operator.hinge_settings().is_some()
             })
         {
+            let hinge = operator.hinge_settings().is_some();
             let (root, inherited_world) =
                 Self::operator_refresh_basis(world, component, transform_operator);
             self.propagate_subtree(
@@ -698,6 +702,11 @@ impl TransformSystem {
             let children = world.children_of(component).to_vec();
             for child in children {
                 light_system.transform_changed(world, visuals, child);
+            }
+            if hinge {
+                self.update_transform_parent_dependents(
+                    world, visuals, component, transform_operator, camera_system, light_system,
+                );
             }
             return;
         }

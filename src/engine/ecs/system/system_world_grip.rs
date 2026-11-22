@@ -36,6 +36,10 @@ impl SystemWorld {
         self.attachment.tick(world, &mut self.rx);
         let _ = self.process_signals(world, visuals, assets, queue, 100_000);
         queue.flush(world, self, visuals, assets);
+        if self.grabbable.tick_hinge_grabs(world, &self.raycast, &mut self.rx) {
+            let _ = self.process_signals(world, visuals, assets, queue, 100_000);
+            queue.flush(world, self, visuals, assets);
+        }
         if self.grabbable.climbing_moved() {
             self.prepare_avatar_capsule_contact(world, visuals);
             for target in self.static_contact.tick_excluding(world, &self.attachment) {

@@ -1,4 +1,5 @@
 import { rocket_explosion } from "./rocket_explosion.mms"
+import { sta_rocket_body } from "./sta_rocket_ammo.mms"
 import { emissive_surface } from "../materials/emissive_surface.mms"
 import { toon_rocket_exhaust } from "../materials/toon_rocket_exhaust.mms"
 
@@ -42,23 +43,19 @@ export fn apply_rocket_impact(point, amount) {
 }
 
 // All flight acceleration and collision checks run in native fixed steps.
-export fn rocket(spec) {
+export fn launch_rocket(round, spec) {
     let state = { alive = true }
     let zone = Zone.sphere(0.055) { ProjectileImpact {} }
-    let model = T {
-        T.position(0.191356, -1.507589, -0.111893) {
-            GLTF.new("assets/models/STA_rocket_bullet.glb") {}
+    let model = round.query("[name='sta_rocket_model']")
+    let nozzle = T.position(0.0, 0.0, nozzle_z) {
+        name = "sta_rocket_nozzle"
+        emissive_surface()
+        Emissive.on().intensity(3.0)
+        T.scale(0.038, 0.038, 1.0) {
+            R.circle_2d() { C.rgba(1.0, 0.05, 0.01, 1.0) }
         }
-        T.position(0.0, 0.0, nozzle_z) {
-            name = "sta_rocket_nozzle"
-            emissive_surface()
-            Emissive.on().intensity(3.0)
-            T.scale(0.038, 0.038, 1.0) {
-                R.circle_2d() { C.rgba(1.0, 0.05, 0.01, 1.0) }
-            }
-            T.position(0.0, 0.0, 0.001).scale(0.025, 0.025, 1.0) {
-                R.circle_2d() { C.rgba(1.0, 0.72, 0.04, 1.0) }
-            }
+        T.position(0.0, 0.0, 0.001).scale(0.025, 0.025, 1.0) {
+            R.circle_2d() { C.rgba(1.0, 0.72, 0.04, 1.0) }
         }
     }
     let launch = spec.pose.translation
@@ -67,19 +64,17 @@ export fn rocket(spec) {
         forward_of(spec.pose.rotation_quat_xyzw),
         trail_length,
     ))
-    let body = T {
-        name = "sta_rocket_body"
-        zone
-        model
-        trail
-    }
-    let motion = Velocity { body }
+    let motion = Velocity {}
     let root = T {
         name = "sta_rocket_flight"
         Raycastable.disabled()
         Acceleration.local([0.0, 0.0, -12.0]).max_speed(18.0) { motion }
     }
     root
+    model.attach(nozzle)
+    round.attach(zone)
+    round.attach(trail)
+    motion.attach(round)
     root.world_trs({ translation = spec.pose.translation rotation_quat_xyzw = spec.pose.rotation_quat_xyzw scale = [1.0, 1.0, 1.0] })
     motion.translate([0.0, 0.0, -2.0])
     let expiry = Animation.paused().length(12.0) {
@@ -114,4 +109,8 @@ export fn rocket(spec) {
     root.attach(expiry)
     expiry.play()
     return root
+}
+
+export fn rocket(spec) {
+    return launch_rocket(sta_rocket_body("sta_rocket_body"), spec)
 }

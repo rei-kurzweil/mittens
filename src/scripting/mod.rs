@@ -124,6 +124,9 @@ mod xr_settings_walk_tests;
 mod rocket_motion_tests;
 
 #[cfg(test)]
+mod sta_reload_tests;
+
+#[cfg(test)]
 mod editor_settings_trigger_tests;
 
 mod udp_channel_api;

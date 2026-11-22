@@ -31,7 +31,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 #[derive(Default)]
-struct TestClock(AtomicU64);
+pub(super) struct TestClock(AtomicU64);
 impl crate::engine::ecs::system::ClockDriver for TestClock {
     fn name(&self) -> &'static str {
         "rocket-test"
@@ -40,7 +40,7 @@ impl crate::engine::ecs::system::ClockDriver for TestClock {
         self.0.load(Ordering::Relaxed) as f64 / 120.0
     }
 }
-fn advance(scene: &mut crate::engine::Universe, clock: &TestClock) {
+pub(super) fn advance(scene: &mut crate::engine::Universe, clock: &TestClock) {
     clock.0.fetch_add(1, Ordering::Relaxed);
     scene.update(1.0 / 120.0, &Default::default());
 }

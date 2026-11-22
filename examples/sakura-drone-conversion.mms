@@ -32,6 +32,7 @@ import { metal_can } from "../assets/components/targets/metal-can.mms"
 import { matcap_metal } from "../assets/components/materials/matcap_metal.mms"
 import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.mms"
 import { sta_rocket_launcher } from "../assets/components/sta-rocket-launcher.mms"
+import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { gradient_skybox, background_sun } from "../assets/components/backgrounds/gradient_skybox.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
@@ -461,6 +462,9 @@ fn rooftop_pistol(label, effect_label, x) {
 rooftop_pistol("sakura_machine_pistol", "sakura_pistol_laser", -21.15)
 rooftop_pistol("sakura_machine_pistol_2", "sakura_pistol_laser_2", -20.30)
 let launcher = sta_rocket_launcher({ name = "sakura_sta_launcher" })
+T.position(-18.35, roof_height, 0.45).rotation(0.0, Math.pi, 0.0) {
+    sta_ammo_cabinet("sakura_sta_ammo_cabinet")
+}
 let launcher_held = { active = false hand = "" pointer = null }
 let launcher_grip = T.position(-19.45, roof_height + 1.055, 0.2).rotation_quat(0.5, -0.5, -0.5, 0.5) {
     name = "sakura_sta_launcher_placement"

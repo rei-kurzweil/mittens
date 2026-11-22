@@ -19,11 +19,16 @@ use std::sync::{Arc, Mutex};
 #[path = "controller_grab_pose.rs"]
 mod controller_grip;
 use controller_grip::ControllerGripHold;
+#[path = "hinge_grab.rs"]
+mod hinge_grab;
+use super::raycast_system::{PointerRaySnapshot, RayCastSystem};
+use hinge_grab::{HingeGrab, hinge_for_target};
 
 #[derive(Debug, Clone, Copy)]
 enum GrabCommand {
     Start {
         pointer: ComponentId,
+        raycaster: ComponentId,
         target: ComponentId,
         renderable: ComponentId,
         ray_origin: [f32; 3],
@@ -50,6 +55,7 @@ pub struct GrabbableSystem {
     handlers_installed: bool,
     commands: Arc<Mutex<Vec<GrabCommand>>>,
     active: HashMap<ComponentId, ActiveGrab>,
+    hinge_grabs: HashMap<ComponentId, HingeGrab>,
     owned: HashSet<ComponentId>,
 }
 
@@ -63,6 +69,7 @@ impl GrabbableSystem {
         rx.add_global_handler_closure(SignalKind::GrabStart, move |_world, _emit, env| {
             let Some(EventSignal::GrabStart {
                 pointer,
+                raycaster,
                 target,
                 renderable,
                 ray_origin_world,
@@ -75,6 +82,7 @@ impl GrabbableSystem {
             if let Ok(mut commands) = starts.lock() {
                 commands.push(GrabCommand::Start {
                     pointer: *pointer,
+                    raycaster: *raycaster,
                     target: *target,
                     renderable: *renderable,
                     ray_origin: *ray_origin_world,
@@ -147,20 +155,23 @@ impl GrabbableSystem {
             match command {
                 GrabCommand::Start {
                     pointer,
+                    raycaster,
                     target,
                     renderable,
                     ray_origin,
                     ray_dir,
-                } => self.start(
-                    world,
-                    render_assets,
-                    emit,
-                    pointer,
-                    target,
-                    renderable,
-                    ray_origin,
-                    ray_dir,
-                ),
+                } => {
+                    if let Some(hinge) = hinge_for_target(world, target) {
+                        self.start_hinge_grab(
+                            world, emit, pointer, target, hinge, raycaster,
+                            PointerRaySnapshot { origin_world: ray_origin, direction_world: ray_dir },
+                        );
+                    } else if !self.hinge_grabs.contains_key(&pointer) {
+                        self.start(
+                            world, render_assets, emit, pointer, target, renderable, ray_origin, ray_dir,
+                        );
+                    }
+                }
                 GrabCommand::End { pointer } => self.release(world, emit, pointer),
             }
         }
@@ -407,7 +418,59 @@ impl GrabbableSystem {
         emit.push_event(pointer, EventSignal::PointerGrabbed { pointer, target });
     }
 
+    fn start_hinge_grab(
+        &mut self,
+        world: &World,
+        emit: &mut dyn SignalEmitter,
+        pointer: ComponentId,
+        target: ComponentId,
+        hinge: ComponentId,
+        raycaster: ComponentId,
+        ray: PointerRaySnapshot,
+    ) {
+        if self.active.contains_key(&pointer)
+            || self.owned.contains(&target)
+            || self.hinge_grabs.contains_key(&pointer)
+            || self.hinge_grabs.values().any(|grab| grab.hinge == hinge)
+        {
+            return;
+        }
+        if let Some(grab) = HingeGrab::start(world, target, hinge, raycaster, ray) {
+            self.owned.insert(target);
+            self.hinge_grabs.insert(pointer, grab);
+            emit.push_event(pointer, EventSignal::PointerGrabbed { pointer, target });
+        }
+    }
+
+    pub(super) fn tick_hinge_grabs(
+        &mut self,
+        world: &mut World,
+        raycasts: &RayCastSystem,
+        emit: &mut dyn SignalEmitter,
+    ) -> bool {
+        let mut changed = false;
+        self.hinge_grabs.retain(|&pointer, grab| {
+            if !world
+                .get_component_by_id_as::<PointerComponent>(pointer)
+                .is_some_and(|p| p.enabled)
+                || hinge_for_target(world, grab.target) != Some(grab.hinge)
+            {
+                self.owned.remove(&grab.target);
+                emit.push_event(pointer, EventSignal::PointerReleased { pointer, target: grab.target });
+                return false;
+            }
+            changed |= grab.update(world, raycasts.current_ray(grab.raycaster), emit);
+            true
+        });
+        changed
+    }
+
     fn release(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, pointer: ComponentId) {
+        if let Some(grab) = self.hinge_grabs.remove(&pointer) {
+            self.owned.remove(&grab.target);
+            emit.push_event(pointer, EventSignal::PointerReleased { pointer, target: grab.target });
+            return;
+        }
         let Some(grab) = self.active.remove(&pointer) else {
             return;
         };

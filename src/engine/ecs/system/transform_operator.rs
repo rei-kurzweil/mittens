@@ -180,17 +180,19 @@ impl TransformOperatorSystem {
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
         let rebased_world = self.apply_transform_parent_basis(world, root, input_world);
-        if let Some(settings) = world
-            .get_component_by_id_as::<TransformOperatorComponent>(root)
-            .and_then(|operator| operator.sample_translation_settings())
+        let operator = world.get_component_by_id_as::<TransformOperatorComponent>(root);
+        if let Some(hinge) = operator.and_then(TransformOperatorComponent::hinge_settings) {
+            let rotation = math::quat_from_axis_angle(hinge.axis(), hinge.angle());
+            let local = Self::recompose_matrix(TransformTrs::new([0.0; 3], rotation, [1.0; 3]));
+            return Some((math::mat4_mul(rebased_world, local), world.children_of(root).to_vec()));
+        }
+        if let Some(settings) = operator.and_then(TransformOperatorComponent::sample_translation_settings)
         {
             let output = self.evaluate_translation_sample(world, root, settings, rebased_world);
             return Some((output, world.children_of(root).to_vec()));
         }
 
-        if let Some(operator) = world
-            .get_component_by_id_as::<TransformOperatorComponent>(root)
-            .and_then(|operator| operator.inverse_local_settings())
+        if let Some(operator) = operator.and_then(TransformOperatorComponent::inverse_local_settings)
         {
             let source = operator.resolve_source_component(world, root);
             if let Some(source) = source {
@@ -257,10 +259,7 @@ impl TransformOperatorSystem {
             return Some((effective, outputs));
         }
 
-        if let Some(settings) = world
-            .get_component_by_id_as::<TransformOperatorComponent>(root)
-            .and_then(|operator| operator.fork_trs_settings())
-        {
+        if let Some(settings) = operator.and_then(TransformOperatorComponent::fork_trs_settings) {
             let channels = Self::decompose_matrix(rebased_world);
             let output = self.evaluate_fork_trs(
                 Some(root),
@@ -276,11 +275,7 @@ impl TransformOperatorSystem {
             ));
         }
 
-        if world
-            .get_component_by_id_as::<TransformOperatorComponent>(root)
-            .and_then(|operator| operator.parent_settings())
-            .is_some()
-        {
+        if operator.and_then(TransformOperatorComponent::parent_settings).is_some() {
             return Some((rebased_world, world.children_of(root).to_vec()));
         }
 

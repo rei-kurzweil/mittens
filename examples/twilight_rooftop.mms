@@ -24,6 +24,7 @@ import { boxcar, boxcar_sensor, passenger_mount } from "../assets/components/tra
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
+import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
 import { rooftop_dusk_sky } from "../assets/components/backgrounds/rooftop_dusk_sky.mms"
 
@@ -217,6 +218,9 @@ fn weapon_stand(x, weapon) {
 weapon_stand(roof_x - 0.25, pistol)
 weapon_stand(roof_x + 0.65, second_pistol)
 weapon_stand(roof_x + 1.55, launcher.root)
+T.position(roof_x + 2.65, roof_height, -1.55) {
+    sta_ammo_cabinet("twilight_sta_ammo_cabinet")
+}
 ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip])
 
 let local_avatar = client_avatar

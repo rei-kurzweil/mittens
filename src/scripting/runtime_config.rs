@@ -573,6 +573,16 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "TransformOperator" => {
                     component.constructor("fork_trs", no_args());
+                    component.constructor("hinge", component_signature([mms::ValueType::Array]));
+                    component.builder_call("limits", floats(2));
+                    component.builder_call("initial_angle", floats(1));
+                    host_method(
+                        component, canonical, "axis_angle", method(vec![], mms::ValueType::Table),
+                    );
+                    host_method(
+                        component, canonical, "set_angle",
+                        method(vec![mms::ValueType::F32], mms::ValueType::Null),
+                    );
                     component.constructor("sample_translation", no_args());
                     component.builder_call("axes", strings(1));
                     component.constructor(

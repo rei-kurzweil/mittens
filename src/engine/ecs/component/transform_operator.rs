@@ -332,6 +332,53 @@ pub struct TransformSampleTranslationSettings {
     pub axes: TranslationAxes,
 }
 
+/// A signed rotation around the origin and axis of the incoming local frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransformHingeSettings {
+    axis: [f32; 3],
+    limits: Option<[f32; 2]>,
+    angle: f32,
+}
+
+impl TransformHingeSettings {
+    fn new(axis: [f32; 3]) -> Result<Self, String> {
+        let largest = axis.into_iter().map(f32::abs).fold(0.0, f32::max);
+        if !axis.into_iter().all(f32::is_finite) || largest == 0.0 {
+            return Err("TOP.hinge requires a finite, nonzero axis".into());
+        }
+        Ok(Self {
+            axis: crate::utils::math::vec3_normalize(axis.map(|value| value / largest)),
+            limits: None,
+            angle: 0.0,
+        })
+    }
+
+    pub fn axis(&self) -> [f32; 3] {
+        self.axis
+    }
+
+    pub fn angle(&self) -> f32 {
+        self.angle
+    }
+
+    pub fn set_limits(&mut self, min: f32, max: f32) -> Result<(), String> {
+        if !min.is_finite() || !max.is_finite() || min > max {
+            return Err("TOP.hinge.limits requires finite angles with min <= max".into());
+        }
+        self.limits = Some([min, max]);
+        self.angle = self.angle.clamp(min, max);
+        Ok(())
+    }
+
+    pub fn set_angle(&mut self, angle: f32) -> Result<bool, String> {
+        if !angle.is_finite() {
+            return Err("TOP.hinge requires a finite angle".into());
+        }
+        let angle = self.limits.map_or(angle, |[min, max]| angle.clamp(min, max));
+        Ok(std::mem::replace(&mut self.angle, angle) != angle)
+    }
+}
+
 /// Typed configuration for one live transform operator. Referenced sources are
 /// data dependencies; ordinary children inherit the evaluated output basis.
 #[derive(Debug, Clone, PartialEq)]
@@ -340,6 +387,7 @@ pub enum TransformOperatorKind {
     Parent(TransformParentSettings),
     SampleTranslation(TransformSampleTranslationSettings),
     InverseLocal(TransformInverseLocalSettings),
+    Hinge(TransformHingeSettings),
     /// A camera settings marker configures its parent anchor T, and contains a
     /// settings T. This specialized role is separate from ordinary output nesting.
     CameraSpecific(TransformCameraSettings),
@@ -364,6 +412,25 @@ impl TransformOperatorComponent {
     pub fn inverse_local(source: ComponentRef) -> Self {
         Self {
             kind: TransformOperatorKind::InverseLocal(TransformInverseLocalSettings::new(source)),
+        }
+    }
+    pub fn hinge(axis: [f32; 3]) -> Result<Self, String> {
+        Ok(Self {
+            kind: TransformOperatorKind::Hinge(TransformHingeSettings::new(axis)?),
+        })
+    }
+
+    pub fn hinge_settings(&self) -> Option<&TransformHingeSettings> {
+        match &self.kind {
+            TransformOperatorKind::Hinge(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub fn hinge_settings_mut(&mut self) -> Option<&mut TransformHingeSettings> {
+        match &mut self.kind {
+            TransformOperatorKind::Hinge(settings) => Some(settings),
+            _ => None,
         }
     }
     pub fn sample_translation(source: ComponentRef) -> Self {
@@ -516,6 +583,7 @@ impl Component for TransformOperatorComponent {
             TransformOperatorKind::Parent(_)
                 | TransformOperatorKind::InverseLocal(_)
                 | TransformOperatorKind::SampleTranslation(_)
+                | TransformOperatorKind::Hinge(_)
         ) {
             emit.push_intent_now(
                 component,
@@ -561,6 +629,17 @@ impl Component for TransformOperatorComponent {
                 "inverse_local",
                 vec![source_expr(&settings.source)],
             ),
+            TransformOperatorKind::Hinge(settings) => {
+                let axis = array(settings.axis.into_iter().map(|value| num(f64::from(value))).collect());
+                let mut out = ce_call("TransformOperator", "hinge", vec![axis]);
+                if let Some([min, max]) = settings.limits {
+                    out = out.with_call("limits", vec![num(f64::from(min)), num(f64::from(max))]);
+                }
+                if settings.angle != 0.0 {
+                    out = out.with_call("initial_angle", vec![num(f64::from(settings.angle))]);
+                }
+                out
+            }
             TransformOperatorKind::CameraSpecific(settings) => ce_call(
                 "TransformOperator",
                 "camera_specific",
