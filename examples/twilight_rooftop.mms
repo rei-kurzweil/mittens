@@ -345,9 +345,11 @@ fn bind_peer_avatar(head, model, choice) {
 }
 remote.on_avatar_changed(bind_peer_avatar)
 
-fn ignore_avatar_status(message, success) {}
+// The peer republishes its choice every 0.5 s. A failed or timed-out load
+// keeps the current remote avatar and forgets the choice, so the next sample
+// retries it instead of being ignored as already applied.
 fn receive_avatar_status(message, success) {
-    if success == false { remote.select_avatar(remote_avatar, ignore_avatar_status) }
+    if success == false { connection.peer_avatar = null }
 }
 
 on(net, "MultiplayerConnected", fn(event) { show_status("connected; waiting for typed channels") })

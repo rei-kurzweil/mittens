@@ -864,6 +864,85 @@ fn twilight_rooftop_runs_as_host_and_client_on_the_roof() {
     }
 }
 
+/// Host and desktop client of Twilight Rooftop on free local ports.
+fn twilight_rooftop_pair() -> (Universe, Universe) {
+    let source = twilight_rooftop_source()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
+    let host_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let client_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let host_port = host_data.local_addr().unwrap().port();
+    let client_port = client_data.local_addr().unwrap().port();
+    drop((host_data, client_data));
+    let source = source
+        .replace("7011", &host_port.to_string())
+        .replace("7012", &client_port.to_string());
+    let configured = |session: &str| source.replace("MultiplayerSession.from_env()", session);
+    let host = load(
+        &configured(r#"MultiplayerSession.host("127.0.0.1:47014").player_name("rei")"#),
+        "examples/twilight_rooftop.mms",
+    );
+    let client = load(
+        &configured(r#"MultiplayerSession.join("127.0.0.1:47014").player_name("dan")"#),
+        "examples/twilight_rooftop.mms",
+    );
+    (host, client)
+}
+
+/// Updates both peers and flushes GLTF imports, which avatar swaps wait on.
+fn run_pair(host: &mut Universe, client: &mut Universe, frames: usize) {
+    let mut uploader = super::rocket_motion_tests::Uploader::default();
+    for _ in 0..frames {
+        for scene in [&mut *host, &mut *client] {
+            scene.update(1.0 / 60.0, &Default::default());
+            scene.systems.prepare_render(
+                &mut scene.world,
+                &mut scene.visuals,
+                &mut scene.render_assets,
+                &mut uploader,
+                &mut scene.command_queue,
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+
+const LUMAE: &str = "assets/components/characters/lumae/lumae.glb";
+
+#[test]
+fn twilight_rooftop_avatar_choice_reaches_the_peer() {
+    use crate::engine::ecs::{EventSignal, SignalEmitter};
+    let (mut host, mut client) = twilight_rooftop_pair();
+    run_pair(&mut host, &mut client, 120);
+    assert_eq!(model_uri(&client, "remote_model"), MITTEN);
+
+    // The host clicks Lumae on its own avatar picker.
+    let button = named(&host, "avatar_picker_lumae").unwrap();
+    let background = host.world.find_component(button, "#__bg").unwrap();
+    let face = host.world.find_component(background, "renderable").unwrap();
+    let hit_point = TransformSystem::world_position(&host.world, face).unwrap();
+    let raycaster = named(&host, "local_desktop_pointer").unwrap();
+    host.command_queue.push_event(
+        face,
+        EventSignal::Click {
+            raycaster,
+            renderable: face,
+            hit_point,
+            screen_pos_px: None,
+        },
+    );
+    run_pair(&mut host, &mut client, 180);
+
+    assert_eq!(model_uri(&host, "local_model"), LUMAE);
+    assert_eq!(
+        model_uri(&client, "remote_model"),
+        LUMAE,
+        "the client must show the host's new avatar"
+    );
+    assert_eq!(model_uri(&client, "local_model"), MITTEN, "the client's own avatar is unchanged");
+    assert_eq!(model_uri(&host, "remote_model"), MITTEN);
+}
+
 fn labelled_ancestor(world: &World, id: ComponentId, prefix: &str) -> bool {
     let mut cursor = Some(id);
     while let Some(id) = cursor {
