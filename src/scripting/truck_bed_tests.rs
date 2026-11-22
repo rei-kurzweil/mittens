@@ -194,3 +194,43 @@ fn driver_passenger_and_bed_seats_share_the_truck_grip_by_entry_zone() {
         );
     }
 }
+
+#[test]
+fn cab_doors_hang_on_grabbable_hinges_and_keep_their_colliders() {
+    use crate::engine::ecs::component::{
+        CollidableComponent, GrabbableComponent, TransformOperatorComponent,
+    };
+    let scene = scene(
+        r#"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        T { name = "truck_place" pickup_truck(null, null, false) }
+    "#,
+    );
+    let world = &scene.world;
+    for name in ["door_left", "door_right"] {
+        let door = named(&scene, name);
+        let hinge = world.parent_of(door).expect("door has a parent");
+        assert!(
+            world
+                .get_component_by_id_as::<TransformOperatorComponent>(hinge)
+                .and_then(|operator| operator.hinge_settings())
+                .is_some(),
+            "{name} hangs directly under a hinge"
+        );
+        assert!(
+            world
+                .children_of(door)
+                .iter()
+                .any(|&child| world.get_component_by_id_as::<GrabbableComponent>(child).is_some()),
+            "{name} is grabbable"
+        );
+        let panel = world.find_component(door, "renderable").unwrap();
+        assert!(
+            world
+                .children_of(panel)
+                .iter()
+                .any(|&child| world.get_component_by_id_as::<CollidableComponent>(child).is_some()),
+            "{name} keeps its panel collider"
+        );
+    }
+}

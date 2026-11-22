@@ -11,6 +11,7 @@ import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height
 import { pickup_hydraulics_panel } from "./pickup_hydraulics_panel.mms"
 import { pickup_replication } from "../network/pickup_replication.mms"
 import { attach_drops } from "../network/shared_mounts.mms"
+import { pickup_doors } from "./pickup_doors.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, gravity_enabled, options) {
@@ -19,6 +20,9 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         damage_threshold = options.damage_threshold
     }
     let gauges=pickup_dashboard_gauges()
+    let vehicle_id="pickup"
+    if options && options["vehicle_id"] {vehicle_id=options.vehicle_id}
+    let doors=pickup_doors(vehicle_id)
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
@@ -52,7 +56,9 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
                 cabin.set_color([color[0],color[1],color[2],1.0])
             }
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
-            for name in ["car_seat","car_seat.passenger_seat","door_left","door_right","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
+            // The doors hang on hinges outside the static batch.
+            doors.install(event.gltf,chassis,color)
+            for name in ["car_seat","car_seat.passenger_seat","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")
                 if part { batch.attach(part) }
             }
@@ -172,8 +178,14 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             hydraulics=ride.ratios apply_controls=apply_controls follow_peer=follow_peer
         })
         network.link=link
-        motion.connect=link.connect
-        motion.disconnect=link.disconnect
+        motion.connect=fn(group,address) {
+            link.connect(group,address)
+            doors.connect(options.socket,group,address)
+        }
+        motion.disconnect=fn() {
+            link.disconnect()
+            doors.disconnect()
+        }
     }
     return motion
 }

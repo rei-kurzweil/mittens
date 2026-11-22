@@ -633,7 +633,8 @@ fn pointer_hand(world: &World, pointer: ComponentId) -> Option<ControllerHand> {
 }
 
 /// The grip-enabled Mountables on the first transform up the hit's ancestry
-/// that has any, in child order.
+/// that has any, in child order. A grabbable part below them (a hinged truck
+/// door, a pistol riding in the bed) owns the grip instead, so none.
 fn mountables_for_hit(world: &World, renderable: ComponentId) -> Vec<ComponentId> {
     let grips = |id: ComponentId| {
         world
@@ -657,6 +658,15 @@ fn mountables_for_hit(world: &World, renderable: ComponentId) -> Vec<ComponentId
                 .collect();
             if !found.is_empty() {
                 return found;
+            }
+            if world.children_of(id).iter().any(|&child| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::GrabbableComponent>(
+                        child,
+                    )
+                    .is_some_and(|grabbable| grabbable.enabled)
+            }) {
+                return Vec::new();
             }
         }
         current = world.parent_of(id);
@@ -1068,6 +1078,28 @@ mod tests {
             Some(&fixture.rider)
         );
         assert!(!system.rider_by_mountable.contains_key(&fixture.mountable));
+    }
+
+    #[test]
+    fn a_grabbable_part_of_a_mountable_owns_the_grip() {
+        use crate::engine::ecs::component::GrabbableComponent;
+        // A door on the car: the rider stands in the seat's entry zone, but
+        // gripping the door grabs it instead of mounting.
+        let mut fixture = fixture([0.0; 3]);
+        let world = &mut fixture.world;
+        let door = transform(world, [1.0, 0.0, 0.0]);
+        world.add_child(fixture.car, door).unwrap();
+        let grabbable = world.add_component(GrabbableComponent::default());
+        world.add_child(door, grabbable).unwrap();
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(!system.try_mount_from_hit(&mut fixture.world, fixture.pointer, door, &mut emit));
+        assert!(system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit
+        ));
     }
 
     #[test]
