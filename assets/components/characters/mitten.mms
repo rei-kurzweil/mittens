@@ -42,9 +42,9 @@ export fn mitten_model(model_name, options) {
         }
     }
     install_avatar_equipment(model, [
-        ["J_Bip_L_UpperLeg", [0.13, 0.17, 0.0], 0.12],
-        ["J_Bip_R_UpperLeg", [-0.13, 0.17, 0.0], 0.12],
-        ["J_Bip_C_UpperChest", [0.0, 0.05, -0.21], 0.16]
+        ["J_Bip_L_UpperLeg", [0.13, 0.17, 0.0], 0.12, Math.pi / 2.0],
+        ["J_Bip_R_UpperLeg", [-0.13, 0.17, 0.0], 0.12, Math.pi / 2.0],
+        ["J_Bip_C_UpperChest", [0.0, 0.05, -0.21], 0.16, -1.29]
     ])
     if tail_style {
         on(model, "GLTFInitialized", fn(event) {

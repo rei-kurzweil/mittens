@@ -41,7 +41,7 @@ impl ZoneObservationSystem {
             .all_components()
             .filter_map(|id| {
                 let collidable = world.get_component_by_id_as::<CollidableComponent>(id)?;
-                if !collidable.enabled || collidable.mode != CollidableMode::Slide {
+                if !collidable.enabled || collidable.mode == CollidableMode::Static {
                     return None;
                 }
                 let zone = world.parent_of(id)?;
@@ -52,7 +52,9 @@ impl ZoneObservationSystem {
                     return None;
                 }
                 let target = movement_target(world, id, zone)?;
-                (!mounts.is_movement_root_mounted(world, target)).then_some((id, zone, target))
+                (collidable.mode == CollidableMode::Sensor
+                    || !mounts.is_movement_root_mounted(world, target))
+                .then_some((id, zone, target))
             })
             .collect();
         let mut centers = HashMap::new();

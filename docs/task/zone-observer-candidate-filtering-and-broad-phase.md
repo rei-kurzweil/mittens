@@ -9,9 +9,11 @@ implemented by this document.
 once per frame after poses settle; the notifications are enter/exit events, but
 intersection calculation is not itself driven by movement events.
 
-`ZoneObservationSystem` scans world components to collect enabled sensors and
-enabled slide collidables with resolved movement targets, excluding mounted
-roots. With no enabled sensors it stops after sensor discovery. Otherwise it
+`ZoneObservationSystem` scans world components to collect enabled observing
+zones and enabled slide or sensor collidables with resolved movement targets.
+It excludes mounted slide roots. Sensor collidables only participate in overlap
+events and stay out of the physics contact index. With no enabled observing
+zones it stops after zone discovery. Otherwise it
 checks every sensor against every eligible mover: O(sensor count × mover count).
 Bare passive zones and static collidables are not observation candidates.
 
@@ -53,6 +55,13 @@ visibility. Public syntax and whether zone tracking beats simple cached-bounds
 tests remain undecided.
 
 ## Work items
+
+Keep collidable index membership and invalidation in `collidable_bvh.rs`, with
+surface geometry as a candidate for a separate module. Group the contact and
+swept event tests by interaction and geometry responsibilities.
+Preserve retained membership, refitting, direct shape queries, and reusable
+buffers. Verify steady-state contact counts and timings before and after a split,
+and verify that event-only probes never enter the contact index.
 
 1. Measure sensor/mover counts, candidate pairs, AABB rejections, exact tests,
    sweeps, and detection time in the desktop/Corp demos and a dense fixture.

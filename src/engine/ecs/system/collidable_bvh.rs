@@ -300,6 +300,7 @@ impl CollidableBvh {
             let mut dependencies = vec![id];
             let resolved = world
                 .get_component_by_id_as::<CollidableComponent>(id)
+                .filter(|c| c.mode != CollidableMode::Sensor)
                 .and_then(|c| {
                     let zone_id = world.parent_of(id)?;
                     dependencies.push(zone_id);

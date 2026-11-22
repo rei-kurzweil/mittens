@@ -1278,9 +1278,10 @@ Transition {}
 ### Zone events and teleportation
 
 `Zone.enable_events()` opts into `ZoneEntered` and `ZoneExited` events for enabled
-slide collidables. The sensor remains non-solid; use `Collidable.static()` only
-for surfaces that should stop motion. Event payloads identify the sensor, mover
-zone, collidable and its movement target. See
+slide and sensor collidables. Use `Collidable.sensor().movement_target(item)` on
+an item probe that should participate in overlap events without pushing bodies
+or receiving contact corrections. Event payloads identify the observing zone,
+item zone, collidable and its movement target. See
 [Zone events and teleport pits](../../task/zone-enter-events-and-teleport-pits.md)
 for filtering, crossing and lifecycle rules.
 

@@ -26,10 +26,11 @@ export fn sta_rocket_ammo(name) {
     let probe = T.position(0.0, 0.0, -0.11) {
         Zone.sphere(0.035) {
             name = ammo_zone_name
-            Collidable.slide().response("read_only").movement_target(round)
+            Collidable.sensor().movement_target(round)
         }
     }
     round.attach(probe)
+    round.align_to_equipment_slot = true
     round.claim_sta_round = fn() {
         if state.claimed { return false }
         state.claimed = true

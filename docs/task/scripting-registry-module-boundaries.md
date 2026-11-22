@@ -5,6 +5,10 @@ routes in a future split. Preserve direct payload conversion and scoped event
 delivery. Validate both MMS builder round trips and release-only ZoneDropped
 delivery for zone and point probes.
 
+Group Collidable constructors and builders with the Zone interaction registry.
+Keep the direct component construction path and validate MMS round trips for
+static, slide, and sensor collidables, including their movement-target references.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation

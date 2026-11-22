@@ -12,7 +12,7 @@ pub struct ZoneComponent {
     pub frame_source: Option<ComponentRef>,
     pub roles: Vec<String>,
     pub enabled: bool,
-    /// Opt in to overlap enter/exit events for enabled slide collidables.
+    /// Opt in to overlap enter/exit events for enabled slide and sensor collidables.
     pub events_enabled: bool,
     pub(crate) drop_index: Option<i32>,
 }

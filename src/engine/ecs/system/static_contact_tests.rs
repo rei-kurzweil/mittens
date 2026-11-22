@@ -17,6 +17,7 @@ fn add_zone(
     let collidable = world.add_component(match mode {
         CollidableMode::Static => CollidableComponent::static_(),
         CollidableMode::Slide => CollidableComponent::slide(),
+        CollidableMode::Sensor => CollidableComponent::sensor(),
     });
     world.add_child(frame, zone).unwrap();
     world.add_child(zone, collidable).unwrap();

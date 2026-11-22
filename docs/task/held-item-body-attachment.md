@@ -17,6 +17,9 @@ the held tree, or its origin when it has no zones. The closest matching
 receiver gets `ZoneDropped`, with component IDs breaking ties. The engine
 completes the ordinary release first. The avatar handler attaches the prop
 with its release world pose and scale, and a later grab can take it off again.
+STA rounds opt into the slot's authored rest pose while preserving world scale.
+Each slot takes one aligned round at a time. The rig carries it without running
+a spring solver or physical contact for the mounted item.
 
 ## Responsibility boundaries
 

@@ -10,8 +10,8 @@
 use super::collidable_bvh::CollidableBvh;
 use super::{TransformSystem, box_sweep, zone_query};
 use crate::engine::ecs::component::{
-    CollidableComponent, CollisionShape, QueryRootMode, VelocityComponent, ZoneComponent,
-    resolve_component_ref,
+    CollidableComponent, CollidableMode, CollisionShape, QueryRootMode, VelocityComponent,
+    ZoneComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, ListenerGate, SignalEmitter, World};
 use crate::utils::math;
@@ -56,6 +56,12 @@ impl SweptZoneEvents {
         self.revision = Some(world.query_revision());
         self.bound.clear();
         for collidable in world.collidable_ids() {
+            let Some(collider) = world
+                .get_component_by_id_as::<CollidableComponent>(collidable)
+                .filter(|c| c.mode != CollidableMode::Sensor)
+            else {
+                continue;
+            };
             let Some(zone) = world
                 .parent_of(collidable)
                 .filter(|&id| world.get_component_by_id_as::<ZoneComponent>(id).is_some())
@@ -65,10 +71,7 @@ impl SweptZoneEvents {
             // An explicit binding names the one Velocity that moves the zone.
             // It never falls back to inference: an unresolved reference sweeps
             // nothing.
-            if let Some(source) = world
-                .get_component_by_id_as::<CollidableComponent>(collidable)
-                .and_then(|c| c.velocity_source.as_ref())
-            {
+            if let Some(source) = collider.velocity_source.as_ref() {
                 if let Some(velocity) =
                     resolve_component_ref(world, source, Some(collidable), QueryRootMode::SelfSubtree)
                         .filter(|&id| {

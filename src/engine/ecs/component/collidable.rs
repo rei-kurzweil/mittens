@@ -5,6 +5,7 @@ use crate::engine::ecs::ComponentId;
 pub enum CollidableMode {
     Static,
     Slide,
+    Sensor,
 }
 
 /// Collision participation is independent of permission to correct movement.
@@ -30,8 +31,8 @@ impl CollisionResponse {
     }
 }
 
-/// Opts a parent zone into static contact. A slide collider constrains a pose
-/// supplied by another system; it owns no velocity or integration state.
+/// Opts a parent zone into contact or overlap observation. A slide collider
+/// constrains a pose supplied by another system and owns no integration state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CollidableComponent {
     pub mode: CollidableMode,
@@ -63,13 +64,17 @@ impl CollidableComponent {
         Self::new(CollidableMode::Slide)
     }
 
+    pub fn sensor() -> Self {
+        Self::new(CollidableMode::Sensor)
+    }
+
     fn new(mode: CollidableMode) -> Self {
         Self {
             mode,
-            response: if mode == CollidableMode::Static {
-                CollisionResponse::ReadOnly
-            } else {
+            response: if mode == CollidableMode::Slide {
                 CollisionResponse::Slide
+            } else {
+                CollisionResponse::ReadOnly
             },
             enabled: true,
             query_owner: None,
@@ -83,6 +88,9 @@ impl CollidableComponent {
     }
 
     pub fn with_response(mut self, response: CollisionResponse) -> Result<Self, String> {
+        if self.mode == CollidableMode::Sensor {
+            return Err("sensor collidables do not have a contact response".into());
+        }
         if self.mode == CollidableMode::Static && response != CollisionResponse::ReadOnly {
             return Err("static geometry cannot have slide response".into());
         }
@@ -144,6 +152,7 @@ impl Component for CollidableComponent {
         let ctor = match self.mode {
             CollidableMode::Static => "static",
             CollidableMode::Slide => "slide",
+            CollidableMode::Sensor => "sensor",
         };
         let mut ce = ce_call("Collidable", ctor, vec![]);
         if self.mode == CollidableMode::Slide && self.response != CollisionResponse::Slide {

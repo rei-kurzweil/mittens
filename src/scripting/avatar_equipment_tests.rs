@@ -78,6 +78,78 @@ fn release(scene: &mut Universe, target: ComponentId) {
     step(scene);
 }
 
+fn drop_round_into(scene: &mut Universe, round: ComponentId, slot: ComponentId) -> ComponentId {
+    let probe = scene
+        .world
+        .find_component(round, "[name='sta_rocket_ammo_zone']")
+        .unwrap();
+    grab(scene, round);
+    let origin = position(scene, round);
+    let probe_center = position(scene, probe);
+    let slot_center = position(scene, slot);
+    let translation = std::array::from_fn(|i| slot_center[i] + origin[i] - probe_center[i]);
+    move_to(scene, round, translation);
+    release(scene, round);
+    probe
+}
+
+fn assert_round_hangs_at_slot(scene: &Universe, round: ComponentId, slot: ComponentId) {
+    assert_eq!(scene.world.parent_of(round), Some(slot));
+    let pose = TransformSystem::world_trs(&scene.world, round).unwrap();
+    for (actual, expected) in pose.translation.into_iter().zip(position(scene, slot)) {
+        assert!((actual - expected).abs() < 1e-5);
+    }
+    let nose = crate::utils::math::quat_rotate_vec3(pose.rotation_quat_xyzw, [0.0, 0.0, -1.0]);
+    assert!(nose[1] < -0.98, "round points down at rest: {nose:?}");
+    for scale in pose.scale {
+        assert!((scale - 1.0).abs() < 1e-5);
+    }
+}
+
+#[test]
+fn equipped_sta_round_hangs_in_its_slot_and_cannot_push_a_body() {
+    let mut scene = scene(
+        r#"
+        import { mitten_model } from "../assets/components/characters/mitten.mms"
+        import { sta_rocket_ammo } from "../assets/components/projectiles/sta_rocket_ammo.mms"
+        let rig = mitten_model("mitten", {})
+        T { rig.model }
+        T { name = "hand" Pointer { name = "test_pointer" } }
+        T.position(2, 0, 0) { sta_rocket_ammo("first_round") sta_rocket_ammo("second_round") }
+        let body = T.position(4, 0, 0) { name = "body" }
+        let contact = Zone.sphere(0.3) { Collidable.slide().movement_target(body) }
+        body.attach(contact)
+        body
+    "#,
+    );
+    let slot = named(&scene, "equipment_left_thigh");
+    let round = named(&scene, "first_round");
+    let probe = drop_round_into(&mut scene, round, slot);
+    assert_round_hangs_at_slot(&scene, round, slot);
+
+    let other = named(&scene, "second_round");
+    drop_round_into(&mut scene, other, slot);
+    assert_ne!(scene.world.parent_of(other), Some(slot));
+    move_to(&mut scene, other, [2.0, 0.0, 0.0]);
+
+    let body = named(&scene, "body");
+    let probe_center = position(&scene, probe);
+    let overlap = [probe_center[0] + 0.05, probe_center[1], probe_center[2]];
+    move_to(&mut scene, body, overlap);
+    for _ in 0..3 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    assert_eq!(position(&scene, body), overlap);
+    assert_eq!(position(&scene, probe), probe_center);
+
+    grab(&mut scene, round);
+    move_to(&mut scene, round, [3.0, 0.0, 0.0]);
+    release(&mut scene, round);
+    assert_eq!(scene.world.parent_of(round), None);
+    drop_round_into(&mut scene, other, slot);
+    assert_round_hangs_at_slot(&scene, other, slot);
+}
+
 #[test]
 fn mitten_equipment_attaches_on_release_and_stays_grabbable() {
     let mut scene = scene(
@@ -191,6 +263,7 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
     let mut scene = scene(&format!(
         r#"
         import {{ install_miku_equipment }} from "../assets/components/characters/tda_miku_rig.mms"
+        import {{ sta_rocket_ammo }} from "../assets/components/projectiles/sta_rocket_ammo.mms"
         let model = GLTF.new("{MODEL}") {{}}
         T.scale(0.09,0.09,0.09) {{ model }}
         install_miku_equipment(model)
@@ -200,6 +273,7 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
             Grabbable.attachment_index(-1) {{}}
             R.cube()
         }}
+        T.position(2, 0, 0) {{ sta_rocket_ammo("round") }}
     "#
     ));
     let left = position(&scene, named(&scene, "equipment_left_thigh"));
@@ -216,5 +290,15 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
     let pose = TransformSystem::world_trs(&scene.world, prop).unwrap();
     for (actual, expected) in pose.scale.into_iter().zip([0.1, 0.2, 0.3]) {
         assert!((actual - expected).abs() < 1e-5);
+    }
+    let round = named(&scene, "round");
+    for name in [
+        "equipment_left_thigh",
+        "equipment_right_thigh",
+        "equipment_back",
+    ] {
+        let zone = named(&scene, name);
+        drop_round_into(&mut scene, round, zone);
+        assert_round_hangs_at_slot(&scene, round, zone);
     }
 }

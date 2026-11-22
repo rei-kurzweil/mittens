@@ -2389,7 +2389,8 @@ fn create_component(
             let collidable = match ctor {
                 Some("static") => CollidableComponent::static_(),
                 Some("slide") => CollidableComponent::slide(),
-                _ => return Err("Collidable requires .static() or .slide()".into()),
+                Some("sensor") => CollidableComponent::sensor(),
+                _ => return Err("Collidable requires .static(), .slide(), or .sensor()".into()),
             };
             Ok(world.add_component(collidable))
         }
