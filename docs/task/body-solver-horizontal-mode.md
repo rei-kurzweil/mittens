@@ -39,6 +39,12 @@ and keep the production solver's fixed-step path out of the split.
   still be direct, so an MMD `hips` slot has to be the shared parent of the
   upper and lower body, not 下半身. Miku's map is checked by
   `miku_rig_report` (an ignored test that needs the local GLB).
+- **Needs the neck constraint (2026-11-22):** pitching relies on the
+  head/neck constraint to place the root under the head. With
+  `neck_pin_disabled()` the legacy body-follow keeps the root a fixed height
+  below the head, so Miku's hips sank through the floor and her neck
+  stretched. Auto posture now stays vertical (`no_neck_constraint`) for such
+  avatars, and Miku's neck pin is re-enabled as an experiment.
 - **Test:** `body_solver_scene_tests` lowers the twilight remote avatar's head
   target to 0.7 m and checks horizontal mode, knees and ankles on the roof, a
   near-horizontal torso, and a clean return to vertical.

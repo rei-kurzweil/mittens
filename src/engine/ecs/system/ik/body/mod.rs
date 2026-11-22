@@ -198,6 +198,13 @@ impl BodySolverSystem {
                 BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
                 BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
                 BodyPosture::Auto if mounted => (BodyMode::Vertical, "mounted"),
+                // Pitching relies on the head/neck constraint to place the
+                // root under the head. Legacy body-follow keeps the root a
+                // fixed height below the head, so a pitched torso would sink
+                // the hips through the floor and stretch the neck.
+                BodyPosture::Auto if !avatar.neck_pin_enabled || !avatar.head_neck_body_enabled => {
+                    (BodyMode::Vertical, "no_neck_constraint")
+                }
                 BodyPosture::Auto => match (instance.mode, head_above) {
                     (_, None) => (instance.mode, ""),
                     _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, ""),

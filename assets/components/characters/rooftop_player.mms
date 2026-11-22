@@ -125,8 +125,10 @@ export fn make_rooftop_player(options) {
                 arm_ik({ left = { pole_direction = [1.0, -1.5, 0.6] } right = { pole_direction = [-1.0, -1.5, 0.6] } })
                 collision_disabled()
                 avatar_height(spec.eye_height)
-                // The neck constraint assumes a meter-scale rig.
-                neck_pin_disabled()
+                // Experiment (2026-11-22): the neck constraint is back on so
+                // horizontal posture can place Miku's body under her head.
+                // If standing breaks, restore neck_pin_disabled() here; auto
+                // posture then keeps her vertical instead of stretching.
             } else {
                 crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
