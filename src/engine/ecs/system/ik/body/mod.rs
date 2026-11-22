@@ -70,6 +70,22 @@ struct BodyInstance {
     /// Last pitch solved in horizontal mode, faded out by `weight`.
     held_pitch: f32,
     pitch: f32,
+    /// Time since the last `CAT_DEBUG_BODY_SOLVER` line.
+    debug_elapsed: f32,
+}
+
+fn debug_body_solver_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("CAT_DEBUG_BODY_SOLVER")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 impl BodySolverSystem {
@@ -237,6 +253,38 @@ impl BodySolverSystem {
                 instance.held_pitch = 0.0;
             }
             instance.pitch = instance.weight * instance.held_pitch;
+            if debug_body_solver_enabled() {
+                instance.debug_elapsed += dt;
+                if instance.debug_elapsed >= 0.5 {
+                    instance.debug_elapsed = 0.0;
+                    // Compare a peer's local line with its remote copy on the
+                    // other machine: same head, so any input gap shows here.
+                    let hip_target = instance
+                        .support
+                        .map(|floor| floor + (spine.thigh_length + KNEE_RADIUS) * scale);
+                    let knees = lower.feet(id).map(|feet| [feet[0].knee[1], feet[1].knee[1]]);
+                    // Wall clock, so lines from both machines line up.
+                    let unix_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|t| t.as_millis())
+                        .unwrap_or(0);
+                    eprintln!(
+                        "[body] t={unix_ms} {} mode={} weight={:.2} pitch={:.2} head_y={:.3} root_y={:.3} floor={:?} hip_y={:.3} hip_target={:?} knee_y={:?} scale={:.3} lower={:?}",
+                        world.component_label(id).unwrap_or("?"),
+                        instance.mode.as_str(),
+                        instance.weight,
+                        instance.pitch,
+                        head[3][1],
+                        root[3][1],
+                        instance.support,
+                        hip_joint_height(spine, root, head[3][1], instance.pitch),
+                        hip_target,
+                        knees,
+                        scale,
+                        lower.status(id),
+                    );
+                }
+            }
         }
     }
 }
