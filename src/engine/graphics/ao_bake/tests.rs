@@ -54,7 +54,7 @@ fn overlapping_texels(atlas: &UvAtlas) -> usize {
 fn ao_at(output: &AoBakeOutput, p: [f32; 3]) -> f32 {
     let mesh = &output.mesh;
     for t in mesh.indices_u32.chunks_exact(3) {
-        let v = t.map(|i| mesh.vertices[i as usize]);
+        let v = [t[0], t[1], t[2]].map(|i| mesh.vertices[i as usize]);
         let (a, b, c) = (v[0].pos, v[1].pos, v[2].pos);
         let normal = vec3_cross(vec3_sub(b, a), vec3_sub(c, a));
         let area = crate::utils::math::vec3_dot(normal, normal);

@@ -5,6 +5,11 @@ the [avatar control system split](avatar-control-system-module-split.md).
 Narrows the posture table in
 [avatar posture tracking inventory](avatar-posture-tracking-inventory.md).
 
+Follow-up for `body_solver_scene_tests.rs` — group posture and crawling cases
+apart from collision and mounted recovery. Share explicit rig fixtures so scene
+defaults can change independently. Preserve test frame counts and pose tolerances,
+and keep the production solver's fixed-step path out of the split.
+
 ## Implementation status (2026-11-16)
 
 - **Opt-in:** `AVC.posture("vertical" | "auto" | "horizontal")`, default

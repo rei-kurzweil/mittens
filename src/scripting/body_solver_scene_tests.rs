@@ -12,6 +12,12 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
 const ROOF: f32 = 16.0;
 
+fn twilight_rooftop_with_lumae() -> String {
+    std::fs::read_to_string("examples/twilight_rooftop.mms")
+        .unwrap()
+        .replace("let client_avatar = \"mitten\"", "let client_avatar = \"lumae\"")
+}
+
 fn named(scene: &Universe, name: &str) -> ComponentId {
     scene
         .world
@@ -61,7 +67,7 @@ fn hold_head(scene: &mut Universe, head: ComponentId, height: f32, frames: usize
 
 #[test]
 fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -164,7 +170,7 @@ fn yaw_threshold(scene: &Universe, avatar: ComponentId) -> f32 {
 #[test]
 fn detailed_collision_adds_torso_spheres_that_mirror_the_capsule() {
     use crate::engine::ecs::component::{CollidableComponent, ZoneComponent};
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -204,7 +210,7 @@ fn detailed_collision_adds_torso_spheres_that_mirror_the_capsule() {
 
 #[test]
 fn simple_collision_adds_no_spheres() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -227,7 +233,7 @@ fn simple_collision_adds_no_spheres() {
 
 #[test]
 fn vertical_posture_never_leaves_vertical() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -246,7 +252,7 @@ fn vertical_posture_never_leaves_vertical() {
 
 #[test]
 fn crawling_forward_steps_the_knees_alternately() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -302,7 +308,7 @@ fn crawling_forward_steps_the_knees_alternately() {
 
 #[test]
 fn standing_up_fades_the_torso_with_the_legs_and_regrounds_the_feet() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -348,7 +354,7 @@ fn standing_up_fades_the_torso_with_the_legs_and_regrounds_the_feet() {
 #[ignore]
 fn measure_knee_depth_while_crawling() {
     for head_height in [0.6f32, 0.7, 0.8, 0.9] {
-        let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+        let source = twilight_rooftop_with_lumae();
         let mut scene = Universe::new(World::default());
         scene
             .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -423,7 +429,7 @@ fn measure_knee_depth_while_crawling() {
 fn posture_changes_are_observable_events() {
     use crate::engine::ecs::{EventSignal, SignalKind};
     use std::sync::{Arc, Mutex};
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -471,7 +477,7 @@ fn posture_changes_are_observable_events() {
 
 #[test]
 fn low_hips_sit_back_behind_the_knees_instead_of_sinking_them() {
-    let source = std::fs::read_to_string("examples/twilight_rooftop.mms").unwrap();
+    let source = twilight_rooftop_with_lumae();
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")

@@ -693,9 +693,9 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
         "{local:?}"
     );
     assert!(status_text(&scene).contains("remote players: 0"));
-    // A solo session is the host: Mitten locally, the client's Lumae as remote.
-    assert_eq!(model_uri(&scene, "local_model"), "assets/models/mitten.glb");
-    assert_eq!(model_uri(&scene, "remote_model"), LUMAE);
+    // Both default avatars are Mitten, including the waiting peer in solo mode.
+    assert_eq!(model_uri(&scene, "local_model"), MITTEN);
+    assert_eq!(model_uri(&scene, "remote_model"), MITTEN);
 
     // Aim the rooftop controller from the player's side, slightly above the
     // grip center, then exercise the same ray, gesture and hold stages as XR.
@@ -786,7 +786,7 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     assert!(held_parent == hand || Some(held_parent) == config.avatar_grab_attachment);
 }
 
-const LUMAE: &str = "assets/components/characters/lumae/lumae.glb";
+const MITTEN: &str = "assets/models/mitten.glb";
 
 fn model_uri(scene: &Universe, name: &str) -> String {
     use crate::engine::ecs::component::GLTFComponent;
@@ -847,13 +847,10 @@ fn twilight_rooftop_runs_as_host_and_client_on_the_roof() {
             "players stay on the roof: {remote:?}"
         );
     }
-    // Each side renders the peer with the peer's role-derived avatar.
-    for (scene, local, remote) in [
-        (&host, "assets/models/mitten.glb", LUMAE),
-        (&client, LUMAE, "assets/models/mitten.glb"),
-    ] {
-        assert_eq!(model_uri(scene, "local_model"), local);
-        assert_eq!(model_uri(scene, "remote_model"), remote);
+    // Each side starts with Mitten for both players.
+    for scene in [&host, &client] {
+        assert_eq!(model_uri(scene, "local_model"), MITTEN);
+        assert_eq!(model_uri(scene, "remote_model"), MITTEN);
         let avatar = scene
             .world
             .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(
@@ -862,7 +859,7 @@ fn twilight_rooftop_runs_as_host_and_client_on_the_roof() {
             .unwrap();
         assert!(
             avatar.head_mount.is_some() && avatar.left_hand_bone_id.is_some(),
-            "remote {remote} rig was not initialized"
+            "remote Mitten rig was not initialized"
         );
     }
 }

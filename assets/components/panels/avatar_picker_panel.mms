@@ -1,20 +1,17 @@
 // The caller supplies the roster and owns avatar construction and selection.
+let UNIT_SCALE = 0.06
+
 fn avatar_button(choice, on_select) {
     let button = T {
         name = "avatar_picker_" + choice.id
+        Raycastable.click_only() { interaction_priority(180.0) }
         Style {
             display("flex") width(6.5) height(3.6)
-            align_items("center") justify_content("center")
+            text_align("center") vertical_align("middle")
             font_size(0.68)
+            background_color([0.88, 0.81, 0.66, 1.0]) background_z(0.01)
         }
-        // Layout puts the origin at the upper left. Give the full 6.5 x 3.6
-        // layout-unit face one stable pointer target, including under the label.
-        T.position(0.195, -0.108, 0.01).scale(0.39, 0.216, 0.014) {
-            R.cube() {
-                C.rgba(0.88, 0.81, 0.66, 1.0)
-                Raycastable.click_only() { interaction_priority(180.0) }
-            }
-        }
+        // The layout background supplies a single hit surface under the whole label.
         T.position(0.0, 0.0, 0.03) { Raycastable.disabled() Text { choice.label } }
     }
     on(button, "Click", fn(event) { on_select(choice.id) })
@@ -51,9 +48,9 @@ export fn avatar_picker_panel(options) {
         Unlit {}
         LayoutRoot {
             available_width(panel_width)
-            unit_scale(0.06)
+            unit_scale(UNIT_SCALE)
             content
         }
     }
-    return { root = panel set_status = fn(text) { status.set_text(text) } }
+    return { root = panel width = panel_width * UNIT_SCALE set_status = fn(text) { status.set_text(text) } }
 }

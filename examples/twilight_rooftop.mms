@@ -5,7 +5,7 @@ let use_desktop = false
 // Starting avatars also serve as the peer's fallback if an optional model is unavailable.
 // Supported: "mitten", "lumae".
 let host_avatar = "mitten"
-let client_avatar = "lumae"
+let client_avatar = "mitten"
 
 import { f32, str, vec3, vec4 } from "types"
 
@@ -256,7 +256,7 @@ picker_status.update = avatar_picker.set_status
 local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
-T.position(roof_x + spawn_x + 0.9, roof_height + 2.25, -2.2) { avatar_picker.root }
+T.position(roof_x + spawn_x - avatar_picker.width / 2.0, roof_height + 2.0, -2.2) { avatar_picker.root }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
@@ -274,7 +274,7 @@ T.position(roof_x - 4.6, roof_height + 2.3, -4.8) {
 if use_xr {
     let xr_calibration_file = XrSettings.floor.default_file()
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
-    T.position(roof_x + spawn_x - 2.0, roof_height + 2.3, -2.2) {
+    T.position(roof_x + spawn_x - 3.65, roof_height + 2.3, -2.2) {
         xr_settings_panel({ root_name = "twilight_rooftop_xr_settings", calibration_file = xr_calibration_file })
     }
 }
