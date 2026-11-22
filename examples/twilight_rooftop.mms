@@ -311,8 +311,9 @@ if use_xr {
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 avatar_elapsed = 0.0 sent_avatar = null }
-let connection = { root = null avatar_group = null address = null peer_avatar = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 }
+let connection = { root = null avatar_group = null address = null peer_avatar = null
+    avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
 let hand_curls = controller_hand_curls({
     socket = socket xr = use_xr input = query("#local_xr_locomotion")
     left_driver = local.left_driver right_driver = local.right_driver
@@ -349,9 +350,17 @@ fn bind_peer_avatar(head, model, choice) {
 }
 remote.on_avatar_changed(bind_peer_avatar)
 
-fn ignore_avatar_status(message, success) {}
+// Avatar choices are events: each peer sends its choice when the other joins
+// and when it switches, nothing in between. A failed or timed-out load keeps
+// the current remote avatar and retries the same choice locally, since no
+// further sample will arrive until the peer switches again.
+let avatar_retry_delay = 2.0
+let avatar_retry_limit = 3
 fn receive_avatar_status(message, success) {
-    if success == false { remote.select_avatar(remote_avatar, ignore_avatar_status) }
+    if success != false || connection.avatar_retries >= avatar_retry_limit { return }
+    connection.avatar_retries = connection.avatar_retries + 1
+    connection.avatar_retry = connection.peer_avatar
+    connection.avatar_retry_elapsed = 0.0
 }
 
 on(net, "MultiplayerConnected", fn(event) { show_status("connected; waiting for typed channels") })
@@ -367,6 +376,8 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.address = address
     connection.avatar_group = null
     connection.peer_avatar = null
+    connection.avatar_retry = null
+    connection.avatar_retries = 0
     channel_state.sent_avatar = null
     for item in shared_objects { item.connect(group, address) }
     station.connect(socket, group, address)
@@ -384,8 +395,11 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let avatar_channel = socket.subscribe("avatar").from(address).type(str)
     group.attach(avatar_channel)
     on(avatar_channel, "UdpSample", fn(sample) {
+        // Each choice arrives as a short burst; apply it once.
         if sample.value == connection.peer_avatar { return }
         connection.peer_avatar = sample.value
+        connection.avatar_retry = null
+        connection.avatar_retries = 0
         remote.select_avatar(sample.value, receive_avatar_status)
     })
     receive_transform(group, "root", address, remote.root, "world")
@@ -407,6 +421,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     pickup.disconnect()
     hand_curls.disconnect()
     remote.cancel_avatar_load()
+    connection.avatar_retry = null
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     links.avatar = null
@@ -426,18 +441,28 @@ on_global("FrameTick", fn(event) {
         local.left.update_transform([-0.35, -0.35 + wave, -0.25])
         local.right.update_transform([0.35, -0.35 - wave, -0.25])
     }
+    if connection.avatar_retry {
+        connection.avatar_retry_elapsed = connection.avatar_retry_elapsed + event.dt_sec
+        if connection.avatar_retry_elapsed >= avatar_retry_delay {
+            let retry_choice = connection.avatar_retry
+            connection.avatar_retry = null
+            remote.select_avatar(retry_choice, receive_avatar_status)
+        }
+    }
     channel_state.send_elapsed = channel_state.send_elapsed + event.dt_sec
-    channel_state.avatar_elapsed = channel_state.avatar_elapsed + event.dt_sec
     if channel_state.send_elapsed < 0.05 { return }
     hand_curls.tick(channel_state.send_elapsed)
     channel_state.send_elapsed = 0.0
-    if links.avatar && links.avatar.ready() {
-        let choice = local.avatar_id()
-        if choice != channel_state.sent_avatar || channel_state.avatar_elapsed >= 0.5 {
-            links.avatar.write(choice)
-            channel_state.sent_avatar = choice
-            channel_state.avatar_elapsed = 0.0
-        }
+    // A switch (or a join, which clears sent_avatar) starts a short burst so
+    // one lost packet cannot drop the event. Repeats wait for the channel.
+    let choice = local.avatar_id()
+    if choice != channel_state.sent_avatar {
+        channel_state.sent_avatar = choice
+        channel_state.avatar_repeats = 4
+    }
+    if channel_state.avatar_repeats > 0 && links.avatar && links.avatar.ready() {
+        links.avatar.write(choice)
+        channel_state.avatar_repeats = channel_state.avatar_repeats - 1
     }
     if links.root && links.root.ready() {
         links.root.write(local.root.world_trs())
