@@ -129,3 +129,43 @@ fn items_released_over_the_bed_stay_put_and_ride_the_truck() {
     assert_eq!(scene.world.parent_of(gun), None);
     assert!(near(position(&scene, gun), [3.0, 1.0, 0.0]));
 }
+
+/// Mirrors the attachment system's grip resolution: the first transform up
+/// the hit's ancestry with an enabled Mountable child.
+fn mountable_above(scene: &Universe, hit: ComponentId) -> Option<ComponentId> {
+    use crate::engine::ecs::component::{MountableComponent, TransformComponent};
+    let world = &scene.world;
+    let mut current = Some(hit);
+    while let Some(id) = current {
+        if world.get_component_by_id_as::<TransformComponent>(id).is_some() {
+            if let Some(&mountable) = world.children_of(id).iter().find(|&&child| {
+                world
+                    .get_component_by_id_as::<MountableComponent>(child)
+                    .is_some_and(|m| m.enabled && m.on_grip)
+            }) {
+                return Some(mountable);
+            }
+        }
+        current = world.parent_of(id);
+    }
+    None
+}
+
+#[test]
+fn bench_grip_resolves_the_bed_seat_and_the_cab_keeps_the_driver_seat() {
+    let scene = scene(
+        r#"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        T { name = "truck_place" pickup_truck(null, null, false) }
+    "#,
+    );
+    let bed_seat = named(&scene, "pickup_bed_mountable");
+    let bench = named(&scene, "pickup_bed_bench");
+    let board = scene.world.find_component(bench, "renderable").unwrap();
+    assert_eq!(mountable_above(&scene, board), Some(bed_seat));
+
+    let seat = named(&scene, "car_seat");
+    let cab = scene.world.find_component(seat, "renderable").unwrap();
+    let driver = mountable_above(&scene, cab).expect("the cab resolves a seat");
+    assert_ne!(driver, bed_seat, "the cab must keep resolving to the driver's seat");
+}
