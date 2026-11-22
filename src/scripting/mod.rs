@@ -131,6 +131,8 @@ mod avatar_equipment_tests;
 mod truck_bed_tests;
 #[cfg(test)]
 mod avatar_picker_tests;
+#[cfg(test)]
+mod miku_rig_report;
 
 #[cfg(test)]
 mod editor_settings_trigger_tests;

@@ -44,9 +44,12 @@ fn make_lumae(model_name, track_hands) {
     return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
-fn make_miku(model_name, _track_hands) {
+fn make_miku(model_name, track_hands) {
     let model = GLTF.new(model_uris.miku) {
         name = model_name
+        // The finger chains are mapped in tda_miku.mms; the curl axes are not
+        // yet checked against this rig (see miku_rig_report.rs).
+        if track_hands { HandTracking.new().source("openxr") }
         bisket_anime_shading()
         miku_humanoid_bone_map()
         miku_twintails()
