@@ -3789,6 +3789,13 @@ fn apply_call(
         if method == "with_visualized_transforms" {
             *gltf = gltf.clone().with_visualized_transforms(arg_bool(args, 0)?);
         }
+        if method == "default_height_if_short" {
+            let (min, target) = (arg_f32(args, 0)?, arg_f32(args, 1)?);
+            if !(min.is_finite() && target.is_finite() && min > 0.0 && target > 0.0) {
+                return Err("GLTF.default_height_if_short expects positive heights".into());
+            }
+            *gltf = gltf.clone().default_height_if_short(min, target);
+        }
         return Ok(());
     }
     if world.get_component_by_id_as::<SpringBoneComponent>(id).is_some()

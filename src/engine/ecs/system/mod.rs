@@ -48,6 +48,7 @@ pub mod fit_bounds_system;
 pub mod gesture_system;
 pub mod gizmo_system;
 pub mod gltf_bounds_visualization_system;
+mod gltf_height;
 pub mod gltf_system;
 pub mod grabbable_system;
 pub mod graphics_settings_system;

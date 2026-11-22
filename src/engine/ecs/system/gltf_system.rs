@@ -29,6 +29,9 @@ struct LoadedGltf {
     texture_keys: Vec<String>,
     textures: Vec<ImportedTexture>,
     skins: Vec<ImportedSkin>,
+    /// Uniform scale baked into meshes and skins; spawned node translations
+    /// are multiplied by it too. 1 unless `default_height_if_short` applied.
+    import_scale: f32,
     meshes_registered: bool,
     textures_uploaded: bool,
 }
@@ -327,18 +330,24 @@ impl GLTFSystem {
             let toon_outline =
                 crate::engine::ecs::system::RenderableSystem::resolve_toon_outline(world, cid);
 
-            let Some(uri) = world
+            let Some((uri, height_rule)) = world
                 .get_component_by_id_as::<GLTFComponent>(cid)
-                .map(|c| c.uri.clone())
+                .map(|c| (c.uri.clone(), c.default_height_if_short))
             else {
                 continue;
             };
+            // A height-normalized load bakes different data, so it is cached
+            // (and its skins registered) under its own key.
+            let cache_key = match height_rule {
+                Some([min, target]) => format!("{uri}#default_height_if_short({min},{target})"),
+                None => uri.clone(),
+            };
 
             // Ensure resources are loaded for this URI.
-            if !self.resources_by_uri.contains_key(&uri) {
-                match Self::load_gltf_resources(&uri) {
+            if !self.resources_by_uri.contains_key(&cache_key) {
+                match Self::load_gltf_resources(&uri, height_rule) {
                     Ok(r) => {
-                        self.resources_by_uri.insert(uri.clone(), r);
+                        self.resources_by_uri.insert(cache_key.clone(), r);
                     }
                     Err(err) => {
                         println!("[GLTFSystem] failed to load '{}': {}", uri, err);
@@ -358,7 +367,7 @@ impl GLTFSystem {
                 continue;
             };
 
-            let Some(loaded) = self.resources_by_uri.get(&uri) else {
+            let Some(loaded) = self.resources_by_uri.get(&cache_key) else {
                 self.spawned_components.insert(cid);
                 continue;
             };
@@ -429,7 +438,7 @@ impl GLTFSystem {
             let mut skin_id_by_index: HashMap<usize, SkinId> = HashMap::new();
             for (skin_index, skin) in loaded.skins.iter().enumerate() {
                 let skin_id = visuals.upsert_skin(
-                    &uri,
+                    &cache_key,
                     skin_index,
                     skin.joints.clone(),
                     skin.inverse_bind_matrices.clone(),
@@ -719,7 +728,10 @@ impl GLTFSystem {
         rgb[0].abs() <= eps && rgb[1].abs() <= eps && rgb[2].abs() <= eps
     }
 
-    fn load_gltf_resources(uri: &str) -> Result<LoadedGltf, String> {
+    fn load_gltf_resources(
+        uri: &str,
+        height_rule: Option<[f32; 2]>,
+    ) -> Result<LoadedGltf, String> {
         let (path, doc, buffers, images) = Self::import_with_fallback(uri)?;
         let sidecar_dir = std::path::PathBuf::from(format!("{path}.textures"));
         let has_sidecars = sidecar_dir.is_dir();
@@ -1064,12 +1076,49 @@ impl GLTFSystem {
             });
         }
 
+        // Assets are expected in meters. A rest pose shorter than the rule's
+        // minimum has the scale baked into the data; its meshes get their own
+        // keys so an unscaled load of the same file can coexist. Textures are
+        // unchanged and keep their shared keys.
+        let mut gltf_name = gltf_name;
+        let mut import_scale = 1.0;
+        if let Some([min, target]) = height_rule {
+            let inverse_binds: Vec<Vec<TransformMatrix>> = skins
+                .iter()
+                .map(|skin| skin.inverse_bind_matrices.clone())
+                .collect();
+            let height = super::gltf_height::rest_height(&doc, &inverse_binds);
+            import_scale = super::gltf_height::height_scale(height, min, target);
+            if import_scale != 1.0 {
+                println!(
+                    "[GLTFSystem] '{uri}' rest height {:.3} is under {min}: baking scale {import_scale:.4} for {target}",
+                    height.unwrap_or(0.0)
+                );
+                for imported in &mut meshes {
+                    if let Some(mesh) = &mut imported.mesh {
+                        super::gltf_height::bake_mesh_scale(mesh, import_scale);
+                    }
+                }
+                for skin in &mut skins {
+                    for inverse_bind in &mut skin.inverse_bind_matrices {
+                        super::gltf_height::bake_inverse_bind_scale(inverse_bind, import_scale);
+                    }
+                }
+                let scaled_name = format!("{gltf_name}@x{import_scale:.4}");
+                for imported in &mut meshes {
+                    imported.key = format!("{scaled_name}{}", &imported.key[gltf_name.len()..]);
+                }
+                gltf_name = scaled_name;
+            }
+        }
+
         Ok(LoadedGltf {
             gltf_name,
             meshes,
             texture_keys,
             textures,
             skins,
+            import_scale,
             meshes_registered: false,
             textures_uploaded: false,
         })
@@ -1096,6 +1145,7 @@ impl GLTFSystem {
             .unwrap_or_else(|| format!("node{}", node.index()));
 
         let (t, r, s) = node.transform().decomposed();
+        let t = t.map(|v| v * loaded.import_scale);
         let mut tc = TransformComponent::new();
         tc.transform.translation = t;
         tc.transform.rotation = r;

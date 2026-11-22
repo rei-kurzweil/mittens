@@ -17,6 +17,12 @@ pub struct GLTFComponent {
     /// even when the node has no mesh.
     pub with_visualized_transforms: bool,
 
+    /// `[min, target]` heights in meters: an asset whose rest pose is shorter
+    /// than `min` is scaled to `target` by baking one uniform scale into its
+    /// loaded data. Assets are expected in meters; this catches ones that
+    /// are not.
+    pub default_height_if_short: Option<[f32; 2]>,
+
     /// Runtime-only: used by GLTFSystem to avoid re-spawning the same asset repeatedly.
     pub spawned: bool,
 
@@ -44,6 +50,7 @@ impl GLTFComponent {
         Self {
             uri: uri.into(),
             with_visualized_transforms: false,
+            default_height_if_short: None,
             spawned: false,
             armature_visible: false,
             bounds_visible: false,
@@ -57,6 +64,11 @@ impl GLTFComponent {
 
     pub fn with_visualized_transforms(mut self, with_visualized_transforms: bool) -> Self {
         self.with_visualized_transforms = with_visualized_transforms;
+        self
+    }
+
+    pub fn default_height_if_short(mut self, min: f32, target: f32) -> Self {
+        self.default_height_if_short = Some([min, target]);
         self
     }
 }
@@ -96,6 +108,12 @@ impl Component for GLTFComponent {
         let mut ce = ce_call("GLTF", "new", vec![s(&self.uri)]);
         if self.with_visualized_transforms {
             ce = ce.with_call("with_visualized_transforms", vec![b(true)]);
+        }
+        if let Some([min, target]) = self.default_height_if_short {
+            ce = ce.with_call(
+                "default_height_if_short",
+                vec![num(min as f64), num(target as f64)],
+            );
         }
         ce
     }

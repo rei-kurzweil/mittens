@@ -614,6 +614,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     super::morph_api::configure(component, canonical);
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
+                    component.builder_call("default_height_if_short", floats(2));
                 }
                 "Clock" => constructor_and_builder(component, "bpm", floats(1)),
                 "Animation" => {
