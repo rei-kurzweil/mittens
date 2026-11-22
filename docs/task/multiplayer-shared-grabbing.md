@@ -135,3 +135,5 @@ Group the rooftop scene interaction fixtures separately from transport and peer
 lifecycle tests when splitting multiplayer_tests.rs. Reuse one initialized
 scene per pickup scenario and the normal BVH query and event pipeline. Check
 the rooftop and multiplayer test filters before and after moving fixtures.
+Keep the full train sweep in the scene fixtures so checks for the building
+apertures and turnarounds share one simulated trip.

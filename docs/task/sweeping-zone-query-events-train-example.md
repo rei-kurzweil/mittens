@@ -29,15 +29,15 @@ keeps the inert slice 1 scene.
 - **Shared index:** the producer reuses the projectile path's `CollidableBvh`
   instead of adding another consumer of `World::take_contact_changes`.
   `ProjectileHit` is deprecated and unchanged.
-- **Scene:** a crescent of track (radius 13 m) from the main building's balcony
-  railing, through 2.7 m square openings in the east building, to a 2.7 m
-  round hole in the north building. The 1.94 x 2.2 m cars fit the square, but
-  their 2.93 m diagonal is blocked by the circle. The MMS handler reverses the
-  train at each end.
+- **Scene:** a 13 m radius track from the main building's balcony railing,
+  through 3.8 x 3.35 m openings in the east building, to a 3.25 m round hole
+  in the north building. The 1.94 x 2.85 m car shell fits the east openings
+  and its corners meet the north ring. The MMS handler reverses the train at
+  each end.
 - **Tests:** `box_sweep` (square vs round aperture, clearance, fast
   crossing, overlap, edge axes), `swept_zone_events` (gate, identities, once
   per contact, miss, angular sweep), and
-  `twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole`.
+  `twilight_rooftop_train_clears_east_facades_and_reverses_at_both_ends`.
 
 ### Known gaps
 
@@ -46,6 +46,14 @@ keeps the inert slice 1 scene.
   moved static surfaces. That predates this work. The train's own sensors are
   excluded from its sweep, so the demo is unaffected.
 - Moving targets are treated at their current pose, with no relative-motion sweep.
+
+### Twilight scene organization follow-up
+
+Extract the station, train, track, and facade clearances into a route factory
+when the scene is next split. Keep rooftop UI placement and peer connection
+ownership in the example. Preserve the batched track, per-floor building meshes,
+and retained sweep sensors. Verify both turnarounds, boarding clearance, solo
+startup, and the host/client route before moving responsibilities.
 
 Related:
 

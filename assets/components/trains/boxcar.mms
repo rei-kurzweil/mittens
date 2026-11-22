@@ -9,6 +9,11 @@
 // named sweep-sensor zone/collidable pair is present for the next slice, but it
 // has no bound Velocity and no listener.
 
+let floor_bottom = 0.12
+let floor_thickness = 0.16
+let floor_top = floor_bottom + floor_thickness
+let roof_thickness = 0.14
+
 fn shell_part(position, size, color, material) {
     return T.position(position[0], position[1], position[2])
         .scale(size[0], size[1], size[2]) {
@@ -28,19 +33,19 @@ fn door_leaf(x, z, y, height, leaf_length, direction, angle, color, material) {
 
 // `doors_open` swings the leaves outward; closed leaves fold flat against the
 // car so a moving car's sensor covers everything visible.
-export fn boxcar(label, position, length, width, height, body_color, roof_color, door_color, material, doors_open) {
+export fn boxcar(label, position, length, width, height, body_color, roof_color, door_color, material, doors_open, door_size) {
     let wall = 0.10
-    let floor_bottom = 0.12
-    let floor_thickness = 0.16
-    let roof_thickness = 0.14
-    let floor_top = floor_bottom + floor_thickness
     let wall_height = height - floor_top - roof_thickness
     let wall_center_y = floor_top + wall_height / 2.0
     let roof_center_y = height - roof_thickness / 2.0
 
     let door_length = 1.00
     let door_height = 1.70
-    let door_leaf_length = 0.48
+    if door_size != null {
+        door_length = door_size[0]
+        door_height = door_size[1]
+    }
+    let door_leaf_length = (door_length - 0.04) / 2.0
     let door_leaf_angle = 0.0
     if doors_open { door_leaf_angle = 0.92 }
     let door_center_y = floor_top + door_height / 2.0
@@ -144,11 +149,17 @@ export fn boxcar_sensor(label, length, width, height) {
     }
 }
 
-export fn passenger_mount(label, car) {
-    let door = T.position(1.10, 1.0, 0.0) {}
-    let entry = Zone.cube([0.92, 1.10, 0.72]).at(door).role("vehicle_entry") { name = label + "_entry" }
-    let seat = T.position(0.0, 1.68, 0.0) { name = label + "_seat" }
-    let exit = T.position(1.60, 1.42, 0.0) { name = label + "_exit" }
+export fn passenger_mount(label, car, car_width, door_size) {
+    let width = 1.8
+    let opening = [1.00, 1.70]
+    if car_width != null { width = car_width }
+    if door_size != null { opening = door_size }
+    let door = T.position(0.0, floor_top + opening[1] / 2.0, 0.0) {}
+    let entry = Zone.cube([width / 2.0 + 1.1, opening[1] / 2.0, opening[0] / 2.0]).at(door).role("vehicle_entry") {
+        name = label + "_entry"
+    }
+    let seat = T.position(0.0, floor_top + 1.68, 0.0) { name = label + "_seat" }
+    let exit = T.position(width / 2.0 + 0.70, 1.42, 0.0) { name = label + "_exit" }
     return T {
         name = label + "_passenger"
         car door entry seat exit

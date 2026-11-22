@@ -97,8 +97,7 @@ fn facade_band(data, opening, axis, side, offset, span, y, height, trim) {
     }
 }
 
-fn opening_header(data, opening, offset, y) {
-    let band_top = 2.8
+fn opening_header(data, opening, offset, y, band_top) {
     if opening.height < band_top {
         let height = band_top - opening.height
         let header_y = y + opening.height + height / 2.0
@@ -175,25 +174,44 @@ fn stairwell_slab(data, y, slab) {
     building_box(data, [-3.6, y - slab / 2.0, 5.8], [4.4, slab, 0.4], false)
 }
 
-fn stairwell_flights(data, y, slab) {
-    // Two separate 1.8 m wide lanes: ten 0.16 m rises per half-storey,
-    // 0.28 m treads, and a 1.2 m deep turnaround. Repeating at 3.2 m
-    // intervals preserves standing clearance above both flights and landings.
-    // Thin open-riser treads are essential: solid blocks extending to the
-    // storey base would obstruct the heads of people on the flight below.
-    for step in range(10) {
-        let rise = (step + 1) * 0.16
-        building_box(data, [-4.7, y + rise - 0.06, 1.74 + step * 0.28], [1.8, 0.12, 0.28], false)
-        building_box(data, [-2.5, y + 1.6 + rise - 0.06, 4.26 - step * 0.28], [1.8, 0.12, 0.28], false)
+fn stairwell_flights(data, y, storey, slab) {
+    // Keep both runs within the same slab opening. Taller storeys add steps
+    // while keeping each rise within the standard 0.16 m height.
+    let half_storey = storey / 2.0
+    let steps = Math.ceil(half_storey / 0.16)
+    let tread = 2.8 / steps
+    for step in range(steps) {
+        let rise = (step + 1) * half_storey / steps
+        let run = (step + 0.5) * tread
+        building_box(data, [-4.7, y + rise - 0.06, 1.6 + run], [1.8, 0.12, tread], false)
+        building_box(data, [-2.5, y + half_storey + rise - 0.06, 4.4 - run], [1.8, 0.12, tread], false)
     }
-    building_box(data, [-3.6, y + 1.6 - slab / 2.0, 5.0], [4.4, slab, 1.2], false)
+    building_box(data, [-3.6, y + half_storey - slab / 2.0, 5.0], [4.4, slab, 1.2], false)
 }
 
-fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings) {
+// A count uses standard 3.2 m storeys. A nonempty array supplies heights
+// from ground to roof, measured between the tops of successive slabs.
+fn storey_layout(spec) {
+    let count = len(spec)
+    let uniform = count == 0
+    if uniform { count = spec }
+    let levels = {}
+    let y = 0.0
+    for floor in range(count) {
+        let height = 3.2
+        if !uniform { height = spec[floor] }
+        levels["" + floor] = { y = y height = height }
+        y = y + height
+    }
+    return { count = count levels = levels roof = y }
+}
+
+fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings) {
     let width = 14.0
     let depth = 12.0
-    let storey = 3.2
-    let height = floors * storey
+    let layout = storey_layout(floor_spec)
+    let floors = layout.count
+    let height = layout.roof
     let white = [0.94, 0.96, 0.97]
     let slab = 0.22
     if full_detail == null { full_detail = true }
@@ -205,17 +223,26 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
     let sections = {}
     if per_floor {
         // The roof slab and parapets form their own section above the storeys.
-        for floor in range(floors + 1) {
-            sections["" + floor] = ceramic_parts(floor * storey)
+        for floor in range(floors) {
+            sections["" + floor] = ceramic_parts(layout.levels["" + floor].y)
         }
+        sections["" + floors] = ceramic_parts(height)
     }
+    let detail_start = 0.0
     if first_floor > 0 {
-        let solid_height = first_floor * storey
-        building_box(data, [0.0, solid_height / 2.0 - slab, 0.0], [width, solid_height, depth], false)
+        detail_start = layout.levels["" + first_floor].y
+        building_box(data, [0.0, detail_start / 2.0 - slab, 0.0], [width, detail_start, depth], false)
     }
     for floor in range(floors) {
         if floor >= first_floor {
-            let y = floor * storey
+            let level = layout.levels["" + floor]
+            let y = level.y
+            let storey = level.height
+            let trim_height = Math.clamp(storey / 8.0, 0.0, 0.4)
+            let band_top = storey - trim_height
+            let sill_height = Math.clamp(band_top, 0.0, 0.9)
+            let trim_y = y + storey - trim_height / 2.0
+            let sill_y = y + sill_height / 2.0
             let floor_data = data
             if per_floor { floor_data = sections["" + floor] }
             if full_stairwell {
@@ -224,28 +251,28 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
                 } else {
                     stairwell_slab(floor_data, y, slab)
                 }
-                stairwell_flights(floor_data, y, slab)
+                stairwell_flights(floor_data, y, storey, slab)
             } else {
                 building_box(floor_data, [0.0, y - slab / 2.0, 0.0], [width, slab, depth], false)
             }
-            // Horizontal spandrels leave 1.95 m of open window height.
+            // The upper trim follows the ceiling and the low sill leaves an open window band.
             for side in [-1.0, 1.0] {
                 // Front/back facades along Z; columns are emitted separately.
                 let front_opening = facade_opening(openings, floor, "z", side)
-                facade_band(floor_data, front_opening, "z", side, depth / 2.0, width, y + 0.45, 0.9, false)
-                building_box(floor_data, [0.0, y + 3.0, side * depth / 2.0], [width, 0.4, 0.24], true)
-                if front_opening != null { opening_header(floor_data, front_opening, depth / 2.0, y) }
+                facade_band(floor_data, front_opening, "z", side, depth / 2.0, width, sill_y, sill_height, false)
+                building_box(floor_data, [0.0, trim_y, side * depth / 2.0], [width, trim_height, 0.24], true)
+                if front_opening != null { opening_header(floor_data, front_opening, depth / 2.0, y, band_top) }
                 // Street-facing facade has a door-sized opening on the ground floor.
                 let side_opening = facade_opening(openings, floor, "x", side)
                 if floor == 0 && side == street_side {
                     for end in [-1.0, 1.0] {
-                        building_box(floor_data, [side * width / 2.0, y + 0.45, end * 4.0], [0.24, 0.9, 4.0], false)
+                        building_box(floor_data, [side * width / 2.0, sill_y, end * 4.0], [0.24, sill_height, 4.0], false)
                     }
                 } else {
-                    facade_band(floor_data, side_opening, "x", side, width / 2.0, depth, y + 0.45, 0.9, false)
+                    facade_band(floor_data, side_opening, "x", side, width / 2.0, depth, sill_y, sill_height, false)
                 }
-                building_box(floor_data, [side * width / 2.0, y + 3.0, 0.0], [0.24, 0.4, depth], true)
-                if side_opening != null { opening_header(floor_data, side_opening, width / 2.0, y) }
+                building_box(floor_data, [side * width / 2.0, trim_y, 0.0], [0.24, trim_height, depth], true)
+                if side_opening != null { opening_header(floor_data, side_opening, width / 2.0, y, band_top) }
             }
             if floor > 0 {
                 // One continuous balcony per storey, facing the street.
@@ -261,7 +288,7 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
     }
     // Distant buildings keep continuous columns and one combined pair overall.
     if !per_floor {
-        building_columns(data, (height + first_floor * storey) / 2.0, height - first_floor * storey, width, depth, null, -1)
+        building_columns(data, (height + detail_start) / 2.0, height - detail_start, width, depth, null, -1)
     }
     let roof_data = data
     let stair_data = data
@@ -277,9 +304,12 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
         building_box(roof_data, [1.8, height - slab / 2.0, 0.0], [10.4, slab, 12.0], false)
         building_box(roof_data, [-4.6, height - slab / 2.0, -2.4], [2.4, slab, 7.2], false)
         building_box(roof_data, [-4.6, height - slab / 2.0, 5.6], [2.4, slab, 0.8], false)
-        for step in range(16) {
-            let rise = (step + 1) * 0.2
-            building_box(stair_data, [-4.6, height - storey + rise / 2.0, 5.05 - step * 0.24], [2.0, rise, 0.24], false)
+        let top = layout.levels["" + (floors - 1)]
+        let steps = Math.ceil(top.height / 0.2)
+        let tread = 3.84 / steps
+        for step in range(steps) {
+            let rise = (step + 1) * top.height / steps
+            building_box(stair_data, [-4.6, top.y + rise / 2.0, 5.17 - (step + 0.5) * tread], [2.0, rise, tread], false)
         }
     } else {
         building_box(roof_data, [0.0, height - slab / 2.0, 0.0], [width, slab, depth], false)
@@ -309,6 +339,7 @@ fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, t
     }
 }
 
+// `floors` accepts either a count or ground-to-roof floor-to-floor heights.
 export fn pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor) {
     return build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, false, null)
 }

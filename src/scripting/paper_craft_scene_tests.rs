@@ -199,6 +199,68 @@ fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs()
 }
 
 #[test]
+fn pool_building_mixed_storeys_align_slabs_and_stairs() {
+    let (mut world, mut rx, mut queue, mut assets) = (
+        World::default(),
+        RxWorld::default(),
+        CommandQueue::new(),
+        RenderAssets::new(),
+    );
+    let (_session, _) = super::tests::start_settings_scene(
+        r#"
+        import { pool_building, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
+        let tiles = Material(MaterialDefinition.toon())
+        let trim = [0.7, 0.8, 0.9]
+        let floors = [3.2, 3.8, 3.3]
+        pool_building_with_stairs("mixed_stairs", [0, 2, 0], floors, 1.0, tiles, trim)
+        pool_building("mixed_basic", [20, 2, 0], floors, 1.0, false, tiles, trim, true, true)
+        "#,
+        "examples/_pool_building_mixed_storeys_test.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    for (section, height) in [
+        ("floor_0", 2.0),
+        ("floor_1", 5.2),
+        ("floor_2", 9.0),
+        ("roof", 12.3),
+    ] {
+        for building in ["mixed_stairs", "mixed_basic"] {
+            let label = format!("{building}_{section}");
+            let id = world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(label.as_str()))
+                .unwrap();
+            assert!(
+                (authored_model(&world, id)[3][1] - height).abs() < 0.001,
+                "{label}"
+            );
+        }
+    }
+    let supports = |point| {
+        world.all_components().any(|id| {
+            let Some(ZoneComponent {
+                shape: CollisionShape::Cube { half_extents },
+                ..
+            }) = world.get_component_by_id_as::<ZoneComponent>(id)
+            else {
+                return false;
+            };
+            let inverse = mat4_inverse(authored_model(&world, id)).unwrap();
+            let local = mat4_mul_vec4(inverse, point);
+            (0..3).all(|axis| local[axis].abs() < half_extents[axis])
+        })
+    };
+    // The taller storey's halfway landing and last tread reach their new elevations.
+    for point in [[-3.6, 7.09, 5.0, 1.0], [-2.5, 8.99, 1.7, 1.0]] {
+        assert!(supports(point), "missing stair support at {point:?}");
+    }
+}
+
+#[test]
 fn twilight_sky_has_typed_overrides_linear_masks_and_no_bloom_extraction() {
     use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
     use crate::engine::ecs::component::{BackgroundComponent, TextureComponent};

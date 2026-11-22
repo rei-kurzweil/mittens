@@ -610,6 +610,7 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
         "twilight_rooftop_east",
         "twilight_rooftop_train",
         "twilight_rooftop_train_motion",
+        "twilight_rooftop_graphics_settings",
         "twilight_rooftop_mirror",
     ] {
         assert!(named(&scene, label).is_some(), "missing {label}");
@@ -881,11 +882,12 @@ fn labelled_ancestor(world: &World, id: ComponentId, prefix: &str) -> bool {
 }
 
 #[test]
-fn twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole() {
+fn twilight_rooftop_train_clears_east_facades_and_reverses_at_both_ends() {
     use crate::engine::ecs::component::TransformComponent;
     use crate::engine::ecs::{EventSignal, SignalKind};
     use std::sync::{Arc, Mutex};
     let mut scene = load(&twilight_rooftop_source(), "examples/twilight_rooftop.mms");
+    let train_motion = named(&scene, "twilight_rooftop_train_motion").unwrap();
     let contacts = Arc::new(Mutex::new(Vec::new()));
     let sink = contacts.clone();
     scene
@@ -893,8 +895,9 @@ fn twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole() {
         .rx
         .add_global_handler_closure(SignalKind::ZoneContact, move |_, _, signal| {
             if let Some(EventSignal::ZoneContact {
-                zone, other_zone, ..
+                zone, other_zone, velocity, ..
             }) = signal.event
+                && velocity == train_motion
             {
                 sink.lock().unwrap().push((zone, other_zone));
             }
@@ -917,8 +920,36 @@ fn twilight_rooftop_train_crosses_the_square_and_stops_at_the_round_hole() {
     }
     let contacts = contacts.lock().unwrap().clone();
     let world = &scene.world;
+    let car_label = "twilight_rooftop_train_car_0";
+    let car = named(&scene, car_label).unwrap();
+    let car_world = TransformSystem::world_model(world, car).unwrap();
+    let shell_boxes: Vec<_> = world
+        .find_all_components(car, "renderable")
+        .into_iter()
+        .map(|id| {
+            crate::utils::math::mat4_inverse(TransformSystem::world_model(world, id).unwrap())
+                .unwrap()
+        })
+        .collect();
+    assert!(!shell_boxes.is_empty());
+    // A standing avatar can fit through either doorway and under the roof.
+    for x in [-0.92, -0.85, 0.0, 0.85, 0.92] {
+        for z in [-0.72, 0.0, 0.72] {
+            for y in [0.30, 1.4, 2.52] {
+                let point = crate::utils::math::mat4_mul_vec4(car_world, [x, y, z, 1.0]);
+                assert!(
+                    shell_boxes.iter().all(|&inverse| {
+                        let local = crate::utils::math::mat4_mul_vec4(inverse, point);
+                        local[..3].iter().any(|value| value.abs() > 0.5)
+                    }),
+                    "blocked car passage at {:?}",
+                    [x, y, z]
+                );
+            }
+        }
+    }
     // Exactly two arrivals in 14 s: the round hole, then the main building.
-    // Crossing the east building's square openings reports nothing.
+    // Crossing the east building's rectangular openings reports nothing.
     assert_eq!(contacts.len(), 2, "{contacts:?}");
     let (zone, round) = contacts[0];
     assert!(

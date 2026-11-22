@@ -102,6 +102,12 @@ under the sky with bloom disabled too; glowing housing alone is not illumination
 
 ## E1–E2 implementation and handoff (2026-11-09)
 
+Pool building organization follow-up. Extract floor layout and stair planning
+from facade and batch assembly when the prefab is next split. Keep one set of
+box dimensions feeding both rendering and collision. Preserve per-floor draw
+groups and avoid runtime rebuilds. Check mixed-height slabs, facade openings,
+stair headroom, and the uniform-height smoke tests.
+
 Implemented `examples/paper-craft.mms` with the five-building layout above,
 19.2 m main roof, one pistol, no cans/NPC pedestal/reset pit, and the existing
 Sakura sky and short bench at the E1–E2 handoff. The subsequent sky slice now

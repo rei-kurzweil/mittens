@@ -14,6 +14,7 @@ import { shared_grabbable } from "../assets/components/network/shared_grabbable.
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
+import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building_with_openings, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
@@ -71,8 +72,11 @@ T.position(0.5, 0.8, 0.3) { DL.color(0.70, 0.66, 1.0).intensity(0.4) }
 
 // City: paper-craft's three buildings, grounded, each one floor shorter.
 let storey_height = 3.2
-let main_floors = 5
-let roof_height = main_floors * storey_height
+let train_storey_height = 3.8
+// Keep the main rooftop at 16 m and raise the balcony above the train.
+let main_floors = [storey_height, storey_height, train_storey_height, 2.6, storey_height]
+let roof_height = 0.0
+for height in main_floors { roof_height = roof_height + height }
 let roof_x = -18.0
 let tiles = pool_tile_material()
 let anime = MaterialDefinition.anime()
@@ -100,12 +104,9 @@ T { name = "twilight_rooftop_ground" box([0.0, -0.48, -13.0], [120.0, 0.5, 120.0
 
 // Train: a crescent of track on the third storey (floor slab y = 6.4), a
 // semicircle of radius 13 m around (-11, -13). It starts at the main
-// building's balcony railing (solid: the train is blocked), passes through the
-// east building via a 2.7 m square opening in each facade, and ends at a
-// 2.7 m round hole in the north building. The cars' 1.94 x 2.2 m cross-section
-// fits the square, but its 2.93 m diagonal does not fit the circle: same size,
-// different shape. Contacts come from the box-shaped ZoneContact sweep, and the
-// handler reverses the train.
+// building's balcony railing, passes through rectangular openings in the east
+// building, and reverses at the north building's round hole. The opening clears
+// the car in height and width, and the car's corners meet the ring.
 let quarter_turn = 1.57079633
 let floor_y = 2.0 * storey_height
 let rail_top = floor_y + 0.28
@@ -113,25 +114,30 @@ let arc_center = [-11.0, -13.0]
 let arc_radius = 13.0
 let car_length = 4.0
 let car_width = 1.8
-let car_height = 2.2
+let car_height = 2.85
 let car_gap = 0.4
-let opening_size = 2.7
+let car_doors = [1.50, 2.25]
+let opening_width = 3.8
+let opening_height = 3.35
+let ring_width = 3.9
+let ring_radius = 1.625
 // The main balcony railing's outer face (x = -9.08) to the north facade (x = -11).
 let track_start = -1.4225
 let track_end = quarter_turn
-// The cars cross the east building's facades about 27 degrees off square;
-// their footprint there spans local x = [-2.64, -0.16], centered on -1.40.
-let square_center = -1.40
-pool_building_with_openings("twilight_rooftop_north", [-18.0, 0.0, -26.0], 4, -1.0, tiles, white,
-    [{ floor = 2 axis = "x" side = 1.0 center = -0.1 width = 3.4 height = 2.8 }])
-pool_building_with_openings("twilight_rooftop_east", [2.0, 0.0, -13.0], 3, 1.0, tiles, blue, [
-    { floor = 2 axis = "z" side = 1.0 center = square_center width = opening_size height = opening_size },
-    { floor = 2 axis = "z" side = -1.0 center = square_center width = opening_size height = opening_size },
+// The extra facade width accounts for the curved approach and the open leaves.
+let opening_center = -1.40
+let east_floors = [storey_height, storey_height, train_storey_height]
+let north_floors = [storey_height, storey_height, train_storey_height, storey_height]
+pool_building_with_openings("twilight_rooftop_north", [-18.0, 0.0, -26.0], north_floors, -1.0, tiles, white,
+    [{ floor = 2 axis = "x" side = 1.0 center = -0.1 width = ring_width height = opening_height }])
+pool_building_with_openings("twilight_rooftop_east", [2.0, 0.0, -13.0], east_floors, 1.0, tiles, blue, [
+    { floor = 2 axis = "z" side = 1.0 center = opening_center width = opening_width height = opening_height },
+    { floor = 2 axis = "z" side = -1.0 center = opening_center width = opening_width height = opening_height },
 ])
 T.position(-11.0, floor_y, -26.1).rotation(0.0, quarter_turn, 0.0) {
     name = "twilight_rooftop_round_hole"
     round_aperture_wall("twilight_rooftop_round_hole_wall", rail_top - floor_y + car_height / 2.0,
-        opening_size / 2.0, 1.7, 2.8, 0.24, 24, white, tiles)
+        ring_radius, ring_width / 2.0, opening_height, 0.24, 24, white, tiles)
 }
 T.position(arc_center[0], 0.0, arc_center[1]) {
     name = "twilight_rooftop_rails"
@@ -153,8 +159,8 @@ for car in [0, 1] {
     let car_mount = T.rotation(0.0, (car * 2.0 - 1.0) * car_angle, 0.0) {
         T.position(arc_radius, 0.0, 0.0) {
             let shell = boxcar(label, [0.0, 0.0, 0.0], car_length, car_width, car_height,
-                [0.55, 0.20, 0.22], [0.18, 0.20, 0.25], [0.68, 0.40, 0.24], hardware, true)
-            passenger_mount(label, shell)
+                [0.55, 0.20, 0.22], [0.18, 0.20, 0.25], [0.68, 0.40, 0.24], hardware, true, car_doors)
+            passenger_mount(label, shell, car_width, car_doors)
             boxcar_sensor(label + "_sensor", car_length, car_width, car_height)
         }
     }
@@ -262,6 +268,9 @@ if use_desktop && !use_xr {
 } else { local.locomotion }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
+T.position(roof_x - 4.6, roof_height + 2.3, -4.8) {
+    graphics_settings_panel({ root_name = "twilight_rooftop_graphics_settings" })
+}
 if use_xr {
     let xr_calibration_file = XrSettings.floor.default_file()
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
