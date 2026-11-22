@@ -615,6 +615,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
                     component.builder_call("default_height_if_outside", floats(3));
+                    host_method(
+                        component,
+                        canonical,
+                        "import_scale",
+                        mms::ValueSignature::new(vec![], mms::ValueType::F32),
+                    );
                 }
                 "Clock" => constructor_and_builder(component, "bpm", floats(1)),
                 "Animation" => {

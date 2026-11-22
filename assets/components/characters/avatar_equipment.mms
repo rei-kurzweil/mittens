@@ -1,15 +1,17 @@
 let slot_names = ["equipment_left_thigh", "equipment_right_thigh", "equipment_back"]
 let avatar_attachment_index = 0
 
-// Each placement is [bone name, local center, local radius, round pitch] in rig units and radians.
+// Each placement is [bone name, local center, local radius, round pitch] in
+// the GLB's own units and radians; they follow any scale baked on import.
 export fn install_avatar_equipment(model, placements) {
     on(model, "GLTFInitialized", fn(event) {
         for i in [0, 1, 2] {
             let placement = placements[i]
             let bone = event.gltf.query("[name='" + placement[0] + "']")
             if bone {
-                let center = placement[1]
-                let zone = Zone.sphere(placement[2]).receive_drops(avatar_attachment_index) {
+                let k = event.gltf.import_scale()
+                let center = [placement[1][0] * k, placement[1][1] * k, placement[1][2] * k]
+                let zone = Zone.sphere(placement[2] * k).receive_drops(avatar_attachment_index) {
                     name = slot_names[i]
                 }
                 let anchor = T.position(center[0], center[1], center[2]).rotation(placement[3], 0, 0) { zone }

@@ -542,6 +542,21 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                     return Ok(S::Value(mms::Value::Null));
                 }
+                if *component_type == "GLTF" && *method == "import_scale" {
+                    use crate::engine::ecs::component::GLTFComponent;
+                    let scale = self
+                        .world
+                        .get_component_by_id_as::<GLTFComponent>(id)
+                        .filter(|model| model.spawned)
+                        .map(|model| model.import_scale)
+                        .ok_or_else(|| {
+                            mms::HostError::failure(
+                                "GLTF.import_scale".to_string(),
+                                "the GLTF is not imported yet".to_string(),
+                            )
+                        })?;
+                    return Ok(S::Value(mms::Value::Number(scale as f64)));
+                }
                 if *component_type == "GLTF" && matches!(*method, "morph_weight" | "set_morph_weight") {
                     return super::morph_api::invoke(self.world, id, method, &args)
                         .map(S::Value)

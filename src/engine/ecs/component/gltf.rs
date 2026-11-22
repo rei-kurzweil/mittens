@@ -23,6 +23,11 @@ pub struct GLTFComponent {
     /// catches ones that are not.
     pub default_height_if_outside: Option<[f32; 3]>,
 
+    /// Runtime-only: the uniform scale baked into this instance's data (1
+    /// unless `default_height_if_outside` applied). Constants authored in the
+    /// asset's own units multiply by it; MMS reads it as `import_scale()`.
+    pub import_scale: f32,
+
     /// Runtime-only: used by GLTFSystem to avoid re-spawning the same asset repeatedly.
     pub spawned: bool,
 
@@ -51,6 +56,7 @@ impl GLTFComponent {
             uri: uri.into(),
             with_visualized_transforms: false,
             default_height_if_outside: None,
+            import_scale: 1.0,
             spawned: false,
             armature_visible: false,
             bounds_visible: false,

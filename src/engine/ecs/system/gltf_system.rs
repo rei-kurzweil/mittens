@@ -373,6 +373,7 @@ impl GLTFSystem {
                 self.spawned_components.insert(cid);
                 continue;
             };
+            let import_scale = loaded.import_scale;
 
             // Import to walk the node tree.
             // Heavy mesh/texture data is cached in `resources_by_uri`.
@@ -506,6 +507,7 @@ impl GLTFSystem {
             self.spawned_components.insert(cid);
             if let Some(c) = world.get_component_by_id_as_mut::<GLTFComponent>(cid) {
                 c.spawned = true;
+                c.import_scale = import_scale;
                 c.spawned_node_transforms = node_index_to_component.values().copied().collect();
                 c.armature_joint_transforms = joint_node_indices
                     .iter()

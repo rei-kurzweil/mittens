@@ -24,8 +24,9 @@ export fn install_miku_equipment(model) {
 // a direct chain. This export nests the right shoulder beneath the tongue
 // and inserts twist joints before both elbows and wrists. Keep the weighted
 // helpers on the arm while giving the solver direct parents. Each new local
-// pose is inverse(new parent bind matrix) * joint bind matrix, in GLB units.
-export fn prepare_miku_arms(model) {
+// pose is inverse(new parent bind matrix) * joint bind matrix, in GLB units,
+// so translations multiply by the import scale baked into the rig.
+export fn prepare_miku_arms(model, import_scale) {
     let links = [
         ["���������2_010", "���.R_054", [-0.234880, 2.184774, -0.003031], [-0.528596, 0.388626, 0.585067, 0.476710]],
         ["���.R_055", "������.R_057", [0, 2.742810, 0], [0.001809, -0.000006, 0.015105, 0.999884]],
@@ -38,21 +39,9 @@ export fn prepare_miku_arms(model) {
         let child = model.query("[name='" + link[1] + "']")
         if !parent || !child { return false }
         parent.attach(child)
-        child.trs({ translation = link[2] rotation_quat_xyzw = link[3] scale = [1, 1, 1] })
+        let t = link[2]
+        child.trs({ translation = [t[0] * import_scale, t[1] * import_scale, t[2] * import_scale]
+            rotation_quat_xyzw = link[3] scale = [1, 1, 1] })
     }
     return true
-}
-
-// Held-object offsets are in metres. Preserve the calibrated wrist orientation
-// and cancel the model scale on the generated hand grips alone.
-export fn normalize_miku_grips(model, model_scale) {
-    for wrist in ["������.L_0104", "������.R_059"] {
-        let grip = model.query("[name='" + wrist + "'] > [name='avatar_hand_grip_attachment']")
-        if grip {
-            let pose = grip.trs()
-            let inverse_scale = 1.0 / model_scale
-            grip.trs({ translation = pose.translation rotation_quat_xyzw = pose.rotation_quat_xyzw
-                scale = [inverse_scale, inverse_scale, inverse_scale] })
-        }
-    }
 }

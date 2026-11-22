@@ -7,11 +7,18 @@ import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
 import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
-import { miku_twintails, prepare_miku_arms, normalize_miku_grips, install_miku_equipment } from "./tda_miku_rig.mms"
+import { miku_twintails, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
 import { detach_avatar_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
 
-let MIKU_SCALE = 0.09
+// The TDA export is in MMD units (~8 cm), about 20 m tall as meters. Its
+// GLTF bakes a uniform scale to this height on import, so the rig is meter
+// scale like the VRoid avatars; GLB-unit constants multiply by import_scale().
+let MIKU_HEIGHT = 1.7
+// Eye height in GLB units, measured under the former 0.09 wrapper (1.59 m).
+let MIKU_EYE_GLB = 1.59 / 0.09
+// Before the GLB loads (a player starting as Miku) assume that old scale.
+let MIKU_ASSUMED_SCALE = 0.09
 
 fn vroid_face() {
     return MorphTargetMap.new()
@@ -45,7 +52,7 @@ fn make_lumae(model_name, track_hands, bucket) {
 }
 
 fn make_miku(model_name, track_hands, bucket) {
-    let model = GLTF.new(model_uris.miku) {
+    let model = GLTF.new(model_uris.miku).default_height_if_outside(1.0, 3.0, MIKU_HEIGHT) {
         name = model_name
         // The finger chains are mapped in tda_miku.mms; the curl axes are not
         // yet checked against this rig (see miku_rig_report.rs).
@@ -55,7 +62,7 @@ fn make_miku(model_name, track_hands, bucket) {
         miku_twintails()
     }
     install_miku_equipment(model)
-    return { model = model eye_height = 1.59 }
+    return { model = model eye_height = MIKU_EYE_GLB * MIKU_ASSUMED_SCALE import_scale = MIKU_ASSUMED_SCALE }
 }
 
 fn make_succubus(model_name, track_hands, bucket) {
@@ -119,16 +126,15 @@ export fn make_rooftop_player(options) {
             // Torso spheres keep the pitched body colliding on hands and knees.
             collision_detail("detailed")
             if choice == "miku" {
-                // Measured at the boot soles in the weighted ankle frames (GLB units).
-                crouch_sole_offsets([-0.0065, -1.599, 0.311], [0.0065, -1.599, 0.311])
+                // Measured at the boot soles in the weighted ankle frames, in GLB
+                // units, so scaled by the baked import scale.
+                crouch_sole_offsets(
+                    [-0.0065 * spec.import_scale, -1.599 * spec.import_scale, 0.311 * spec.import_scale],
+                    [0.0065 * spec.import_scale, -1.599 * spec.import_scale, 0.311 * spec.import_scale])
                 crouch_support_margin(0.25)
                 arm_ik({ left = { pole_direction = [1.0, -1.5, 0.6] } right = { pole_direction = [-1.0, -1.5, 0.6] } })
                 collision_disabled()
                 avatar_height(spec.eye_height)
-                // Experiment (2026-11-22): the neck constraint is back on so
-                // horizontal posture can place Miku's body under her head.
-                // If standing breaks, restore neck_pin_disabled() here; auto
-                // posture then keeps her vertical instead of stretching.
             } else {
                 crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
@@ -174,17 +180,16 @@ export fn make_rooftop_player(options) {
             model_mount = spec.staging
             model_mount.update_transform([0, 0, 0])
         }
-        if choice == "miku" {
-            // The imported scene already includes its axis conversion, as in the cafeteria.
-            let normalized = T.scale(MIKU_SCALE, MIKU_SCALE, MIKU_SCALE) {}
-            normalized.attach(model_mount)
-            model_frame.attach(normalized)
-        } else { model_frame.attach(model_mount) }
+        // The imported scene already includes its axis conversion, as in the cafeteria.
+        model_frame.attach(model_mount)
         avatar.attach(model_frame)
         avatar.attach(left_driver)
         avatar.attach(right_driver)
         if local_player {
-            camera.update_transform([0.0, 0.08, 0.12], [0.0, 0.0, 0.0])
+            // The desktop camera faces back along Miku's converted axes.
+            let yaw = 0.0
+            if choice == "miku" && use_desktop && !use_xr { yaw = Math.pi }
+            camera.update_transform([0.0, 0.08, 0.12], [0.0, yaw, 0.0])
             avatar.attach(camera)
             if use_xr { avatar.attach(eye_tracking) }
         }
@@ -237,7 +242,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null capsule = null miku_head = null }
+    let state = { head = head model = initial.model choice = options.avatar pending = null changed = null capsule = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -277,7 +282,12 @@ export fn make_rooftop_player(options) {
                 state.pending = null
                 return
             }
-            if choice == "miku" && !prepare_miku_arms(event.gltf) {
+            if choice == "miku" {
+                // GLB-unit constants follow the scale the import baked.
+                spec.import_scale = event.gltf.import_scale()
+                spec.eye_height = MIKU_EYE_GLB * spec.import_scale
+            }
+            if choice == "miku" && !prepare_miku_arms(event.gltf, spec.import_scale) {
                 staging.remove_subtree()
                 state.pending = null
                 report("Miku rig unavailable", false)
@@ -293,9 +303,7 @@ export fn make_rooftop_player(options) {
             // must be retired with the old AVC to remove the entire old rig.
             let next_head = T { name = prefix + "_head_target" body }
             if state.capsule { state.capsule.remove_subtree() state.capsule = null }
-            state.miku_head = null
             if choice == "miku" {
-                state.miku_head = spec.model.query("[name='���_012']")
                 // The TDA skinned meshes store their vertex bounds sideways.
                 // Keep the capsule upright on the movement root on both peers.
                 let capsule = T.position(0, 0.91, 0) {
@@ -308,6 +316,8 @@ export fn make_rooftop_player(options) {
                 }
                 root.attach(capsule)
                 state.capsule = capsule
+                // No AVC capsule reports ready for Miku; this one is in place.
+                if gravity { gravity.set_enabled(true) }
             }
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
@@ -329,19 +339,6 @@ export fn make_rooftop_player(options) {
         on_global("MountEnded", fn(event) { held.mounted = false })
     }
     on(world, "FrameTick", fn(event) {
-        // The visible head loses its inherited scale when AVC reparents it.
-        // Wait for the splice, including delayed XR tracking, and restore it once.
-        if state.miku_head && query("[name='" + prefix + "_head_target'] > transform > [name='���_012']") == state.miku_head {
-            state.miku_head.update_transform([0, 0, 0], [-0.01046, 0, 0], [MIKU_SCALE, MIKU_SCALE, MIKU_SCALE])
-            state.miku_head = null
-            if track_hands { normalize_miku_grips(state.model, MIKU_SCALE) }
-            if gravity { gravity.set_enabled(true) }
-            if local_player {
-                let yaw = 0.0
-                if use_desktop && !use_xr { yaw = Math.pi }
-                camera.update_transform([0, 0.08 / MIKU_SCALE, 0.12 / MIKU_SCALE], [0, yaw, 0])
-            }
-        }
         let pending = state.pending
         if !pending { return }
         pending.elapsed = pending.elapsed + event.dt_sec

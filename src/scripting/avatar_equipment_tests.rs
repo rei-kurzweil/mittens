@@ -264,8 +264,8 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
         r#"
         import {{ install_miku_equipment }} from "../assets/components/characters/tda_miku_rig.mms"
         import {{ sta_rocket_ammo }} from "../assets/components/projectiles/sta_rocket_ammo.mms"
-        let model = GLTF.new("{MODEL}") {{}}
-        T.scale(0.09,0.09,0.09) {{ model }}
+        let model = GLTF.new("{MODEL}").default_height_if_outside(1.0, 3.0, 1.7) {{}}
+        T {{ model }}
         install_miku_equipment(model)
         T {{ name = "hand" Pointer {{ name = "test_pointer" }} }}
         T.position(3, 0, 0).scale(0.1, 0.2, 0.3) {{
