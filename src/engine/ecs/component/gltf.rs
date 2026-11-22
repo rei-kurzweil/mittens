@@ -17,11 +17,11 @@ pub struct GLTFComponent {
     /// even when the node has no mesh.
     pub with_visualized_transforms: bool,
 
-    /// `[min, target]` heights in meters: an asset whose rest pose is shorter
-    /// than `min` is scaled to `target` by baking one uniform scale into its
-    /// loaded data. Assets are expected in meters; this catches ones that
-    /// are not.
-    pub default_height_if_short: Option<[f32; 2]>,
+    /// `[min, max, target]` heights in meters: an asset whose rest pose is
+    /// under `min` or over `max` is scaled to `target` by baking one uniform
+    /// scale into its loaded data. Assets are expected in meters; this
+    /// catches ones that are not.
+    pub default_height_if_outside: Option<[f32; 3]>,
 
     /// Runtime-only: used by GLTFSystem to avoid re-spawning the same asset repeatedly.
     pub spawned: bool,
@@ -50,7 +50,7 @@ impl GLTFComponent {
         Self {
             uri: uri.into(),
             with_visualized_transforms: false,
-            default_height_if_short: None,
+            default_height_if_outside: None,
             spawned: false,
             armature_visible: false,
             bounds_visible: false,
@@ -67,8 +67,8 @@ impl GLTFComponent {
         self
     }
 
-    pub fn default_height_if_short(mut self, min: f32, target: f32) -> Self {
-        self.default_height_if_short = Some([min, target]);
+    pub fn default_height_if_outside(mut self, min: f32, max: f32, target: f32) -> Self {
+        self.default_height_if_outside = Some([min, max, target]);
         self
     }
 }
@@ -109,10 +109,10 @@ impl Component for GLTFComponent {
         if self.with_visualized_transforms {
             ce = ce.with_call("with_visualized_transforms", vec![b(true)]);
         }
-        if let Some([min, target]) = self.default_height_if_short {
+        if let Some([min, max, target]) = self.default_height_if_outside {
             ce = ce.with_call(
-                "default_height_if_short",
-                vec![num(min as f64), num(target as f64)],
+                "default_height_if_outside",
+                vec![num(min as f64), num(max as f64), num(target as f64)],
             );
         }
         ce

@@ -253,16 +253,17 @@ EmissivePass {}
 Carries gltf state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. glTF, animation, avatar, IK, or pose systems; lifecycle intents and `GltfInitialized` are relevant.
 **Directly constructible** as `GLTF`. Sources: [Rust implementation](../../../src/engine/ecs/component/gltf.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 
-Models are expected in meters. `.default_height_if_short(min, target)` handles
-ones that are not: when the rest-pose height of the scene's meshes is under
-`min` meters, one uniform scale to `target` is baked into the loaded data
+Models are expected in meters. `.default_height_if_outside(min, max, target)`
+handles ones that are not: when the rest-pose height of the scene's meshes is
+under `min` or over `max` meters (an MMD model in ~8 cm units is about 20 m
+tall), one uniform scale to `target` is baked into the loaded data
 (vertex positions, morph position deltas, skin inverse binds and node
 translations), not added as a transform. Skinned meshes are measured through
-their bind pose, so meshes stored sideways measure upright. A taller asset
-loads unchanged.
+their bind pose, so meshes stored sideways measure upright. An asset inside
+the range loads unchanged.
 ```mms parse-only
 GLTF {}
-GLTF.new("assets/models/avatar.glb").default_height_if_short(1.0, 1.8) {}
+GLTF.new("assets/models/avatar.glb").default_height_if_outside(1.0, 3.0, 1.7) {}
 ```
 
 ### `MeshComponent`

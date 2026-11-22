@@ -30,7 +30,7 @@ struct LoadedGltf {
     textures: Vec<ImportedTexture>,
     skins: Vec<ImportedSkin>,
     /// Uniform scale baked into meshes and skins; spawned node translations
-    /// are multiplied by it too. 1 unless `default_height_if_short` applied.
+    /// are multiplied by it too. 1 unless `default_height_if_outside` applied.
     import_scale: f32,
     meshes_registered: bool,
     textures_uploaded: bool,
@@ -332,14 +332,16 @@ impl GLTFSystem {
 
             let Some((uri, height_rule)) = world
                 .get_component_by_id_as::<GLTFComponent>(cid)
-                .map(|c| (c.uri.clone(), c.default_height_if_short))
+                .map(|c| (c.uri.clone(), c.default_height_if_outside))
             else {
                 continue;
             };
             // A height-normalized load bakes different data, so it is cached
             // (and its skins registered) under its own key.
             let cache_key = match height_rule {
-                Some([min, target]) => format!("{uri}#default_height_if_short({min},{target})"),
+                Some([min, max, target]) => {
+                    format!("{uri}#default_height_if_outside({min},{max},{target})")
+                }
                 None => uri.clone(),
             };
 
@@ -730,7 +732,7 @@ impl GLTFSystem {
 
     fn load_gltf_resources(
         uri: &str,
-        height_rule: Option<[f32; 2]>,
+        height_rule: Option<[f32; 3]>,
     ) -> Result<LoadedGltf, String> {
         let (path, doc, buffers, images) = Self::import_with_fallback(uri)?;
         let sidecar_dir = std::path::PathBuf::from(format!("{path}.textures"));
@@ -1076,22 +1078,22 @@ impl GLTFSystem {
             });
         }
 
-        // Assets are expected in meters. A rest pose shorter than the rule's
-        // minimum has the scale baked into the data; its meshes get their own
+        // Assets are expected in meters. A rest pose outside the rule's
+        // range has the scale baked into the data; its meshes get their own
         // keys so an unscaled load of the same file can coexist. Textures are
         // unchanged and keep their shared keys.
         let mut gltf_name = gltf_name;
         let mut import_scale = 1.0;
-        if let Some([min, target]) = height_rule {
+        if let Some([min, max, target]) = height_rule {
             let inverse_binds: Vec<Vec<TransformMatrix>> = skins
                 .iter()
                 .map(|skin| skin.inverse_bind_matrices.clone())
                 .collect();
             let height = super::gltf_height::rest_height(&doc, &inverse_binds);
-            import_scale = super::gltf_height::height_scale(height, min, target);
+            import_scale = super::gltf_height::height_scale(height, min, max, target);
             if import_scale != 1.0 {
                 println!(
-                    "[GLTFSystem] '{uri}' rest height {:.3} is under {min}: baking scale {import_scale:.4} for {target}",
+                    "[GLTFSystem] '{uri}' rest height {:.3} is outside {min}..{max}: baking scale {import_scale:.4} for {target}",
                     height.unwrap_or(0.0)
                 );
                 for imported in &mut meshes {

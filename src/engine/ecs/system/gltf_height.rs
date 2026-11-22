@@ -1,7 +1,8 @@
 //! Import-time height normalization for glTF assets authored in the wrong
-//! units (`GLTF.default_height_if_short(min, target)`). Models are expected in
-//! meters; when one's rest-pose height comes out shorter than `min`, one
-//! uniform scale is baked into the loaded data itself (vertex positions, morph
+//! units (`GLTF.default_height_if_outside(min, max, target)`). Models are
+//! expected in meters; when one's rest-pose height comes out under `min` or
+//! over `max` (an MMD model in ~8 cm units is about 20 m tall), one uniform
+//! scale is baked into the loaded data itself (vertex positions, morph
 //! position deltas, skin inverse binds, node translations at spawn) so nothing
 //! downstream needs a compensating transform.
 use crate::engine::graphics::mesh::CpuMesh;
@@ -65,10 +66,12 @@ pub(super) fn rest_height(
 }
 
 /// The uniform scale to bake: `target / height` when the asset is shorter
-/// than `min`, otherwise 1.
-pub(super) fn height_scale(height: Option<f32>, min: f32, target: f32) -> f32 {
+/// than `min` or taller than `max`, otherwise 1.
+pub(super) fn height_scale(height: Option<f32>, min: f32, max: f32, target: f32) -> f32 {
     match height {
-        Some(height) if height > 1e-6 && height < min && target > 0.0 => target / height,
+        Some(height) if height > 1e-6 && (height < min || height > max) && target > 0.0 => {
+            target / height
+        }
         _ => 1.0,
     }
 }
@@ -107,11 +110,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_short_assets_are_scaled_to_the_target_height() {
-        assert_eq!(height_scale(Some(0.2), 1.0, 1.8), 9.0);
-        assert_eq!(height_scale(Some(1.6), 1.0, 1.8), 1.0);
-        assert_eq!(height_scale(None, 1.0, 1.8), 1.0);
-        assert_eq!(height_scale(Some(0.0), 1.0, 1.8), 1.0);
+    fn only_assets_outside_the_range_are_scaled_to_the_target_height() {
+        assert_eq!(height_scale(Some(0.2), 1.0, 3.0, 1.8), 9.0);
+        assert!((height_scale(Some(20.0), 1.0, 3.0, 1.7) - 0.085).abs() < 1e-6);
+        assert_eq!(height_scale(Some(1.6), 1.0, 3.0, 1.8), 1.0);
+        assert_eq!(height_scale(None, 1.0, 3.0, 1.8), 1.0);
+        assert_eq!(height_scale(Some(0.0), 1.0, 3.0, 1.8), 1.0);
     }
 
     #[test]

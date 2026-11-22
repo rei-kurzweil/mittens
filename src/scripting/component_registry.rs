@@ -3789,12 +3789,15 @@ fn apply_call(
         if method == "with_visualized_transforms" {
             *gltf = gltf.clone().with_visualized_transforms(arg_bool(args, 0)?);
         }
-        if method == "default_height_if_short" {
-            let (min, target) = (arg_f32(args, 0)?, arg_f32(args, 1)?);
-            if !(min.is_finite() && target.is_finite() && min > 0.0 && target > 0.0) {
-                return Err("GLTF.default_height_if_short expects positive heights".into());
+        if method == "default_height_if_outside" {
+            let (min, max, target) = (arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?);
+            if ![min, max, target].iter().all(|h| h.is_finite() && *h > 0.0) || min > max {
+                return Err(
+                    "GLTF.default_height_if_outside expects positive heights with min <= max"
+                        .into(),
+                );
             }
-            *gltf = gltf.clone().default_height_if_short(min, target);
+            *gltf = gltf.clone().default_height_if_outside(min, max, target);
         }
         return Ok(());
     }
