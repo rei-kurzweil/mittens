@@ -7,7 +7,7 @@ import { shared_impact } from "../network/shared_impact.mms"
 
 // Reuses the existing weapon's muzzle, selector, sounds and firing cadence.
 // Unique labels keep the three rack instances' controls independent.
-// For a shared pistol pass { socket, weapon_id, rank }, bind the local pointers
+// For a shared pistol pass { socket, weapon_id, rank, mounts? }, bind the local pointers
 // and connect/disconnect the assembly with the scene's peer lifecycle.
 export fn ship_machine_pistol(label, options) {
     let scale = 0.085
@@ -123,7 +123,7 @@ export fn ship_machine_pistol(label, options) {
     }
     let grip_mount = grip
     if sharing.socket {
-        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank })
+        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank mounts = options["mounts"] })
         sharing.grab = grab
         grip_mount = grab.root
     }
