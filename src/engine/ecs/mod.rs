@@ -920,7 +920,12 @@ impl World {
 
         while let Some(node_id) = stack.pop() {
             if !visited.insert(node_id) {
-                if cycle_logs_left > 0 {
+                // A shared leaf (one Material on many renderables) is reached
+                // once per parent; only an unshared revisit is a real cycle.
+                let shared = self
+                    .get_component_record(node_id)
+                    .is_some_and(|node| node.has_additional_parents);
+                if !shared && cycle_logs_left > 0 {
                     cycle_logs_left -= 1;
                     println!(
                         "[World::init_component_tree] cycle/revisit detected at component={:?}",
