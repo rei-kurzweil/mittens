@@ -16,22 +16,25 @@ fn bench_block(position, size) {
     }
 }
 
+// Builders run only in the constructor chain, not on a live component, so
+// each variant is its own chain; returning it from a function builds it.
+fn ride_mountable(prefix, entry, seat, dismount, auto_zone) {
+    if auto_zone {
+        return Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).auto_mount_zone(auto_zone).on_grip() {
+            name=prefix+"_mountable"
+        }
+    }
+    return Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).on_grip() {
+        name=prefix+"_mountable"
+    }
+}
+
 fn ride_seat(prefix, entry_center, entry_half_extents, eye, exit, auto_zone) {
     let entry_frame=T.position(entry_center[0],entry_center[1],entry_center[2]) { name=prefix+"_entry_frame" }
     let entry=Zone.cube(entry_half_extents).at(entry_frame).role("vehicle_entry") { name=prefix+"_entry_zone" }
     let seat=T.position(eye[0],eye[1],eye[2]) { name=prefix+"_rider_eye_anchor" }
     let dismount=T.position(exit[0],exit[1],exit[2]) { name=prefix+"_dismount_anchor" }
-    // Builders run only in the constructor chain, not on a live component.
-    let mountable=null
-    if auto_zone {
-        mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).auto_mount_zone(auto_zone).on_grip() {
-            name=prefix+"_mountable"
-        }
-    } else {
-        mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(dismount).on_grip() {
-            name=prefix+"_mountable"
-        }
-    }
+    let mountable=ride_mountable(prefix, entry, seat, dismount, auto_zone)
     // Bind with let so the frames are built and callers can attach to them;
     // a component written inline in a table stays an unbuilt expression.
     let frames=T { name=prefix+"_seat" entry_frame entry seat dismount }
@@ -53,12 +56,14 @@ export fn pickup_bed_seat() {
     let feet_frame=T.position(0,0.95,1.68) { name="pickup_bed_feet_frame" }
     let feet=Zone.cube([0.74,0.5,0.88]).at(feet_frame) { name="pickup_bed_feet_zone" }
     let seat=ride_seat("pickup_bed", [0,1.4,1.9], [1.2,1.3,1.1], [0,1.70,2.30], [0,1.65,3.55], feet)
-    seat.frames.attach(feet_frame)
-    seat.frames.attach(feet)
-    seat.frames.attach(T {
+    // attach takes built components: bind each with let first.
+    let bench=T {
         name="pickup_bed_bench"
         bench_block([0,0.735,2.38],[1.40,0.27,0.30])
         bench_block([0,0.91,2.35],[1.50,0.08,0.40])
-    })
+    }
+    seat.frames.attach(feet_frame)
+    seat.frames.attach(feet)
+    seat.frames.attach(bench)
     return seat
 }

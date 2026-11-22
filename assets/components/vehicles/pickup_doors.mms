@@ -35,7 +35,8 @@ export fn pickup_doors(vehicle_id) {
             rotation_quat_xyzw = rest.rotation_quat_xyzw
             scale = rest.scale
         })
-        door.attach(Grabbable {})
+        let grab = Grabbable {}
+        door.attach(grab)
         // Outside the batch the door keeps its own primitive colour.
         if color != null {
             for part in door.query_all("renderable") { part.set_color([color[0], color[1], color[2], 1.0]) }
