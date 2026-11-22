@@ -301,7 +301,7 @@ fn rise(root: TransformMatrix, v: [f32; 3]) -> f32 {
 }
 
 /// Height of the hip joints below a fixed head when the torso is pitched by
-/// `pitch`. The neck is assumed to follow the upper chest; the head/neck
+/// `pitch`. The neck is assumed to follow the last torso bone; the head/neck
 /// constraint closes the remaining gap by placing the root.
 pub(crate) fn hip_joint_height(
     spine: &SpineRig,
@@ -309,16 +309,14 @@ pub(crate) fn hip_joint_height(
     head_y: f32,
     pitch: f32,
 ) -> f32 {
-    let shares = SpineRig::distribute(pitch);
-    let cumulative = [
-        shares[0],
-        shares[0] + shares[1],
-        shares[0] + shares[1] + shares[2],
-        pitch,
-        pitch,
-    ];
+    // Each segment turns by the pitch of every torso bone below its end:
+    // segment i runs from bone i, and the neck and head carry the full pitch.
+    let shares = spine.distribute(pitch);
     let mut head_above_hips = 0.0;
-    for (segment, angle) in spine.segments.iter().zip(cumulative) {
+    let mut turned_so_far = 0.0;
+    for (i, segment) in spine.segments().iter().enumerate() {
+        turned_so_far += shares.get(i).copied().unwrap_or(0.0);
+        let angle = if i < spine.count { turned_so_far } else { pitch };
         let turned = quat_rotate_vec3(quat_from_axis_angle(spine.pitch_axis, angle), *segment);
         head_above_hips += rise(root, turned);
     }

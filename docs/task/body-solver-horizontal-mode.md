@@ -33,6 +33,12 @@ and keep the production solver's fixed-step path out of the split.
   to point back. The floor carries over from standing (or the body solver's
   memory); a fresh query only replaces it within 0.3 m.
 - **VRoid map:** spine, chest, upper chest and shoulders are now mapped.
+- **Three-bone torsos (2026-11-22):** the upper chest is optional. MMD rigs
+  (hips, 上半身, 上半身2, neck) bind with three torso bones: the pelvis still
+  takes half the pitch and spine and chest a quarter each. The chain must
+  still be direct, so an MMD `hips` slot has to be the shared parent of the
+  upper and lower body, not 下半身. Miku's map is checked by
+  `miku_rig_report` (an ignored test that needs the local GLB).
 - **Test:** `body_solver_scene_tests` lowers the twilight remote avatar's head
   target to 0.7 m and checks horizontal mode, knees and ankles on the roof, a
   near-horizontal torso, and a clean return to vertical.

@@ -1,5 +1,6 @@
 //! Spine rig calibration: mapped hips-to-head chain, rest poses, and the
-//! root-frame geometry the body solver uses to pitch the torso.
+//! root-frame geometry the body solver uses to pitch the torso. The upper
+//! chest is optional: MMD rigs go hips, spine (上半身), chest (上半身2), neck.
 use crate::engine::ecs::component::{HumanoidSlot, TransformComponent};
 use crate::engine::ecs::system::HumanoidBoneMapReport;
 use crate::engine::ecs::system::ik::rest_pose::{read_bone_rest_pose, rest_model_relative_to};
@@ -7,20 +8,23 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::transform::{TransformMatrix, TransformTrs};
 use crate::utils::math::{quat_conjugate, quat_from_axis_angle, quat_mul, vec3_len, vec3_sub};
 
-/// Pitch shares: the pelvis takes half, the three spine segments split the rest.
+/// Pitch shares: the pelvis takes half, the spine bones above it split the rest.
 pub(crate) const PELVIS_SHARE: f32 = 0.5;
+/// Torso bones: hips, spine, chest and an optional upper chest.
+const MAX_BONES: usize = 4;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SpineRig {
     pub(crate) root: ComponentId,
-    /// Hips, spine, chest, upper chest.
-    pub(crate) bones: [ComponentId; 4],
-    rest: [TransformTrs; 4],
+    /// Hips, spine, chest, then upper chest when mapped; `count` are in use.
+    pub(crate) bones: [ComponentId; MAX_BONES],
+    pub(crate) count: usize,
+    rest: [TransformTrs; MAX_BONES],
     /// Each bone's rest rotation in the model-root frame.
-    rest_in_root: [[f32; 4]; 4],
-    /// Root-frame rest offsets: hips→spine, spine→chest, chest→upper chest,
-    /// upper chest→neck, neck→head.
-    pub(crate) segments: [[f32; 3]; 5],
+    rest_in_root: [[f32; 4]; MAX_BONES],
+    /// Root-frame rest offsets between consecutive torso bones, then last
+    /// torso bone→neck and neck→head; `count + 1` are in use.
+    segments: [[f32; 3]; MAX_BONES + 1],
     /// Root-frame rest offset from the hips to the midpoint of the hip joints.
     pub(crate) hips_to_hip_joints: [f32; 3],
     pub(crate) thigh_length: f32,
@@ -58,18 +62,24 @@ impl SpineRig {
                 .map(|t| t.component)
                 .ok_or("incomplete humanoid spine map")
         };
+        let chest = id(HumanoidSlot::Chest)?;
+        let upper_chest = report.target(HumanoidSlot::UpperChest).map(|t| t.component);
+        // Unused trailing slots repeat the chest and are never read.
         let bones = [
             id(HumanoidSlot::Hips)?,
             id(HumanoidSlot::Spine)?,
-            id(HumanoidSlot::Chest)?,
-            id(HumanoidSlot::UpperChest)?,
+            chest,
+            upper_chest.unwrap_or(chest),
         ];
+        let count = if upper_chest.is_some() { 4 } else { 3 };
         let neck = id(HumanoidSlot::Neck)?;
         let head = id(HumanoidSlot::Head)?;
-        for pair in [bones[0], bones[1], bones[2], bones[3], neck].windows(2) {
+        let mut chain = bones[..count].to_vec();
+        chain.push(neck);
+        for pair in chain.windows(2) {
             if world.parent_of(pair[1]) != Some(pair[0]) {
                 return Err(
-                    "spine joints require a direct hips/spine/chest/upper-chest/neck chain",
+                    "spine joints require a direct hips/spine/chest/(upper chest)/neck chain",
                 );
             }
         }
@@ -77,20 +87,21 @@ impl SpineRig {
             let (t, r, s) = read_bone_rest_pose(world, bone);
             TransformTrs::new(t, r, s)
         });
-        let mut rest_in_root = [[0.0, 0.0, 0.0, 1.0]; 4];
-        let mut points = [[0.0; 3]; 6];
-        for (i, &bone) in bones.iter().enumerate() {
+        let mut rest_in_root = [[0.0, 0.0, 0.0, 1.0]; MAX_BONES];
+        // Torso bones, then neck and head.
+        let mut points = [[0.0; 3]; MAX_BONES + 2];
+        for (i, &bone) in bones[..count].iter().enumerate() {
             let trs = rest_in(world, root, bone)?;
             rest_in_root[i] = trs.rotation_quat_xyzw;
             points[i] = trs.translation;
         }
         // The head is spliced under its mount at runtime; its rest position
         // relative to the neck still comes from the rest pose.
-        points[4] = rest_in(world, root, neck)?.translation;
+        points[count] = rest_in(world, root, neck)?.translation;
         let neck_to_head =
             rest_model_relative_to(world, neck, head).ok_or("head is not below mapped neck")?;
         let neck_matrix = rest_model_relative_to(world, root, neck).ok_or("neck outside root")?;
-        points[5] = crate::utils::math::mat4_mul_vec4(
+        points[count + 1] = crate::utils::math::mat4_mul_vec4(
             neck_matrix,
             [
                 neck_to_head[3][0],
@@ -101,8 +112,11 @@ impl SpineRig {
         )[..3]
             .try_into()
             .unwrap();
-        let segments = std::array::from_fn(|i| vec3_sub(points[i + 1], points[i]));
-        if segments.iter().any(|s| vec3_len(*s) < 1e-5) {
+        let mut segments = [[0.0; 3]; MAX_BONES + 1];
+        for i in 0..=count {
+            segments[i] = vec3_sub(points[i + 1], points[i]);
+        }
+        if segments[..=count].iter().any(|s| vec3_len(*s) < 1e-5) {
             return Err("zero spine segment");
         }
         let left_hip = position(
@@ -126,12 +140,13 @@ impl SpineRig {
         Ok(Self {
             root,
             bones,
+            count,
             rest,
             rest_in_root,
             segments,
             hips_to_hip_joints: vec3_sub(mid_hips, points[0]),
             thigh_length: vec3_len(vec3_sub(left_knee, left_hip)),
-            head_rest_height: points[5][1],
+            head_rest_height: points[count + 1][1],
             pitch_axis: left.map(|v| v / width),
             generation: report.generation,
             active: false,
@@ -139,29 +154,42 @@ impl SpineRig {
     }
 
     pub(crate) fn matches_map(&self, report: &HumanoidBoneMapReport) -> bool {
-        [
-            HumanoidSlot::Hips,
-            HumanoidSlot::Spine,
-            HumanoidSlot::Chest,
-            HumanoidSlot::UpperChest,
-        ]
-        .into_iter()
-        .zip(self.bones)
-        .all(|(slot, id)| report.target(slot).is_some_and(|t| t.component == id))
+        let upper_chest = report.target(HumanoidSlot::UpperChest).map(|t| t.component);
+        upper_chest.is_some() == (self.count == 4)
+            && [
+                HumanoidSlot::Hips,
+                HumanoidSlot::Spine,
+                HumanoidSlot::Chest,
+                HumanoidSlot::UpperChest,
+            ]
+            .into_iter()
+            .zip(self.bones)
+            .take(self.count)
+            .all(|(slot, id)| report.target(slot).is_some_and(|t| t.component == id))
     }
 
-    /// Per-bone pitch for a total torso pitch: hips, spine, chest, upper chest.
-    pub(crate) fn distribute(pitch: f32) -> [f32; 4] {
-        let spine = pitch * (1.0 - PELVIS_SHARE) / 3.0;
-        [pitch * PELVIS_SHARE, spine, spine, spine]
+    /// Root-frame rest segments from the hips up to the head.
+    pub(crate) fn segments(&self) -> &[[f32; 3]] {
+        &self.segments[..=self.count]
     }
 
-    /// Pitch the torso forward by `pitch`, distributed over the four bones,
+    /// Per-bone pitch for a total torso pitch, hips first; entries past
+    /// `count` are zero.
+    pub(crate) fn distribute(&self, pitch: f32) -> [f32; MAX_BONES] {
+        let spine = pitch * (1.0 - PELVIS_SHARE) / (self.count - 1) as f32;
+        std::array::from_fn(|i| match i {
+            0 => pitch * PELVIS_SHARE,
+            i if i < self.count => spine,
+            _ => 0.0,
+        })
+    }
+
+    /// Pitch the torso forward by `pitch`, distributed over the torso bones,
     /// each about the shared root-frame axis. Rotations about one axis compose
     /// additively down the chain.
     pub(crate) fn write(&mut self, world: &World, emit: &mut dyn SignalEmitter, pitch: f32) {
-        let pitches = Self::distribute(pitch);
-        for i in 0..4 {
+        let pitches = self.distribute(pitch);
+        for i in 0..self.count {
             let id = self.bones[i];
             if world
                 .get_component_by_id_as::<TransformComponent>(id)
@@ -194,7 +222,7 @@ impl SpineRig {
         if !self.active {
             return;
         }
-        for i in 0..4 {
+        for i in 0..self.count {
             if world
                 .get_component_by_id_as::<TransformComponent>(self.bones[i])
                 .is_some()
@@ -216,4 +244,78 @@ fn emit_pose(emit: &mut dyn SignalEmitter, id: ComponentId, pose: TransformTrs) 
             scale: pose.scale,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::system::ik::body::{KNEE_RADIUS, hip_joint_height, solve_pitch};
+
+    const IDENTITY: TransformMatrix = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+
+    /// An upright synthetic torso: `rises` are the segment heights from the
+    /// hips up to the head, one more than the torso bone count.
+    fn rig(rises: &[f32]) -> SpineRig {
+        let mut world = World::default();
+        let id = world.add_component(TransformComponent::new());
+        let count = rises.len() - 1;
+        let mut segments = [[0.0; 3]; MAX_BONES + 1];
+        for (segment, rise) in segments.iter_mut().zip(rises) {
+            *segment = [0.0, *rise, 0.0];
+        }
+        SpineRig {
+            root: id,
+            bones: [id; MAX_BONES],
+            count,
+            rest: [TransformTrs::new([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0; 3]); MAX_BONES],
+            rest_in_root: [[0.0, 0.0, 0.0, 1.0]; MAX_BONES],
+            segments,
+            hips_to_hip_joints: [0.0, -0.08, 0.0],
+            thigh_length: 0.4,
+            head_rest_height: rises.iter().sum(),
+            pitch_axis: [1.0, 0.0, 0.0],
+            generation: 0,
+            active: false,
+        }
+    }
+
+    #[test]
+    fn three_and_four_bone_torsos_share_out_the_whole_pitch() {
+        for count in [3, 4] {
+            let spine = rig(&vec![0.1; count + 1]);
+            let shares = spine.distribute(1.0);
+            assert!((shares.iter().sum::<f32>() - 1.0).abs() < 1e-6, "{count}: {shares:?}");
+            assert_eq!(shares[0], PELVIS_SHARE);
+            assert!(shares[count..].iter().all(|&share| share == 0.0));
+        }
+    }
+
+    #[test]
+    fn a_three_bone_torso_solves_hips_onto_the_kneeling_height() {
+        // MMD-style: hips, spine, chest, then neck and head. The four-bone
+        // twin splits the chest-to-neck segment at an upper chest.
+        let three = rig(&[0.1, 0.15, 0.2, 0.1]);
+        let four = rig(&[0.1, 0.15, 0.1, 0.1, 0.1]);
+        let head_y = 0.7;
+        assert_eq!(three.segments().len(), 4);
+        assert!(
+            (hip_joint_height(&three, IDENTITY, head_y, 0.0)
+                - hip_joint_height(&four, IDENTITY, head_y, 0.0))
+            .abs()
+                < 1e-6
+        );
+        let target = three.thigh_length + KNEE_RADIUS;
+        for spine in [&three, &four] {
+            assert!(hip_joint_height(spine, IDENTITY, head_y, 0.0) < target);
+            let pitch = solve_pitch(spine, IDENTITY, head_y, 0.0, 1.0);
+            assert!(pitch > 0.1, "the torso pitches: {pitch}");
+            let hips = hip_joint_height(spine, IDENTITY, head_y, pitch);
+            assert!((hips - target).abs() < 1e-3, "count {}: {hips} vs {target}", spine.count);
+        }
+    }
 }
