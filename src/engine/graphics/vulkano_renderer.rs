@@ -228,6 +228,22 @@ mod vulkano_backend {
         }
     }
 
+    // MaterialBase.billboard() / .axial_billboard(): engine-owned vertex
+    // stages with toon-mesh.vert's interface, paired with custom fragments.
+    mod billboard_mesh_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/billboard-mesh.vert",
+        }
+    }
+
+    mod axial_billboard_mesh_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/axial-billboard-mesh.vert",
+        }
+    }
+
     mod mirror_mesh_vs {
         vulkano_shaders::shader! {
             ty: "vertex",

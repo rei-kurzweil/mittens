@@ -1,9 +1,11 @@
 import { f32, vec3 } from "types"
 
-// Apply to translucent ribbon geometry with UV y=0 at the rocket. Each rocket
-// needs its own instance because launch_origin/flight_direction are per shot;
-// the compiled definition is shared through module caching.
-let definition = MaterialDefinition(MaterialBase())
+// Apply to a translucent local-XY quad with UV y=0 at the rocket. The axial
+// billboard base keeps the quad's local Y along the flight line and turns it
+// about that line toward each view, so one quad replaces two crossed planes.
+// Each rocket needs its own instance because launch_origin/flight_direction
+// are per shot; the compiled definition is shared through module caching.
+let definition = MaterialDefinition(MaterialBase.axial_billboard())
     .fragment("assets/shaders/toon-rocket-exhaust.frag")
     .inputs({
         launch_origin: vec3

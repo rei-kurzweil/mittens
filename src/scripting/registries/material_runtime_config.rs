@@ -13,6 +13,8 @@ pub(super) fn register(
             host_constructor(component, canonical, "new", no_args());
             host_constructor(component, canonical, "extracted_emissive", no_args());
             host_constructor(component, canonical, "planar_reflective", no_args());
+            host_constructor(component, canonical, "billboard", no_args());
+            host_constructor(component, canonical, "axial_billboard", no_args());
         }
         "MaterialDefinition" => {
             host_constructor(component, canonical, "anime", no_args());

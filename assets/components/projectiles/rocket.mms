@@ -19,19 +19,15 @@ fn forward_of(q) {
     return [-2.0 * (x * z + w * y), -2.0 * (y * z - w * x), -(1.0 - 2.0 * (x * x + y * y))]
 }
 
-// Two crossed planes so the ribbon stays visible edge-on. Each runs from the
-// nozzle (UV y=0) back along local +Z; the shader clips it at the launch point.
+// One quad from the nozzle (UV y=0) back along local +Z. Its axial billboard
+// material turns it about that line to face each view, so it never goes
+// edge-on; the shader clips it at the launch point.
 fn exhaust_trail(material) {
     return T.position(0.0, 0.0, nozzle_z + trail_length * 0.5) {
         name = "sta_rocket_trail"
         T.rotation(-Math.pi / 2.0, 0.0, 0.0) {
             T.scale(trail_width, trail_length, 1.0) {
                 R.plane() { material C.rgba(1.0, 1.0, 1.0, 0.95) }
-            }
-            T.rotation(0.0, Math.pi / 2.0, 0.0) {
-                T.scale(trail_width, trail_length, 1.0) {
-                    R.plane() { material C.rgba(1.0, 1.0, 1.0, 0.95) }
-                }
             }
         }
     }

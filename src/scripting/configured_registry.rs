@@ -284,6 +284,10 @@ fn create_component(
             Some("extracted_emissive") => {
                 crate::engine::graphics::materials::MaterialBaseKind::ExtractedEmissive
             }
+            Some("billboard") => crate::engine::graphics::materials::MaterialBaseKind::Billboard,
+            Some("axial_billboard") => {
+                crate::engine::graphics::materials::MaterialBaseKind::AxialBillboard
+            }
             _ => crate::engine::graphics::materials::MaterialBaseKind::Surface,
         })),
         "MaterialDefinition" => {

@@ -18,6 +18,18 @@ pub enum MaterialBaseKind {
     ExtractedEmissive,
     /// Static planar surfaces supplied with a per-view reflection capture.
     PlanarReflective,
+    /// A local-XY quad turned square to each view (smoke puffs, sprites).
+    Billboard,
+    /// A local-XY quad that keeps its local Y axis and turns about it to face
+    /// each view (trails, beams).
+    AxialBillboard,
+}
+
+impl MaterialBaseKind {
+    /// Billboards replace the mesh vertex stage and never deform.
+    pub fn is_billboard(self) -> bool {
+        matches!(self, Self::Billboard | Self::AxialBillboard)
+    }
 }
 
 /// Coarse ordering within the regular opaque Surface pass, not visual layers.
@@ -290,6 +302,8 @@ pub struct MaterialRegistry {
     pub surface_base: MaterialBaseId,
     pub extracted_emissive_base: MaterialBaseId,
     pub planar_reflective_base: MaterialBaseId,
+    pub billboard_base: MaterialBaseId,
+    pub axial_billboard_base: MaterialBaseId,
     pub anime_definition: MaterialDefinitionId,
     pub toon_definition: MaterialDefinitionId,
 }
@@ -315,6 +329,16 @@ impl Default for MaterialRegistry {
         let planar_reflective_base = bases.insert(MaterialBase {
             name: "PlanarReflectiveMeshV1",
             planar_reflection: true,
+            ..bases[surface_base].clone()
+        });
+        // Same vertex/instance streams as the surface; only the engine-owned
+        // vertex stage differs.
+        let billboard_base = bases.insert(MaterialBase {
+            name: "BillboardQuadV1",
+            ..bases[surface_base].clone()
+        });
+        let axial_billboard_base = bases.insert(MaterialBase {
+            name: "AxialBillboardQuadV1",
             ..bases[surface_base].clone()
         });
         let mut definitions = SlotMap::with_key();
@@ -363,6 +387,8 @@ impl Default for MaterialRegistry {
             surface_base,
             extracted_emissive_base,
             planar_reflective_base,
+            billboard_base,
+            axial_billboard_base,
             anime_definition,
             toon_definition,
         }
@@ -580,11 +606,14 @@ impl MaterialRegistry {
                 MaterialBaseKind::Surface => self.surface_base,
                 MaterialBaseKind::ExtractedEmissive => self.extracted_emissive_base,
                 MaterialBaseKind::PlanarReflective => self.planar_reflective_base,
+                MaterialBaseKind::Billboard => self.billboard_base,
+                MaterialBaseKind::AxialBillboard => self.axial_billboard_base,
             },
+            // Billboards have no cached-deformation variant.
+            deformed_program: (!custom.base.is_billboard()).then_some(deformed_program),
             custom: Some(custom),
             name: "Custom",
             static_program: program,
-            deformed_program: Some(deformed_program),
             parameter_schema: parameter_schema.into(),
             defaults,
             consumed_inputs: StandardMaterialInputs {

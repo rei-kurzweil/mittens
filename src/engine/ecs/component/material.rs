@@ -140,6 +140,10 @@ impl Component for MaterialBaseComponent {
             MaterialBaseKind::ExtractedEmissive => {
                 ce("MaterialBase").with_call("extracted_emissive", vec![])
             }
+            MaterialBaseKind::Billboard => ce("MaterialBase").with_call("billboard", vec![]),
+            MaterialBaseKind::AxialBillboard => {
+                ce("MaterialBase").with_call("axial_billboard", vec![])
+            }
         }
     }
 }

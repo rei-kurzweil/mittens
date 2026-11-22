@@ -165,14 +165,26 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         &mut scene.command_queue,
     );
     assert!(has(&scene.world, "sta_rocket_trail"), "rocket carries its exhaust ribbon");
-    let nozzle_discs: Vec<_> = scene
+    let nozzle_glow: Vec<_> = scene
         .visuals
         .instances()
         .iter()
         .filter(|instance| instance.emissive == 3.0)
         .collect();
-    assert_eq!(nozzle_discs.len(), 2, "the rim and core both emit light");
-    for disc in nozzle_discs {
+    assert_eq!(nozzle_glow.len(), 1, "one exhaust cone emits light");
+    // The trail is a single axis-locked billboard quad, not two crossed planes.
+    let trail_bases: Vec<_> = scene
+        .visuals
+        .instances()
+        .iter()
+        .filter_map(|instance| {
+            let material = scene.visuals.materials.instance(instance.material_instance?)?;
+            let definition = scene.visuals.materials.definition(material.definition)?;
+            (definition.base == scene.visuals.materials.axial_billboard_base).then_some(())
+        })
+        .collect();
+    assert_eq!(trail_bases.len(), 1, "one billboard trail quad");
+    for disc in nozzle_glow {
         let material = scene
             .visuals
             .materials

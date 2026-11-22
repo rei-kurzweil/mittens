@@ -59,6 +59,23 @@ impl VulkanoState {
                     }
                     .map_err(|e| e.to_string())?;
                     let mut create = self.custom_pipeline_template.clone();
+                    if custom.base.is_billboard() {
+                        // Same vertex streams as the mesh surface; only the
+                        // vertex stage turns the quad toward each view.
+                        let vertex = if custom.base
+                            == crate::engine::graphics::materials::MaterialBaseKind::AxialBillboard
+                        {
+                            axial_billboard_mesh_vs::load(self.context.device().clone())
+                        } else {
+                            billboard_mesh_vs::load(self.context.device().clone())
+                        }
+                        .map_err(|error| error.to_string())?;
+                        create.stages[0] = PipelineShaderStageCreateInfo::new(
+                            vertex
+                                .entry_point("main")
+                                .ok_or("missing billboard entry point")?,
+                        );
+                    }
                     if deformed {
                         // Reuse the existing cached-geometry ABI and vertex shader;
                         // fragment inputs and material/global descriptor layouts match.
