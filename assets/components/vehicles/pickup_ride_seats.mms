@@ -32,7 +32,10 @@ fn ride_seat(prefix, entry_center, entry_half_extents, eye, exit, auto_zone) {
             name=prefix+"_mountable"
         }
     }
-    return { frames=T { name=prefix+"_seat" entry_frame entry seat dismount } mountable=mountable }
+    // Bind with let so the frames are built and callers can attach to them;
+    // a component written inline in a table stays an unbuilt expression.
+    let frames=T { name=prefix+"_seat" entry_frame entry seat dismount }
+    return { frames=frames mountable=mountable }
 }
 
 // Mirrors the driver's entry, eye and exit across the cab.
