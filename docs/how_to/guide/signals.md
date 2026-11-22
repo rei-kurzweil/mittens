@@ -1259,6 +1259,13 @@ Transform {}
 Transform {}
 ```
 
+#### `RegisterRider`
+<!-- catalog:signal source="RegisterRider" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Records a `Rider` with the attachment system so `Mountable.auto_mount_zone(...)` can test its movement root each frame without searching the world. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs) and [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs).
+```mms parse-only
+Rider {}
+```
+
 #### `RegisterPointer`
 <!-- catalog:signal source="RegisterPointer" kind="intent" mms="component-lifecycle" -->
 **Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterPointer` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).

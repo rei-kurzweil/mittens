@@ -7,6 +7,9 @@ pub struct MountableComponent {
     pub entry_zone: Option<ComponentRef>,
     pub mount_anchor: Option<ComponentRef>,
     pub dismount_anchor: Option<ComponentRef>,
+    /// A free seat takes any registered Rider whose movement root enters this
+    /// zone, without a grip (jumping into a truck bed).
+    pub auto_mount_zone: Option<ComponentRef>,
     pub on_grip: bool,
     pub enabled: bool,
 }
@@ -23,6 +26,7 @@ impl MountableComponent {
             entry_zone: None,
             mount_anchor: None,
             dismount_anchor: None,
+            auto_mount_zone: None,
             on_grip: true,
             enabled: true,
         }
@@ -40,6 +44,11 @@ impl MountableComponent {
 
     pub fn dismount_anchor(mut self, value: ComponentRef) -> Self {
         self.dismount_anchor = Some(value);
+        self
+    }
+
+    pub fn auto_mount_zone(mut self, value: ComponentRef) -> Self {
+        self.auto_mount_zone = Some(value);
         self
     }
 
@@ -99,6 +108,9 @@ impl Component for MountableComponent {
         }
         if let Some(value) = &self.dismount_anchor {
             expression = expression.with_call("dismount_anchor", vec![reference(value)]);
+        }
+        if let Some(value) = &self.auto_mount_zone {
+            expression = expression.with_call("auto_mount_zone", vec![reference(value)]);
         }
         if self.on_grip {
             expression = expression.with_call("on_grip", vec![]);

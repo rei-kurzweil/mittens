@@ -1,4 +1,5 @@
 use super::{Component, ComponentRef};
+use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
 /// Declares a participant whose movement root can be attached to a Mountable.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +58,15 @@ impl Component for RiderComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            IntentValue::RegisterRider {
+                component_id: component,
+            },
+        );
     }
 
     fn to_mms_ast(

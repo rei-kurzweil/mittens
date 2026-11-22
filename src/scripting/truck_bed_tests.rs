@@ -130,42 +130,67 @@ fn items_released_over_the_bed_stay_put_and_ride_the_truck() {
     assert!(near(position(&scene, gun), [3.0, 1.0, 0.0]));
 }
 
-/// Mirrors the attachment system's grip resolution: the first transform up
-/// the hit's ancestry with an enabled Mountable child.
-fn mountable_above(scene: &Universe, hit: ComponentId) -> Option<ComponentId> {
-    use crate::engine::ecs::component::{MountableComponent, TransformComponent};
-    let world = &scene.world;
-    let mut current = Some(hit);
-    while let Some(id) = current {
-        if world.get_component_by_id_as::<TransformComponent>(id).is_some() {
-            if let Some(&mountable) = world.children_of(id).iter().find(|&&child| {
-                world
-                    .get_component_by_id_as::<MountableComponent>(child)
-                    .is_some_and(|m| m.enabled && m.on_grip)
-            }) {
-                return Some(mountable);
-            }
-        }
-        current = world.parent_of(id);
-    }
-    None
+fn zone_holds(scene: &Universe, zone: &str, point: [f32; 3]) -> bool {
+    use crate::engine::ecs::system::{ZoneRelation, classify_zone_point};
+    matches!(
+        classify_zone_point(&scene.world, named(scene, zone), point),
+        Ok(ZoneRelation::Inside | ZoneRelation::Boundary)
+    )
 }
 
 #[test]
-fn bench_grip_resolves_the_bed_seat_and_the_cab_keeps_the_driver_seat() {
+fn driver_passenger_and_bed_seats_share_the_truck_grip_by_entry_zone() {
+    use crate::engine::ecs::component::MountableComponent;
     let scene = scene(
         r#"
         import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
         T { name = "truck_place" pickup_truck(null, null, false) }
     "#,
     );
-    let bed_seat = named(&scene, "pickup_bed_mountable");
-    let bench = named(&scene, "pickup_bed_bench");
-    let board = scene.world.find_component(bench, "renderable").unwrap();
-    assert_eq!(mountable_above(&scene, board), Some(bed_seat));
-
-    let seat = named(&scene, "car_seat");
-    let cab = scene.world.find_component(seat, "renderable").unwrap();
-    let driver = mountable_above(&scene, cab).expect("the cab resolves a seat");
-    assert_ne!(driver, bed_seat, "the cab must keep resolving to the driver's seat");
+    // All three grip seats live on the truck root, so a grip anywhere on the
+    // truck reaches them and the rider's entry zone picks one.
+    let truck = named(&scene, "pickup_truck");
+    let seats = scene
+        .world
+        .children_of(truck)
+        .iter()
+        .filter(|&&child| {
+            scene
+                .world
+                .get_component_by_id_as::<MountableComponent>(child)
+                .is_some_and(|m| m.enabled && m.on_grip)
+        })
+        .count();
+    assert_eq!(seats, 3, "driver, passenger and bed");
+    let chassis = named(&scene, "pickup_chassis_frame");
+    let model = TransformSystem::world_model(&scene.world, chassis).unwrap();
+    let at = |p: [f32; 3]| {
+        let w = crate::utils::math::mat4_mul_vec4(model, [p[0], p[1], p[2], 1.0]);
+        [w[0], w[1], w[2]]
+    };
+    let zones = ["pickup_entry_zone", "pickup_passenger_entry_zone", "pickup_bed_entry_zone"];
+    // Heads beside each door, standing in the bed, at a bed wall and
+    // behind the tailgate, all in chassis space.
+    for (point, expected) in [
+        ([-1.2, 1.7, -0.25], "pickup_entry_zone"),
+        ([1.2, 1.7, -0.25], "pickup_passenger_entry_zone"),
+        ([0.0, 2.3, 1.7], "pickup_bed_entry_zone"),
+        ([1.05, 1.7, 1.7], "pickup_bed_entry_zone"),
+        ([-1.05, 1.7, 2.2], "pickup_bed_entry_zone"),
+        ([0.0, 1.7, 2.85], "pickup_bed_entry_zone"),
+    ] {
+        let holders: Vec<&str> = zones
+            .iter()
+            .copied()
+            .filter(|zone| zone_holds(&scene, zone, at(point)))
+            .collect();
+        assert_eq!(holders, vec![expected], "head at {point:?}");
+    }
+    // The cab interior and the hood belong to no seat.
+    for point in [[0.0, 1.7, -0.25], [0.0, 1.5, -1.6]] {
+        assert!(
+            zones.iter().all(|zone| !zone_holds(&scene, zone, at(point))),
+            "{point:?}"
+        );
+    }
 }

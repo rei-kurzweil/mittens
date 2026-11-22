@@ -908,6 +908,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("entry_zone", any(1))
                         .builder_call("mount_anchor", any(1))
                         .builder_call("dismount_anchor", any(1))
+                        .builder_call("auto_mount_zone", any(1))
                         .builder_call("on_grip", no_args())
                         .builder_call("enabled", booleans(1));
                 }

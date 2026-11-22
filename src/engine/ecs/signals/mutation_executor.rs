@@ -765,6 +765,9 @@ impl RxMutationExecutor {
                 let component = *component_id;
                 systems.attachment.register(world, component, emit);
             }
+            IntentValue::RegisterRider { component_id } => {
+                systems.attachment.register_rider(*component_id);
+            }
             IntentValue::RegisterDraggable { component_id } => {
                 let component = *component_id;
                 systems.draggable.register(world, component, emit);

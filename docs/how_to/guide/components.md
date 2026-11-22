@@ -561,8 +561,11 @@ Rider
 
 `Mountable` declares a single-seat destination with an entry zone, a mounted alignment anchor,
 and a dismount anchor. Grip activation mounts only when the pointer-associated Rider's anchor is
-inside the entry zone. An enabled Mountable supplies its owner with a runtime-only raycast marker
-when one is not already authored.
+inside the entry zone. When several Mountables share one owner, a grip picks the free one whose
+entry zone holds the Rider's anchor, so one grip surface can serve a driver, a passenger and a
+truck bed. `.auto_mount_zone(zone)` also mounts, without a grip, any unmounted Rider whose movement
+root stands in that zone while the seat is free; keep the dismount anchor outside it. An enabled
+Mountable supplies its owner with a runtime-only raycast marker when one is not already authored.
 **Directly constructible** as `Mountable`. Sources: [Rust implementation](../../../src/engine/ecs/component/mountable.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 
 ```mms parse-only
@@ -570,6 +573,7 @@ Mountable
     .entry_zone("[name='entry_zone']")
     .mount_anchor("[name='seat']")
     .dismount_anchor("[name='exit']")
+    .auto_mount_zone("[name='floor_zone']")
     .on_grip() {}
 ```
 

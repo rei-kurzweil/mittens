@@ -1,7 +1,7 @@
 import { pickup_power_panel } from "./pickup_power_panel.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
-import { pickup_bed_seat } from "./pickup_bed_seat.mms"
+import { pickup_passenger_seat, pickup_bed_seat } from "./pickup_ride_seats.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
 import { pickup_anime_material } from "../materials/pickup_anime.mms"
@@ -151,7 +151,11 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     }
     body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed))
     body.attach(power)
-    body.attach(pickup_bed_seat())
+    // Ride-only seats beside the driver's on the truck root; see pickup_ride_seats.
+    for ride in [pickup_passenger_seat(), pickup_bed_seat()] {
+        body.attach(ride.frames)
+        truck.attach(ride.mountable)
+    }
     if options && options["socket"] {
         fn follow_peer(following,occupied) {
             truck.set_remote_occupied(occupied)

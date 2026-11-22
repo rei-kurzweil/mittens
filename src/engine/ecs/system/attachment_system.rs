@@ -53,8 +53,9 @@ pub struct MountedRelationship {
 
 /// Owns live Rider -> Mountable relationships.
 ///
-/// Zones stay passive: they are queried synchronously only when a grip attempts
-/// a mount. The per-frame work here is limited to validating active edges.
+/// Zones stay passive: they are queried synchronously when a grip attempts a
+/// mount. The per-frame work is validating active edges and one point test per
+/// free auto-mount seat and unmounted Rider.
 #[derive(Debug, Default)]
 pub struct AttachmentSystem {
     by_rider: HashMap<ComponentId, ActiveMount>,
@@ -63,6 +64,8 @@ pub struct AttachmentSystem {
     mounted_this_frame: HashSet<ComponentId>,
     mounted_avatars: HashSet<ComponentId>,
     mounted_avatar_revision: Option<u64>,
+    riders: HashSet<ComponentId>,
+    mountables: HashSet<ComponentId>,
 }
 
 impl AttachmentSystem {
@@ -151,12 +154,15 @@ impl AttachmentSystem {
         mountable: ComponentId,
         emit: &mut dyn SignalEmitter,
     ) {
-        if world
-            .get_component_by_id_as::<MountableComponent>(mountable)
-            .is_some_and(|component| !component.enabled)
-        {
+        let Some(component) = world.get_component_by_id_as::<MountableComponent>(mountable)
+        else {
+            return;
+        };
+        if !component.enabled {
             return;
         }
+        // Builder calls may set the auto-mount zone after registration.
+        self.mountables.insert(mountable);
         let Some(owner) = world.parent_of(mountable).filter(|id| {
             world
                 .get_component_by_id_as::<TransformComponent>(*id)
@@ -165,6 +171,10 @@ impl AttachmentSystem {
             return;
         };
         ensure_generated_raycastable(world, owner, "mountable_generated_raycastable", emit);
+    }
+
+    pub fn register_rider(&mut self, rider: ComponentId) {
+        self.riders.insert(rider);
     }
 
     pub fn begin_frame(&mut self) {
@@ -212,9 +222,39 @@ impl AttachmentSystem {
         if self.by_rider.contains_key(&rider_id) {
             return false;
         }
-        let Some((mountable_id, _owner)) = mountable_for_hit(world, renderable) else {
+        // Several seats may share one grip surface (driver, passenger, bed):
+        // pick the free one whose entry zone holds the rider. Otherwise the
+        // first one runs the usual checks and rejects the mount as before.
+        let probe = world
+            .get_component_by_id_as::<RiderComponent>(rider_id)
+            .and_then(|rider| resolve_required(world, rider_id, rider.anchor.as_ref()))
+            .and_then(|id| nearest_ancestor_transform(world, id))
+            .and_then(|id| TransformSystem::world_position(world, id));
+        let candidates = mountables_for_hit(world, renderable);
+        let Some(mountable_id) = candidates
+            .iter()
+            .copied()
+            .find(|&id| {
+                !self.rider_by_mountable.contains_key(&id)
+                    && probe.is_some_and(|point| entry_zone_holds(world, id, point))
+            })
+            .or_else(|| candidates.first().copied())
+        else {
             return false;
         };
+        self.mount(world, rider_id, mountable_id, true, emit)
+    }
+
+    /// The mount transaction shared by grips and auto-mount zones. Returns
+    /// true only when it commits.
+    fn mount(
+        &mut self,
+        world: &mut World,
+        rider_id: ComponentId,
+        mountable_id: ComponentId,
+        by_grip: bool,
+        emit: &mut dyn SignalEmitter,
+    ) -> bool {
         if let Some(&occupant) = self.rider_by_mountable.get(&mountable_id) {
             self.reconcile_rider(world, occupant, emit);
         }
@@ -231,7 +271,7 @@ impl AttachmentSystem {
         };
         let Some(mountable) = world
             .get_component_by_id_as::<MountableComponent>(mountable_id)
-            .filter(|component| component.enabled && component.on_grip)
+            .filter(|component| component.enabled && (component.on_grip || !by_grip))
             .cloned()
         else {
             return false;
@@ -389,6 +429,61 @@ impl AttachmentSystem {
         for rider in invalid {
             let _ = self.dismount(world, rider, emit, false);
         }
+        if !self.mountables.is_empty() && !self.riders.is_empty() {
+            self.auto_mount(world, emit);
+        }
+    }
+
+    /// Mount each free Rider whose movement root stands in a free seat's
+    /// auto-mount zone. Riders exist only for local players, so each peer
+    /// mounts its own player, as a grip would.
+    fn auto_mount(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        self.riders
+            .retain(|&id| world.get_component_by_id_as::<RiderComponent>(id).is_some());
+        self.mountables
+            .retain(|&id| world.get_component_by_id_as::<MountableComponent>(id).is_some());
+        let riders: Vec<ComponentId> = self
+            .riders
+            .iter()
+            .copied()
+            .filter(|rider| !self.by_rider.contains_key(rider))
+            .collect();
+        for rider in riders {
+            let Some(root) = world
+                .get_component_by_id_as::<RiderComponent>(rider)
+                .filter(|component| component.enabled)
+                .and_then(|component| {
+                    resolve_required(world, rider, component.movement_root.as_ref())
+                })
+                .and_then(|id| nearest_ancestor_transform(world, id))
+                .and_then(|id| TransformSystem::world_position(world, id))
+            else {
+                continue;
+            };
+            let seats: Vec<ComponentId> = self
+                .mountables
+                .iter()
+                .copied()
+                .filter(|seat| !self.rider_by_mountable.contains_key(seat))
+                .collect();
+            for seat in seats {
+                let inside = world
+                    .get_component_by_id_as::<MountableComponent>(seat)
+                    .filter(|mountable| mountable.enabled)
+                    .and_then(|mountable| {
+                        resolve_required(world, seat, mountable.auto_mount_zone.as_ref())
+                    })
+                    .is_some_and(|zone| {
+                        matches!(
+                            classify_zone_point(world, zone, root),
+                            Ok(ZoneRelation::Inside | ZoneRelation::Boundary)
+                        )
+                    });
+                if inside && self.mount(world, rider, seat, false, emit) {
+                    break;
+                }
+            }
+        }
     }
 
     fn dismount(
@@ -537,31 +632,48 @@ fn pointer_hand(world: &World, pointer: ComponentId) -> Option<ControllerHand> {
     None
 }
 
-fn mountable_for_hit(world: &World, renderable: ComponentId) -> Option<(ComponentId, ComponentId)> {
-    let mut current = Some(renderable);
-    while let Some(id) = current {
-        if world
+/// The grip-enabled Mountables on the first transform up the hit's ancestry
+/// that has any, in child order.
+fn mountables_for_hit(world: &World, renderable: ComponentId) -> Vec<ComponentId> {
+    let grips = |id: ComponentId| {
+        world
             .get_component_by_id_as::<MountableComponent>(id)
             .is_some_and(|mountable| mountable.enabled && mountable.on_grip)
-        {
-            return nearest_ancestor_transform(world, id).map(|owner| (id, owner));
+    };
+    let mut current = Some(renderable);
+    while let Some(id) = current {
+        if grips(id) {
+            return vec![id];
         }
         if world
             .get_component_by_id_as::<TransformComponent>(id)
             .is_some()
         {
-            let found = world.children_of(id).iter().copied().find(|child| {
-                world
-                    .get_component_by_id_as::<MountableComponent>(*child)
-                    .is_some_and(|mountable| mountable.enabled && mountable.on_grip)
-            });
-            if let Some(mountable) = found {
-                return Some((mountable, id));
+            let found: Vec<ComponentId> = world
+                .children_of(id)
+                .iter()
+                .copied()
+                .filter(|&child| grips(child))
+                .collect();
+            if !found.is_empty() {
+                return found;
             }
         }
         current = world.parent_of(id);
     }
-    None
+    Vec::new()
+}
+
+fn entry_zone_holds(world: &World, mountable: ComponentId, point: [f32; 3]) -> bool {
+    world
+        .get_component_by_id_as::<MountableComponent>(mountable)
+        .and_then(|component| resolve_required(world, mountable, component.entry_zone.as_ref()))
+        .is_some_and(|zone| {
+            matches!(
+                classify_zone_point(world, zone, point),
+                Ok(ZoneRelation::Inside | ZoneRelation::Boundary)
+            )
+        })
 }
 
 fn relative_matrix(
@@ -920,6 +1032,71 @@ mod tests {
             std::mem::size_of::<crate::engine::ecs::component::ComponentNode>()
         );
         println!("active_mount_bytes={}", std::mem::size_of::<ActiveMount>());
+    }
+
+    #[test]
+    fn grip_mounts_the_sibling_seat_whose_entry_zone_holds_the_rider() {
+        // The fixture's own seat takes riders within 2 of the car's origin.
+        // A second seat on the same car takes riders near x = 6.
+        let mut fixture = fixture([6.0, 0.0, 0.0]);
+        let world = &mut fixture.world;
+        let frame = transform(world, [6.0, 0.0, 0.0]);
+        world.add_child(fixture.car, frame).unwrap();
+        let zone = world.add_component(ZoneComponent::sphere(2.0));
+        world.add_child(frame, zone).unwrap();
+        let mount_anchor = transform(world, [12.0, 0.0, 0.0]);
+        world.add_child(fixture.car, mount_anchor).unwrap();
+        let dismount_anchor = transform(world, [8.5, 0.0, 0.0]);
+        world.add_child(fixture.car, dismount_anchor).unwrap();
+        let passenger = world.add_component(
+            MountableComponent::new()
+                .entry_zone(guid_ref(world, zone))
+                .mount_anchor(guid_ref(world, mount_anchor))
+                .dismount_anchor(guid_ref(world, dismount_anchor)),
+        );
+        world.add_child(fixture.car, passenger).unwrap();
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit
+        ));
+        assert_eq!(
+            system.rider_by_mountable.get(&passenger),
+            Some(&fixture.rider)
+        );
+        assert!(!system.rider_by_mountable.contains_key(&fixture.mountable));
+    }
+
+    #[test]
+    fn rider_standing_in_an_auto_mount_zone_mounts_without_a_grip() {
+        // The fixture's entry zone reaches 2 from the car; the floor zone 1.
+        for (rider_x, mounts) in [(0.5, true), (1.5, false)] {
+            let mut fixture = fixture([rider_x, 0.0, 0.0]);
+            let world = &mut fixture.world;
+            let floor = world.add_component(ZoneComponent::sphere(1.0));
+            world.add_child(fixture.car, floor).unwrap();
+            let floor_ref = guid_ref(world, floor);
+            let seat = world
+                .get_component_by_id_as_mut::<MountableComponent>(fixture.mountable)
+                .unwrap();
+            seat.auto_mount_zone = Some(floor_ref);
+            let mut system = AttachmentSystem::default();
+            let mut emit = CommandQueue::new();
+            system.register(&mut fixture.world, fixture.mountable, &mut emit);
+            system.register_rider(fixture.rider);
+            system.tick(&mut fixture.world, &mut emit);
+            assert_eq!(
+                system.rider_by_mountable.get(&fixture.mountable).copied(),
+                mounts.then_some(fixture.rider),
+                "rider at x = {rider_x}"
+            );
+            // A mounted rider is not mounted again on later frames.
+            system.tick(&mut fixture.world, &mut emit);
+            assert_eq!(system.by_rider.len(), usize::from(mounts));
+        }
     }
 
     #[test]
