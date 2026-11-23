@@ -1,27 +1,25 @@
 # UI button hover and avatar picker click feedback
 
-Status: proposed. Extends the [pointer hover lifecycle task](pointer-hover-lifecycle-and-gizmo-feedback.md).
+Status: click routing implemented. Hover remains proposed in the
+[pointer hover lifecycle task](pointer-hover-lifecycle-and-gizmo-feedback.md).
 
 ## Diagnose the avatar picker click
 
 Each avatar button authors `Raycastable.click_only()` at priority 180. Layout
 grafts the settings onto the button's `__bg` renderable with a `Quad2D` slab.
 The glyph subtree is raycast-disabled and the button listens for `Click` on
-its owning transform. The current rooftop test shoots synthetic rays from eye
-and hand positions, checks the first hit at the label center, then injects a
-`Click`. This proves the tested geometry and callback route. An actual press
-and release through the gesture system is the next test.
+its owning transform. The rooftop test checks hits from eye and hand
+positions. A second test drives oblique XR press and release through the
+avatar and mirror controls, including a ray that hits only the button.
 [Avatar picker](../../assets/components/panels/avatar_picker_panel.mms),
 [layout hit surface](../../src/engine/ecs/system/layout/block.rs),
 [rooftop test](../../src/scripting/avatar_picker_tests.rs)
 
-`GestureSystem` picks a click hit and a drag hit separately on press, but it
-skips creating gesture state if the drag hit is absent. Click emission on
-release is inside that drag state's release path. An isolated `ClickOnly`
-button can therefore be visible in ray hits and still fail to click. If the
-ray also hits a drag-capable object farther along the ray, it can create the
-state needed for a click on the button. This is a plausible explanation for
-the angle-dependent behavior and needs a controlled input test.
+`GestureSystem` previously skipped creating gesture state when the ray missed
+any drag-capable surface. It now captures clicks independently and compares
+the release against the original click target and motion thresholds. Desktop
+auto-grab honors a leading click-only target before trying to acquire a prop
+farther down the ray. XR grip remains independent of trigger input.
 [Gesture press and release](../../src/engine/ecs/system/gesture_system.rs)
 
 Reproduce with two layouts. Put just the click-only button on the ray, then
@@ -40,6 +38,12 @@ valid release without a drag-capable surface behind it. Preserve intentional
 click and drag pass-through, pointer movement thresholds, and existing drag
 and grip capture. Check whether the avatar picker also needs to block scene
 drags behind its buttons as a separate routing decision.
+
+As `gesture_system.rs` grows, move click recognition and its tests into a
+gesture module alongside grip handling. Keep one snapshot of the ordered ray
+hits per update and reuse those hits for click and drag. Validate press and
+release with isolated buttons, intervening geometry, and desktop versus XR
+motion thresholds. Keep existing drag and grip capture tests in the matrix.
 
 ## Hover through the existing pointer path
 

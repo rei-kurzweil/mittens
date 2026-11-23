@@ -168,25 +168,33 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         &mut scene.command_queue,
     );
     assert!(has(&scene.world, "sta_rocket_trail"));
-    let capsules = scene
+    let capsules: Vec<_> = scene
         .world
         .all_components()
-        .filter(|&id| {
+        .filter_map(|id| {
             scene
                 .world
                 .get_component_by_id_as::<RenderableComponent>(id)
-                .is_some_and(|renderable| {
+                .filter(|renderable| {
                     matches!(
                         renderable.authored_shape,
                         Some(AuthoredRenderableShape::CapsuleY {
-                            radius: 0.25,
-                            half_segment: 1.25
+                            radius: 0.375,
+                            half_segment: 1.125
                         })
                     )
                 })
         })
-        .count();
-    assert_eq!(capsules, 1, "one closed exhaust capsule");
+        .collect();
+    assert_eq!(capsules.len(), 1, "one closed exhaust capsule");
+    let mesh = scene
+        .render_assets
+        .cpu_mesh(capsules[0].renderable.base_mesh)
+        .unwrap();
+    for vertex in &mesh.vertices {
+        // The fragment shader recovers a fixed center from V at every ring.
+        assert!((vertex.pos[1] + (vertex.uv[1] - 0.5) * 3.0).abs() < 1e-6);
+    }
     let nozzle_glow: Vec<_> = scene
         .visuals
         .instances()

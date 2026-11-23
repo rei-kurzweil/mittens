@@ -1,7 +1,9 @@
 use super::rocket_motion_tests::Uploader;
 use crate::engine::Universe;
-use crate::engine::ecs::component::{GLTFComponent, TextComponent};
-use crate::engine::ecs::system::{TextSystem, TransformSystem, bounds_system::BoundsSystem};
+use crate::engine::ecs::component::{GLTFComponent, MirrorComponent, TextComponent};
+use crate::engine::ecs::system::{
+    TextSystem, TransformSystem, bounds_system::BoundsSystem, external_xr_frame::ExternalXrFrame,
+};
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::utils::math::{vec3_normalize, vec3_sub};
 
@@ -22,6 +24,144 @@ fn prepare(scene: &mut Universe, uploader: &mut Uploader) {
         &mut scene.command_queue,
     );
     scene.update(1.0 / 60.0, &Default::default());
+}
+
+#[test]
+fn click_only_panels_accept_oblique_trigger_presses_without_drag_targets() {
+    let mut scene = Universe::new(World::default());
+    scene
+        .systems
+        .xr
+        .set_external_frame(Some(Default::default()));
+    scene
+        .load_mms_source_at_path(
+            r#"
+            import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
+            import { mirror_panel } from "../assets/components/panels/mirror_panel.mms"
+            let panel = { root = null selections = 0 }
+            let picker = avatar_picker_panel({
+                root_name = "picker"
+                status = "Waiting"
+                choices = [{ id = "miku" label = "Miku" }]
+                on_select = fn(choice) {
+                    panel.selections = panel.selections + 1
+                    panel.root.set_status(choice + panel.selections)
+                }
+            })
+            panel.root = picker
+            T.position(-1,1.5,-2) { picker.root }
+            T.position(1,1.5,-2) { mirror_panel({ name = "test_mirror" width = 1.0 height = 1.0 quality = 512 }) }
+            T { InputXR.on() {
+                T { CXR {} }
+                XRHand.new(true,"Left","Aim") { T { Pointer {} } }
+            } }
+            "#,
+            "examples/_click_only_panel_test.mms",
+        )
+        .unwrap();
+    let mut uploader = Uploader::default();
+    for _ in 0..4 {
+        prepare(&mut scene, &mut uploader);
+    }
+    let mirror = named(&scene, "test_mirror");
+    let text = |scene: &Universe, label: &str| {
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(scene, label))
+            .unwrap()
+            .text
+            .clone()
+    };
+    let view = openxr::View {
+        pose: openxr::Posef {
+            orientation: openxr::Quaternionf {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            },
+            position: openxr::Vector3f {
+                x: 0.0,
+                y: 1.65,
+                z: 0.0,
+            },
+        },
+        fov: openxr::Fovf {
+            angle_left: -0.7,
+            angle_right: 0.7,
+            angle_up: 0.7,
+            angle_down: -0.7,
+        },
+    };
+    for (button_name, from_y, expected) in [
+        ("avatar_picker_miku", -0.42_f32, "miku1"),
+        ("avatar_picker_miku", 0.42_f32, "miku2"),
+        ("test_mirror_toggle", -0.42_f32, "On"),
+        ("test_mirror_toggle", 0.42_f32, "Off"),
+    ] {
+        let button = named(&scene, button_name);
+        let background = scene.world.find_component(button, "#__bg").unwrap();
+        let face = scene
+            .world
+            .find_component(background, "renderable")
+            .unwrap();
+        let [x, y, z] = TransformSystem::world_position(&scene.world, face).unwrap();
+        let label = scene.world.find_component(button, "text").unwrap();
+        let glyphs = TextSystem::owned_text_block(&scene.world, label).unwrap();
+        let center =
+            BoundsSystem::measure_cached_renderable_subtree_bounds(&scene.world, glyphs, |_| false)
+                .unwrap()
+                .transformed(TransformSystem::world_model(&scene.world, glyphs).unwrap())
+                .center();
+        assert!(
+            (center[0] - x).abs() < 0.03 && (center[1] - y).abs() < 0.03,
+            "{button_name}: label center {center:?}, face center ({x}, {y}, {z})"
+        );
+        let half_pitch = (-from_y).atan2(1.0) * 0.5;
+        let aim = openxr::Posef {
+            orientation: openxr::Quaternionf {
+                x: half_pitch.sin(),
+                y: 0.0,
+                z: 0.0,
+                w: half_pitch.cos(),
+            },
+            position: openxr::Vector3f {
+                x,
+                y: y + from_y,
+                z: z + 1.0,
+            },
+        };
+        let mut frame = ExternalXrFrame {
+            views: Some([view; 2]),
+            aim: [Some(aim), None],
+            ..Default::default()
+        };
+        frame.input.trigger_pressed[0] = true;
+        frame.input.trigger_down[0] = true;
+        scene.systems.xr.set_external_frame(Some(frame));
+        scene.update(1.0 / 90.0, &Default::default());
+        assert!(!scene.systems.gesture.state().dragging);
+        frame.input.trigger_pressed[0] = false;
+        frame.input.trigger_down[0] = false;
+        frame.input.trigger_released[0] = true;
+        scene.systems.xr.set_external_frame(Some(frame));
+        scene.update(1.0 / 90.0, &Default::default());
+
+        if button_name == "avatar_picker_miku" {
+            assert_eq!(text(&scene, "avatar_picker_status"), expected);
+        } else {
+            let engaged = from_y < 0.0;
+            assert_eq!(
+                scene
+                    .world
+                    .get_component_by_id_as::<MirrorComponent>(mirror)
+                    .unwrap()
+                    .enabled,
+                engaged
+            );
+            assert_eq!(text(&scene, "test_mirror_toggle_label"), expected);
+        }
+    }
 }
 
 #[test]

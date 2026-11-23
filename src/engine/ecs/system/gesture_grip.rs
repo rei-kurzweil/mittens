@@ -10,7 +10,7 @@ fn grip_owner(world: &World, hit: ComponentId, desktop: bool) -> Option<(Compone
     grabbable_owner_for_hit(world, hit).map(|owner| (owner, false))
 }
 
-type PointerHit = (
+pub(super) type PointerHit = (
     u8,
     f32,
     ComponentId,
@@ -62,13 +62,25 @@ impl GestureSystem {
             if self.grip_states.contains_key(&pointer_cid) {
                 continue;
             }
+            let raycaster = pointer_system.raycast_for_pointer(pointer_cid);
+            // The desktop's shared mouse button honors a UI click before a
+            // grab or mount farther down the ray. XR grip is a separate input.
+            if desktop
+                && raycaster.is_some_and(|raycaster| {
+                    hits.iter()
+                        .find(|hit| hit.2 == raycaster && hit.6 != PointerEvents::PassThrough)
+                        .is_some_and(|hit| hit.6 == PointerEvents::ClickOnly)
+                })
+            {
+                continue;
+            }
             if attachment_system.try_dismount_for_pointer(world, pointer_cid, rx) {
                 if desktop {
                     desktop_grab_consumed.insert(pointer_cid);
                 }
                 continue;
             }
-            let Some(raycaster) = pointer_system.raycast_for_pointer(pointer_cid) else {
+            let Some(raycaster) = raycaster else {
                 continue;
             };
             let mounted = hits

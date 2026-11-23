@@ -19,6 +19,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
+use gesture_grip::PointerHit;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DragUpdatePolicy {
     /// Only emit drag moves while the pointer still intersects the original target.
@@ -64,11 +66,11 @@ pub struct GestureState {
     pub dragging: bool,
     pub drag_raycaster: Option<ComponentId>,
     pub drag_renderable: Option<ComponentId>,
-    /// First click-capable hit at DragStart. Click is dispatched here, not to `drag_renderable`,
-    /// so a DragOnly plane in front of rows doesn't swallow clicks.
+    /// First click-capable hit at press time, independent of drag capture.
     pub click_renderable: Option<ComponentId>,
     /// Hit point on `click_renderable` at press time (which may differ from the drag hit point).
     pub click_hit_point: Option<[f32; 3]>,
+    click_raycaster: Option<ComponentId>,
     pub last_hit_point: Option<[f32; 3]>,
 
     pub last_cursor_pos: Option<(f32, f32)>,
@@ -396,20 +398,20 @@ impl GestureSystem {
             raycast_system,
         );
 
-        // --- Trigger press: start a new drag per activated pointer ---
+        // --- Trigger press: capture click and drag targets independently ---
         for &pointer_cid in &activations.pressed {
             if desktop_grab_consumed.contains(&pointer_cid) {
                 continue;
             }
-            // Only start a gesture if this pointer isn't already dragging.
             if self
                 .states
                 .get(&pointer_cid)
-                .map(|s| s.dragging)
-                .unwrap_or(false)
+                .is_some_and(|state| state.dragging)
             {
                 continue;
             }
+            // A fresh press can replace a click whose release was lost with tracking.
+            self.states.remove(&pointer_cid);
 
             let Some(raycaster_cid) = pointer_system.raycast_for_pointer(pointer_cid) else {
                 continue;
@@ -451,6 +453,26 @@ impl GestureSystem {
                 );
             }
 
+            // Determine if this is a screen-space pointer (has cursor_pos).
+            let is_screen_pointer = !controller_pointer
+                && !topology.has_xr_camera_anchor
+                && !topology.has_xr_input_driver;
+            let screen_pos = is_screen_pointer.then_some(input.cursor_pos).flatten();
+            let pointer_class = if is_screen_pointer {
+                GesturePointerClass::Desktop
+            } else {
+                GesturePointerClass::Spatial
+            };
+            if let Some(&&(_, t, raycaster, renderable, origin, dir, _)) = click_hit {
+                let state = self.states.entry(pointer_cid).or_default();
+                state.click_raycaster = Some(raycaster);
+                state.click_renderable = Some(renderable);
+                state.click_hit_point = Some(std::array::from_fn(|i| origin[i] + dir[i] * t));
+                state.drag_start_screen_pos = screen_pos;
+                state.press_pointer_class = Some(pointer_class);
+                state.press_ray_origin = Some(origin);
+                state.press_ray_direction = Some(dir);
+            }
             let Some(&&(_priority, t, raycaster, renderable, origin, dir, _pe)) = drag_hit else {
                 continue;
             };
@@ -461,11 +483,6 @@ impl GestureSystem {
                 origin[2] + dir[2] * t,
             ]);
 
-            // Determine if this is a screen-space pointer (has cursor_pos).
-            let is_screen_pointer = !controller_pointer
-                && !topology.has_xr_camera_anchor
-                && !topology.has_xr_input_driver;
-            let screen_pos = is_screen_pointer.then_some(input.cursor_pos).flatten();
             let controller_draggable =
                 controller_pointer && draggable_owner_for_hit(world, renderable).is_some();
             let controller_origin = controller_draggable
@@ -511,11 +528,6 @@ impl GestureSystem {
             };
 
             if Self::debug_paint_stroke_enabled() {
-                let pointer_class = if is_screen_pointer {
-                    GesturePointerClass::Desktop
-                } else {
-                    GesturePointerClass::Spatial
-                };
                 eprintln!(
                     "paint_stroke_trace layer=gesture phase=start pointer={pointer_cid:?} class={pointer_class:?} raycaster={raycaster:?} captured_renderable={renderable:?} click_renderable={:?} continuation={continuation:?} mapping={mapping:?} ray_origin={origin:?} ray_direction={dir:?} mapped={drag_hit_point:?}",
                     click_hit.map(|hit| hit.3),
@@ -545,14 +557,6 @@ impl GestureSystem {
             state.dragging = true;
             state.drag_raycaster = Some(raycaster);
             state.drag_renderable = Some(renderable);
-            state.click_renderable = click_hit.map(|h| h.3);
-            state.click_hit_point = click_hit.map(|h| {
-                [
-                    h.4[0] + h.5[0] * h.1,
-                    h.4[1] + h.5[1] * h.1,
-                    h.4[2] + h.5[2] * h.1,
-                ]
-            });
             state.last_hit_point = drag_hit_point;
             state.last_cursor_pos = if is_screen_pointer { screen_pos } else { None };
             state.continuation = Some(continuation);
@@ -560,13 +564,7 @@ impl GestureSystem {
             state.debug_mapping_surface_root = debug_mapping_surface_root;
             state.drag_start_screen_pos = if is_screen_pointer { screen_pos } else { None };
             state.drag_start_hit_point = drag_hit_point;
-            state.press_pointer_class = Some(if is_screen_pointer {
-                GesturePointerClass::Desktop
-            } else {
-                GesturePointerClass::Spatial
-            });
-            state.press_ray_origin = Some(origin);
-            state.press_ray_direction = Some(dir);
+            state.press_pointer_class = Some(pointer_class);
 
             if let Some(p) = drag_hit_point {
                 rx.push_event(
@@ -609,7 +607,12 @@ impl GestureSystem {
             let is_released = activations.released.contains(&pointer_cid);
 
             // Move drag.
-            if is_down {
+            if is_down
+                && self
+                    .states
+                    .get(&pointer_cid)
+                    .is_some_and(|state| state.dragging)
+            {
                 let (Some(active_rc), Some(active_renderable)) = ({
                     let s = self.states.get(&pointer_cid).unwrap();
                     (s.drag_raycaster, s.drag_renderable)
@@ -619,15 +622,6 @@ impl GestureSystem {
                     }
                     continue;
                 };
-
-                if !self
-                    .states
-                    .get(&pointer_cid)
-                    .map(|s| s.dragging)
-                    .unwrap_or(false)
-                {
-                    continue;
-                }
 
                 let pointer_hits: Vec<_> = hits.iter().filter(|h| h.2 == active_rc).collect();
                 let is_screen_pointer = self
@@ -850,7 +844,7 @@ impl GestureSystem {
                 }
             }
 
-            // End drag.
+            // Release the captured drag and click independently.
             if is_released {
                 if let Some(state) = self.states.get(&pointer_cid) {
                     if state.dragging {
@@ -886,143 +880,123 @@ impl GestureSystem {
                                     hit_point: state.last_hit_point,
                                 },
                             );
-
-                            let release_click_hit = hits
-                                .iter()
-                                .find(|h| h.2 == active_rc && h.6.captures_click());
-                            let pointer = world
-                                .get_component_by_id_as::<
-                                    crate::engine::ecs::component::PointerComponent,
-                                >(pointer_cid);
-
-                            let rejection = match (
-                                state.click_renderable,
-                                state.click_hit_point,
-                                release_click_hit,
-                                pointer,
-                            ) {
-                                (None, _, _, _) => Some("missing press click target".to_string()),
-                                (_, None, _, _) => {
-                                    Some("missing press click hit point".to_string())
-                                }
-                                (_, _, None, _) => Some("missing release hit".to_string()),
-                                (_, _, _, None) => {
-                                    Some("missing pointer configuration".to_string())
-                                }
-                                (
-                                    Some(press_target),
-                                    Some(_),
-                                    Some(release_hit),
-                                    Some(_pointer),
-                                ) if release_hit.3 != press_target => Some(format!(
-                                    "target changed: press={press_target:?} release={:?}",
-                                    release_hit.3
-                                )),
-                                (Some(_), Some(_), Some(release_hit), Some(pointer)) => {
-                                    match state.press_pointer_class {
-                                        Some(GesturePointerClass::Desktop) => {
-                                            match (state.drag_start_screen_pos, input.cursor_pos) {
-                                                (Some((sx, sy)), Some((ex, ey))) => {
-                                                    let distance = ((ex - sx).powi(2)
-                                                        + (ey - sy).powi(2))
-                                                    .sqrt();
-                                                    (!distance.is_finite()
-                                                        || distance
-                                                            > pointer
-                                                                .click_max_screen_distance_px)
-                                                        .then(|| {
-                                                            format!(
-                                                                "pixel movement: {distance:.3}px exceeds {:.3}px",
-                                                                pointer.click_max_screen_distance_px
-                                                            )
-                                                        })
-                                                }
-                                                _ => Some(
-                                                    "pixel movement: missing cursor position"
-                                                        .to_string(),
-                                                ),
-                                            }
-                                        }
-                                        Some(GesturePointerClass::Spatial) => {
-                                            let similarity =
-                                                state.press_ray_direction.and_then(|start| {
-                                                    Self::normalized_cosine_similarity(
-                                                        start,
-                                                        release_hit.5,
-                                                    )
-                                                });
-                                            let minimum_similarity =
-                                                pointer.click_max_ray_angle_deg.to_radians().cos();
-                                            match similarity {
-                                                None => Some(
-                                                    "angular similarity: invalid ray direction"
-                                                        .to_string(),
-                                                ),
-                                                Some(dot)
-                                                    if !dot.is_finite()
-                                                        || dot < minimum_similarity =>
-                                                {
-                                                    Some(format!(
-                                                        "angular similarity: {dot:.6} < {minimum_similarity:.6}"
-                                                    ))
-                                                }
-                                                Some(_) => match state.press_ray_origin.and_then(
-                                                    |start| Self::distance(start, release_hit.4),
-                                                ) {
-                                                    None => Some(
-                                                        "origin displacement: invalid ray origin"
-                                                            .to_string(),
-                                                    ),
-                                                    Some(distance)
-                                                        if distance
-                                                            > pointer.click_max_origin_distance =>
-                                                    {
-                                                        Some(format!(
-                                                            "origin displacement: {distance:.6}m > {:.6}m",
-                                                            pointer.click_max_origin_distance
-                                                        ))
-                                                    }
-                                                    Some(_) => None,
-                                                },
-                                            }
-                                        }
-                                        None => Some("missing press pointer class".to_string()),
-                                    }
-                                }
-                            };
-
-                            if rejection.is_none() {
-                                let click_target = state.click_renderable.expect("checked above");
-                                if Self::debug_gesture_enabled() {
-                                    eprintln!(
-                                        "[gesture] click pointer={:?} raycaster={:?} drag_renderable={:?} click_target={:?}",
-                                        pointer_cid, active_rc, active_renderable, click_target,
-                                    );
-                                }
-                                if let Some(start_hit) = state.click_hit_point {
-                                    rx.push_event(
-                                        click_target,
-                                        EventSignal::Click {
-                                            raycaster: active_rc,
-                                            renderable: click_target,
-                                            hit_point: start_hit,
-                                            screen_pos_px: state.drag_start_screen_pos,
-                                        },
-                                    );
-                                }
-                            } else if Self::debug_gesture_enabled() {
-                                eprintln!(
-                                    "[gesture] click rejected pointer={pointer_cid:?} raycaster={active_rc:?}: {}",
-                                    rejection.expect("rejection checked above")
-                                );
-                            }
                         }
                     }
                 }
                 if let Some(mut state) = self.states.remove(&pointer_cid) {
+                    Self::release_click(world, input, rx, &hits, pointer_cid, &state);
                     Self::remove_debug_mapping_surface(&mut state, rx);
                 }
             }
+        }
+    }
+    fn release_click(
+        world: &World,
+        input: &InputState,
+        rx: &mut RxWorld,
+        hits: &[PointerHit],
+        pointer_cid: ComponentId,
+        state: &GestureState,
+    ) {
+        let Some(active_rc) = state.click_raycaster else {
+            return;
+        };
+        let release_click_hit = hits
+            .iter()
+            .find(|h| h.2 == active_rc && h.6.captures_click());
+        let pointer = world
+            .get_component_by_id_as::<crate::engine::ecs::component::PointerComponent>(pointer_cid);
+
+        let rejection = match (
+            state.click_renderable,
+            state.click_hit_point,
+            release_click_hit,
+            pointer,
+        ) {
+            (None, _, _, _) => Some("missing press click target".to_string()),
+            (_, None, _, _) => Some("missing press click hit point".to_string()),
+            (_, _, None, _) => Some("missing release hit".to_string()),
+            (_, _, _, None) => Some("missing pointer configuration".to_string()),
+            (Some(press_target), Some(_), Some(release_hit), Some(_pointer))
+                if release_hit.3 != press_target =>
+            {
+                Some(format!(
+                    "target changed: press={press_target:?} release={:?}",
+                    release_hit.3
+                ))
+            }
+            (Some(_), Some(_), Some(release_hit), Some(pointer)) => {
+                match state.press_pointer_class {
+                    Some(GesturePointerClass::Desktop) => {
+                        match (state.drag_start_screen_pos, input.cursor_pos) {
+                            (Some((sx, sy)), Some((ex, ey))) => {
+                                let distance = ((ex - sx).powi(2) + (ey - sy).powi(2)).sqrt();
+                                (!distance.is_finite()
+                                    || distance > pointer.click_max_screen_distance_px)
+                                    .then(|| {
+                                        format!(
+                                            "pixel movement: {distance:.3}px exceeds {:.3}px",
+                                            pointer.click_max_screen_distance_px
+                                        )
+                                    })
+                            }
+                            _ => Some("pixel movement: missing cursor position".to_string()),
+                        }
+                    }
+                    Some(GesturePointerClass::Spatial) => {
+                        let similarity = state.press_ray_direction.and_then(|start| {
+                            Self::normalized_cosine_similarity(start, release_hit.5)
+                        });
+                        let minimum_similarity = pointer.click_max_ray_angle_deg.to_radians().cos();
+                        match similarity {
+                            None => Some("angular similarity: invalid ray direction".to_string()),
+                            Some(dot) if !dot.is_finite() || dot < minimum_similarity => Some(
+                                format!("angular similarity: {dot:.6} < {minimum_similarity:.6}"),
+                            ),
+                            Some(_) => match state
+                                .press_ray_origin
+                                .and_then(|start| Self::distance(start, release_hit.4))
+                            {
+                                None => Some("origin displacement: invalid ray origin".to_string()),
+                                Some(distance) if distance > pointer.click_max_origin_distance => {
+                                    Some(format!(
+                                        "origin displacement: {distance:.6}m > {:.6}m",
+                                        pointer.click_max_origin_distance
+                                    ))
+                                }
+                                Some(_) => None,
+                            },
+                        }
+                    }
+                    None => Some("missing press pointer class".to_string()),
+                }
+            }
+        };
+
+        if rejection.is_none() {
+            let click_target = state.click_renderable.expect("checked above");
+            if Self::debug_gesture_enabled() {
+                eprintln!(
+                    "[gesture] click pointer={:?} raycaster={:?} drag_renderable={:?} click_target={:?}",
+                    pointer_cid, active_rc, state.drag_renderable, click_target,
+                );
+            }
+            if let Some(start_hit) = state.click_hit_point {
+                rx.push_event(
+                    click_target,
+                    EventSignal::Click {
+                        raycaster: active_rc,
+                        renderable: click_target,
+                        hit_point: start_hit,
+                        screen_pos_px: state.drag_start_screen_pos,
+                    },
+                );
+            }
+        } else if Self::debug_gesture_enabled() {
+            eprintln!(
+                "[gesture] click rejected pointer={pointer_cid:?} raycaster={active_rc:?}: {}",
+                rejection.expect("rejection checked above")
+            );
         }
     }
 }
@@ -1033,6 +1007,7 @@ static EMPTY_GESTURE_STATE: GestureState = GestureState {
     drag_renderable: None,
     click_renderable: None,
     click_hit_point: None,
+    click_raycaster: None,
     last_hit_point: None,
     last_cursor_pos: None,
     continuation: None,
@@ -1133,6 +1108,85 @@ mod tests {
         assert_eq!(
             GestureSystem::normalized_cosine_similarity([f32::NAN, 0.0, -1.0], [0.0, 0.0, -1.0]),
             None
+        );
+    }
+
+    #[test]
+    fn desktop_click_only_target_takes_precedence_over_a_grab_behind_it() {
+        use crate::engine::ecs::component::GrabbableComponent;
+
+        let mut world = World::default();
+        let button = world.add_component(TransformComponent::new());
+        let prop = world.add_component(TransformComponent::new());
+        let grabbable = world.add_component(GrabbableComponent::on());
+        world.add_child(prop, grabbable).unwrap();
+        let mut rx = RxWorld::default();
+        let mut pointers = PointerSystem::default();
+        let pointer = world.add_component(PointerComponent::new());
+        pointers.register_pointer(&mut world, pointer, &mut rx);
+        let raycaster = pointers.raycast_for_pointer(pointer).unwrap();
+        let mut gestures = GestureSystem::default();
+        let mut input = InputState::default();
+        input.cursor_pos = Some((10.0, 20.0));
+        let paint_hits = |gestures: &mut GestureSystem| {
+            gestures.begin_frame();
+            gestures.ray_hits_sorted.lock().unwrap().extend([
+                (
+                    180,
+                    1.0,
+                    raycaster,
+                    button,
+                    [0.0; 3],
+                    [0.0, 0.0, -1.0],
+                    PointerEvents::ClickOnly,
+                ),
+                (
+                    0,
+                    2.0,
+                    raycaster,
+                    prop,
+                    [0.0; 3],
+                    [0.0, 0.0, -1.0],
+                    PointerEvents::All,
+                ),
+            ]);
+        };
+        paint_hits(&mut gestures);
+        gestures.tick_with_rx(
+            &mut world,
+            &input,
+            &PointerActivations {
+                pressed: vec![pointer],
+                down: vec![pointer],
+                ..Default::default()
+            },
+            &pointers,
+            &RayCastSystem::default(),
+            &mut rx,
+        );
+        assert_eq!(
+            event_count(&mut rx, |event| matches!(
+                event,
+                EventSignal::GrabStart { .. }
+            )),
+            0
+        );
+        paint_hits(&mut gestures);
+        gestures.tick_with_rx(
+            &mut world,
+            &input,
+            &PointerActivations {
+                released: vec![pointer],
+                ..Default::default()
+            },
+            &pointers,
+            &RayCastSystem::default(),
+            &mut rx,
+        );
+        assert_eq!(
+            event_count(&mut rx, |event| matches!(event,
+            EventSignal::Click { renderable, .. } if *renderable == button)),
+            1
         );
     }
 

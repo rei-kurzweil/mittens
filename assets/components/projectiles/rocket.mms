@@ -4,7 +4,8 @@ import { emissive_surface } from "../materials/emissive_surface.mms"
 import { toon_rocket_exhaust } from "../materials/toon_rocket_exhaust.mms"
 
 let trail_length = 3.0
-let trail_radius = 0.25
+// Leave room for the original ribbon's full lateral sway.
+let trail_radius = 0.375
 // The recentered GLB's rear face ends at z=0.17875 with a diameter of 0.0385.
 let nozzle_z = 0.18
 // Exhaust cone length behind the rear face.

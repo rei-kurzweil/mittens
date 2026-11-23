@@ -19,52 +19,70 @@ layout(set = 1, binding = 0, std140) uniform RocketExhaustInputs {
     float trail_radius;
 } exhaust;
 
-void main() {
-    if (!gl_FrontFacing) discard;
-    vec3 direction = exhaust.flight_direction;
-    direction /= max(length(direction), 0.0001);
-    vec3 offset = v_world_pos - exhaust.launch_origin;
-    float along = dot(offset, direction);
-    if (along <= 0.0) discard;
+// Evaluate the original ribbon profile on its old 0.9 m wide projection.
+vec4 ribbon_smoke(vec3 projected, vec3 center, vec3 axis, vec3 side) {
+    float t = 0.5 - dot(projected - center, axis) / exhaust.trail_length;
+    float along = dot(projected - exhaust.launch_origin, axis);
+    if (t < 0.0 || t > 1.0 || along <= 0.0) return vec4(exhaust.shadow_color, 0.0);
 
-    float t = clamp(v_uv.y, 0.0, 1.0);
-    vec3 radial = offset - along * direction;
-    vec3 center = v_world_pos - radial + (t - 0.5) * exhaust.trail_length * direction;
-    vec3 eye = -transpose(mat3(camera.view)) * camera.view[3].xyz;
-    vec3 to_eye = eye - center;
-
-    // Project onto the side of an axial billboard without rotating the mesh.
-    // As that side collapses end-on, use the cap's radial profile.
-    vec3 side = cross(direction, to_eye / max(length(to_eye), 0.0001));
-    float side_length = length(side);
-    float side_view = smoothstep(0.10, 0.38, side_length);
-    float lateral = dot(radial, side) / max(side_length, 0.0001);
+    float expansion = smoothstep(0.0, 0.5, t * exhaust.trail_length);
     float phase = along * exhaust.wave_frequency;
     float primary = sin(phase);
     float secondary = sin(phase * 2.3 + 1.7);
-    float expansion = smoothstep(0.0, 0.5, t * exhaust.trail_length);
-    float width = exhaust.trail_radius * mix(0.08, 0.84, expansion);
-    width *= 1.0 + expansion * (0.13 * primary - 0.09 * secondary);
-    float sway = exhaust.trail_radius * 2.8 * exhaust.wave_amplitude
-        * expansion * (primary + 0.4 * secondary);
-    float across = (lateral - sway) / width;
-    float cap = length(radial) / (exhaust.trail_radius * (0.96 + 0.04 * secondary));
-    float outer = 1.0 - smoothstep(0.82, 1.04, mix(cap, abs(across), side_view));
-
-    // Keep the original nested waves and two gray tones across the smoke.
-    float middle = 1.0 - smoothstep(0.63, 0.75,
-        mix(cap, abs(across + 0.12 * expansion * secondary), side_view));
-    float core = 1.0 - smoothstep(0.27, 0.40,
-        mix(cap, abs(across - 0.10 * expansion * primary), side_view));
+    float sway = expansion * exhaust.wave_amplitude * (primary + 0.4 * secondary);
+    float half_width = mix(0.021, 0.22, expansion);
+    half_width *= 1.0 + expansion * (0.13 * primary - 0.09 * secondary);
+    float across = (dot(projected - center, side) / 0.9 - sway) / half_width;
+    float outer = 1.0 - smoothstep(0.86, 1.0, abs(across));
+    float middle = 1.0 - smoothstep(0.63, 0.73, abs(across + 0.12 * expansion * secondary));
+    float core = 1.0 - smoothstep(0.27, 0.37, abs(across - 0.10 * expansion * primary));
     vec3 grey = mix(exhaust.shadow_color, exhaust.light_color, 0.5 * (middle + core));
+    float alpha = outer * (1.0 - smoothstep(0.2, 1.0, t)) * smoothstep(0.0, 0.12, along);
+    return vec4(grey, alpha);
+}
 
-    vec3 fragment_to_eye = eye - v_world_pos;
-    float facing = dot(normalize(v_normal), fragment_to_eye / max(length(fragment_to_eye), 0.0001));
-    float softness = smoothstep(0.0, 0.48, facing);
-    float tail = mix(0.42, 0.03, side_view);
-    float age = mix(1.0, tail, smoothstep(0.2, 1.0, t));
-    float muzzle = smoothstep(0.0, 0.12, along);
-    float alpha = outer * softness * age * muzzle * v_color.a;
-    if (alpha < 0.001) discard;
-    f_color = vec4(grey * v_color.rgb, alpha);
+vec4 cap_smoke(vec3 radial, vec3 to_eye, float t, float along) {
+    float radius = length(radial) / exhaust.trail_radius;
+    float facing = dot(normalize(v_normal), normalize(to_eye));
+    float edge = (1.0 - smoothstep(0.60, 1.0, radius)) * smoothstep(0.0, 0.55, facing);
+    float shade = 1.0 - smoothstep(0.15, 0.8, radius);
+    vec3 grey = mix(exhaust.shadow_color, exhaust.light_color, shade);
+    float alpha = edge * mix(0.8, 0.40, t) * smoothstep(0.0, 0.12, along);
+    return vec4(grey, alpha);
+}
+
+void main() {
+    if (!gl_FrontFacing) discard;
+    vec3 axis = normalize(exhaust.flight_direction);
+    vec3 offset = v_world_pos - exhaust.launch_origin;
+    float along = dot(offset, axis);
+    vec3 radial = offset - along * axis;
+    // Capsule V is linear along the axis. It locates the mesh center without
+    // using the cylindrical U coordinate or the surface normal for the bands.
+    float t = v_uv.y;
+    vec3 center = v_world_pos - radial + (t - 0.5) * exhaust.trail_length * axis;
+    vec3 eye = -transpose(mat3(camera.view)) * camera.view[3].xyz;
+    vec3 to_eye = eye - v_world_pos;
+    vec3 side = cross(axis, normalize(eye - center));
+    float side_length = length(side);
+    float ribbon_weight = smoothstep(0.08, 0.26, side_length);
+
+    vec4 smoke = vec4(exhaust.shadow_color, 0.0);
+    if (ribbon_weight > 0.0) {
+        side /= side_length;
+        vec3 plane_normal = cross(side, axis);
+        float denom = dot(plane_normal, to_eye);
+        if (abs(denom) > 0.0001) {
+            // Find where this pixel's ray hits the old billboard. This keeps
+            // both waves continuous in perspective, even at an oblique angle.
+            vec3 projected = v_world_pos + to_eye * (dot(plane_normal, center - v_world_pos) / denom);
+            smoke = ribbon_smoke(projected, center, axis, side);
+        }
+    }
+    if (ribbon_weight < 1.0) {
+        smoke = mix(cap_smoke(radial, to_eye, t, along), smoke, ribbon_weight);
+    }
+    smoke *= v_color;
+    if (smoke.a < 0.001) discard;
+    f_color = smoke;
 }
