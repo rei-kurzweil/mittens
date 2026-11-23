@@ -76,6 +76,34 @@ fn sakura_twilight_loads_its_city_without_the_train() {
             "{name}"
         );
     }
+    for (rack, indices) in [
+        ("sakura_twilight_main_pistol_rack", 1..=6),
+        ("sakura_twilight_row_pistol_rack", 7..=12),
+    ] {
+        let rack = named(&scene, rack);
+        for index in indices {
+            let label = if index == 1 {
+                "rooftop_machine_pistol".to_owned()
+            } else {
+                format!("rooftop_machine_pistol_{index}")
+            };
+            assert!(
+                scene
+                    .world
+                    .find_component(rack, &format!("#{label}_grip"))
+                    .is_some()
+            );
+            let ammo = named(&scene, &format!("{label}_ammo_count"));
+            assert_eq!(
+                scene
+                    .world
+                    .get_component_by_id_as::<TextComponent>(ammo)
+                    .unwrap()
+                    .text,
+                "96"
+            );
+        }
+    }
     assert!(scene.world.all_components().any(|id| {
         scene
             .world

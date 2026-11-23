@@ -10,3 +10,9 @@ do not introduce per-frame queries or per-object resource creation. Validate
 both XR and desktop variants, held input, target interactions, and scene startup;
 compare startup and frame performance if the extraction changes batching or
 runtime subscriptions. This is not a prerequisite for scoped scene changes.
+
+Sakura Twilight's two pistol racks and their shared impact channel are
+candidates for a cohesive scene asset. Keep rack placement separate from the
+peer lifecycle, and retain event-driven retries and one impact stream for the
+roster. Validate both racks, the rooftop drive lane, the per-peer channel
+budget, and final grab and shot delivery after release.

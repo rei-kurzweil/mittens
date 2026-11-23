@@ -150,6 +150,9 @@ mod morph_api;
 mod shared_grab_tests;
 
 #[cfg(test)]
+mod pistol_replication_tests;
+
+#[cfg(test)]
 mod shared_udp_tests;
 
 #[cfg(test)]

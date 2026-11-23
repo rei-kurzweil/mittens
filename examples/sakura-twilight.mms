@@ -11,6 +11,7 @@ import { f32, str, vec3, vec4 } from "types"
 
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+import { shared_impact } from "../assets/components/network/shared_impact.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
@@ -27,7 +28,7 @@ import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
-import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
+import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
 import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
 
 // Sakura twilight: a fork of twilight_rooftop.mms with no train. The players
@@ -207,8 +208,30 @@ fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
 }
-let pistol = ship_machine_pistol("rooftop_machine_pistol", weapon_options("arena.pistol.1"))
-let second_pistol = ship_machine_pistol("rooftop_machine_pistol_2", weapon_options("arena.pistol.2"))
+let pistol_impacts = shared_impact({ socket = socket name = "arena.pistols" apply = apply_machine_pistol_impact })
+fn make_pistol(index) {
+    let label = "rooftop_machine_pistol"
+    if index > 1 { label = label + "_" + index }
+    let options = weapon_options("arena.pistol." + index)
+    options.ammunition = 96
+    options.shared_impacts = pistol_impacts
+    return ship_machine_pistol(label, options)
+}
+let pistols = [
+    make_pistol(1), make_pistol(2), make_pistol(3), make_pistol(4), make_pistol(5), make_pistol(6),
+    make_pistol(7), make_pistol(8), make_pistol(9), make_pistol(10), make_pistol(11), make_pistol(12),
+]
+fn pistol_rack(label, first, x, y, z) {
+    return T.position(x, y, z) {
+        name = label
+        box([0.0, 0.48, 0.0], [5.0, 0.96, 0.75], pink)
+        for slot in range(6) {
+            T.position((slot - 2.5) * 0.84, 1.04, 0.0) { pistols[first + slot] }
+        }
+    }
+}
+pistol_rack("sakura_twilight_main_pistol_rack", 0, roof_x - 2.25, roof_height, -3.25)
+pistol_rack("sakura_twilight_row_pistol_rack", 6, row[1].x - 1.9, row[1].floors * storey_height, row_z + 3.8)
 let launcher = shared_sta_launcher("rooftop_sta_launcher", weapon_options("arena.sta.1"))
 let street_launcher = shared_sta_launcher("sakura_twilight_row_sta_launcher", weapon_options("arena.sta.2"))
 fn weapon_stand(x, weapon) {
@@ -217,8 +240,6 @@ fn weapon_stand(x, weapon) {
         box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
     }
 }
-weapon_stand(roof_x - 0.25, pistol)
-weapon_stand(roof_x + 0.65, second_pistol)
 weapon_stand(roof_x + 1.55, launcher.root)
 T.position(roof_x + 2.65, roof_height, -4.15) {
     sta_ammo_cabinet("twilight_sta_ammo_cabinet")
@@ -228,7 +249,7 @@ T.position(row[1].x - 1.4, row[1].floors * storey_height, row_z + 1.3) {
     box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
     T.position(-1.8, 0.0, -0.4) { sta_ammo_cabinet("sakura_twilight_row_sta_ammo_cabinet") }
 }
-ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip, street_launcher.grip])
+ship_input_controller(false, [launcher.grip, street_launcher.grip], pistols)
 
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
@@ -305,14 +326,16 @@ let gohei = gohei_black_spring("shared_gohei")
 gohei.update_transform([roof_x + 1.1, roof_height + 1.1, 0.0])
 let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank mounts = mounts })
 shared_gohei.root
-let shared_objects = [shared, shared_gohei, pistol, second_pistol, launcher, street_launcher]
-for item in shared_objects {
+let shared_objects = [shared, shared_gohei, launcher, street_launcher]
+fn bind_local_item(item) {
     if use_desktop { item.bind_pointer(query("[name='local_desktop_pointer']")) }
     if use_xr {
         item.bind_pointer(query("[name='local_left_pointer']"))
         item.bind_pointer(query("[name='local_right_pointer']"))
     }
 }
+for item in shared_objects { bind_local_item(item) }
+for item in pistols { bind_local_item(item) }
 if use_desktop { local.watch_pointer(query("[name='local_desktop_pointer']"), "desktop") }
 if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
@@ -388,6 +411,8 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.avatar_retries = 0
     channel_state.sent_avatar = null
     for item in shared_objects { item.connect(group, address) }
+    for item in pistols { item.connect(group, address) }
+    pistol_impacts.connect(group, address)
     pickup.connect(group, address)
     hand_curls.connect(group, address)
     links.root = publish("root", address, pose_type)
@@ -424,6 +449,8 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
+    for item in pistols { item.disconnect() }
+    pistol_impacts.disconnect()
     pickup.disconnect()
     hand_curls.disconnect()
     remote.cancel_avatar_load()

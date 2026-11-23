@@ -5,8 +5,15 @@ import { emissive_surface } from "../materials/emissive_surface.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
 import { shared_impact } from "../network/shared_impact.mms"
 
+export fn apply_machine_pistol_impact(point, amount) {
+    Damage.at(point[0], point[1], point[2], 0.28, amount)
+    let effect = mini_explosion(point, 2.0)
+    effect.root
+    effect.animation.play()
+}
+
 // Reuses the existing weapon's muzzle, selector, sounds and firing cadence.
-// Unique labels keep the three rack instances' controls independent.
+// Unique labels keep rack instances' controls independent.
 // For a shared pistol pass { socket, weapon_id, rank, mounts? }, bind the local pointers
 // and connect/disconnect the assembly with the scene's peer lifecycle.
 export fn ship_machine_pistol(label, options) {
@@ -17,44 +24,45 @@ export fn ship_machine_pistol(label, options) {
     if options { bucket = options["opaque_bucket"] }
     let material = ship_environment_material(bucket)
     let sharing = { grab = null socket = null id = label }
+    let impacts = null
+    let ammunition = 75
     let left_pointer = "#ship_left_hand_pointer"
     let right_pointer = "#ship_right_hand_pointer"
     let user = "#ship_avatar_control"
     if options {
         sharing.socket = options["socket"]
+        impacts = options["shared_impacts"]
+        if options["ammunition"] != null {
+            ammunition = Math.floor(options.ammunition)
+            if ammunition < 0 { ammunition = 0 }
+        }
         if options["weapon_id"] { sharing.id = options.weapon_id }
         if options["left_pointer"] { left_pointer = options.left_pointer }
         if options["right_pointer"] { right_pointer = options.right_pointer }
         if options["user"] { user = options.user }
     }
     fn can_fire() { return !sharing.grab || sharing.grab.state.owner == options.rank }
-    fn apply_impact(point, amount) {
-        Damage.at(point[0], point[1], point[2], 0.28, amount)
-        let effect = mini_explosion(point, 2.0)
-        effect.root
-        effect.animation.play()
-    }
-    let impacts = null
-    if sharing.socket {
-        impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_impact })
+    let own_impacts = sharing.socket && !impacts
+    if own_impacts {
+        impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_machine_pistol_impact })
     }
     fn impact(hit) {
         if impacts { impacts.hit(hit.hit_point, hit.damage) }
-        else { apply_impact(hit.hit_point, hit.damage) }
+        else { apply_machine_pistol_impact(hit.hit_point, hit.damage) }
     }
     let tool = laser_machine_pistol({
         name = label + "_laser" length = 60.0 flash_size = 0.22 beam_radius = 0.012
-        ray_origin_offset = 0.18 on_hit = impact ammunition = 75
+        ray_origin_offset = 0.18 on_hit = impact ammunition = ammunition
         socket = sharing.socket weapon_id = sharing.id can_fire = can_fire
     })
     let ammo_count = Text {
         name = label + "_ammo_count"
-        "75"
+        "" + ammunition
         C.rgba(1.0,0.35,0.65,1.0)
         emissive_surface()
         EM.on().intensity(3.0)
     }
-    let ammo_display = { pending = false shown = 75 }
+    let ammo_display = { pending = false shown = ammunition }
     // Start once per dirty interval, without restarting on subsequent shots.
     // This trailing throttle updates during continuous fire and after release.
     let ammo_refresh = Animation.paused().length(2.0) {
@@ -141,13 +149,13 @@ export fn ship_machine_pistol(label, options) {
         assembly.connect = fn(group, address) {
             sharing.grab.connect(group, address)
             tool.network.connect(group, address)
-            impacts.connect(group, address)
+            if own_impacts { impacts.connect(group, address) }
         }
         assembly.disconnect = fn() {
             tool.use_end()
             sharing.grab.disconnect()
             tool.network.disconnect()
-            impacts.disconnect()
+            if own_impacts { impacts.disconnect() }
         }
     }
     return assembly

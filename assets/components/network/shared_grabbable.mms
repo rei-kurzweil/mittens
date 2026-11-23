@@ -20,8 +20,13 @@ export fn shared_grabbable(options) {
     let mount = T { name = options.name + "_mount" target }
     let kind = { revision: f32, owner: f32, held: f32, mount: f32, translation: vec3, rotation: vec4 }
     let state = { revision = 0 owner = 1 held = false mount = world_mount pointer = null outgoing = null
-        elapsed = 0.0 generation = 0 repeats = 0 }
+        elapsed = 0.0 generation = 0 repeats = 0 pump = null }
     fn own() { return state.owner == options.rank }
+    fn sync_pump() {
+        let active = own() && state.outgoing != null && (state.held || state.repeats > 0)
+        if !active { state.elapsed = 0.0 }
+        state.pump.bypass(!active)
+    }
     fn mount_frame(id) {
         if id == world_mount || !options.mounts { return null }
         return options.mounts.frame(id)
@@ -49,6 +54,7 @@ export fn shared_grabbable(options) {
     fn announce() {
         state.repeats = event_repeats
         if send() { state.repeats = state.repeats - 1 }
+        sync_pump()
     }
     fn grabbed(event) {
         if event.target != target { return }
@@ -113,7 +119,9 @@ export fn shared_grabbable(options) {
             state.owner = value.owner
             state.held = value.held > 0.5
             state.mount = value.mount
+            state.repeats = 0
             apply_pose(value)
+            sync_pump()
         })
         // A newly connected peer learns the current state once.
         announce()
@@ -128,16 +136,16 @@ export fn shared_grabbable(options) {
             state.held = false
             state.pointer = null
         }
+        sync_pump()
     }
-    on_global("FrameTick", fn(event) {
+    state.pump = on_global("FrameTick", fn(event) {
         state.elapsed = state.elapsed + event.dt_sec
         if state.elapsed < 0.05 { return }
         state.elapsed = 0.0
-        if state.held {
-            send()
-        } else if state.repeats > 0 && send() {
-            state.repeats = state.repeats - 1
-        }
+        let sent = send()
+        if sent && state.repeats > 0 { state.repeats = state.repeats - 1 }
+        if !state.held && state.repeats == 0 { sync_pump() }
     })
+    state.pump.bypass(true)
     return { root = mount target = target state = state bind_pointer = bind_pointer connect = connect disconnect = disconnect }
 }
