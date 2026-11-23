@@ -16,6 +16,7 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+#[cfg(test)]
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::VulkanoRenderer;
@@ -1024,6 +1025,7 @@ pub struct OpenXRSystem {
     controller_pose_source_last_logged: HashMap<ComponentId, ControllerPoseSource>,
 
     external_frame: Option<super::external_xr_frame::ExternalXrFrame>,
+    eye_view: camera_projection::EyeView,
     xr_input_state: XrInputState,
     xr_gamepad_state: XrGamepadState,
     xr_gamepad_state_last_logged: XrGamepadState,
@@ -1632,6 +1634,7 @@ impl Default for OpenXRSystem {
             controller_pose_source_last_logged: HashMap::new(),
 
             external_frame: None,
+            eye_view: camera_projection::EyeView::default(),
             xr_input_state: XrInputState::default(),
             xr_gamepad_state: XrGamepadState::default(),
             xr_gamepad_state_last_logged: XrGamepadState::default(),
@@ -2070,26 +2073,26 @@ impl OpenXRSystem {
     }
 
     /// Refresh eyes after ancestor/contact changes using this frame's raw eye offsets.
-    pub fn publish_eye_cameras(&self, world: &World, visuals: &mut VisualWorld) -> bool {
-        if let Some(frame) = self.external_frame {
-            let eyes = frame.views.as_ref().and_then(|views| {
-                Self::eye_cameras(world, visuals, Self::derive_head_pose(views)?, views)
-            });
-            if let Some(eyes) = eyes {
-                visuals.set_xr_camera(eyes);
-                return true;
-            }
-            visuals.set_xr_camera(Vec::new());
-            return false;
-        }
-        let Some(sess) = self.state.as_ref().and_then(|state| state.session.as_ref()) else {
-            return false;
+    pub fn publish_eye_cameras(&mut self, world: &World, visuals: &mut VisualWorld) -> bool {
+        let sample = if let Some(frame) = &self.external_frame {
+            frame.views.as_ref().and_then(|views| {
+                Some((Self::derive_head_pose(views)?, views.as_slice()))
+            })
+        } else {
+            let Some(sess) = self.state.as_ref().and_then(|state| state.session.as_ref()) else {
+                self.eye_view = camera_projection::EyeView::default();
+                return false;
+            };
+            sess.prepared_frame.as_ref().and_then(|frame| {
+                Some((sess.head_pose_cache?, frame.views.as_slice()))
+            })
         };
-        let eyes = sess.prepared_frame.as_ref().and_then(|frame| {
-            Self::eye_cameras(world, visuals, sess.head_pose_cache?, &frame.views)
+        let eyes = sample.and_then(|(raw_head, views)| {
+            self.eye_view.cameras(world, visuals, raw_head, views)
         });
         let Some(eyes) = eyes else {
             // Tracking loss or a disabled/removed driver must not publish stale eyes.
+            self.eye_view = camera_projection::EyeView::default();
             visuals.set_xr_camera(Vec::new());
             return false;
         };
@@ -2097,13 +2100,14 @@ impl OpenXRSystem {
         true
     }
 
+    #[cfg(test)]
     fn eye_cameras(
         world: &World,
         visuals: &VisualWorld,
         raw_head: openxr::Posef,
         views: &[openxr::View],
     ) -> Option<Vec<CameraData>> {
-        camera_projection::eye_cameras(world, visuals, raw_head, views)
+        camera_projection::EyeView::default().cameras(world, visuals, raw_head, views)
     }
 
     fn drive_head_pose(

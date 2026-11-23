@@ -90,6 +90,7 @@ export fn make_rooftop_player(options) {
     let voice_level = options["voice_level"]
     let mouth_tuning = options["mouth_tuning"]
     let track_hands = local_player && use_xr
+    let view = { third_person = local_player && options["third_person"] == true }
     let initial_factory = factories[options.avatar]
     // Optional opaque depth bucket for every body this player wears.
     let bucket = options["opaque_bucket"]
@@ -127,6 +128,7 @@ export fn make_rooftop_player(options) {
             crouch_enabled(true)
             // Get low enough and crouching gives way to hands and knees.
             posture("auto")
+            third_person(view.third_person)
             // Torso spheres keep the pitched body colliding on hands and knees.
             collision_detail("detailed")
             if choice == "miku" {
@@ -252,7 +254,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null }
+    let state = { head = head avatar = avatar model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -342,6 +344,7 @@ export fn make_rooftop_player(options) {
             detach_avatar_equipment(state.model)
             state.head.remove_subtree()
             state.head = next_head
+            state.avatar = body
             state.model = spec.model
             state.choice = choice
             state.height = target_meters
@@ -378,6 +381,14 @@ export fn make_rooftop_player(options) {
         return state.model.morph_weight(slot)
     }
     fn head_pose() { return state.head.trs() }
+    fn third_person_enabled() { return view.third_person }
+    fn set_third_person(enabled) {
+        if view.third_person == enabled { return }
+        view.third_person = enabled
+        state.avatar.set_third_person(enabled)
+        emit_data(root, "AvatarCameraViewChanged")
+    }
+    fn toggle_camera_view() { set_third_person(!view.third_person) }
     fn avatar_id() { return state.choice }
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
@@ -385,7 +396,8 @@ export fn make_rooftop_player(options) {
         root = root locomotion = locomotion head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
-        apply_desired_height = apply_desired_height
+        apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
+        camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load
     }
 }

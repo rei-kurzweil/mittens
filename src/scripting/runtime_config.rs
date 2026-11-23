@@ -1271,6 +1271,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "capsule_ready",
                         method(vec![], mms::ValueType::Bool),
                     );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_third_person",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
                     constructor_and_builder(component, "movement_target", any(1));
                     for method in ["arm_ik", "left_two_bone_ik", "right_two_bone_ik"] {
                         constructor_and_builder(component, method, any(1));
@@ -1331,6 +1337,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
                     constructor_and_builder(component, "posture", strings(1));
+                    constructor_and_builder(component, "third_person", booleans(1));
                     constructor_and_builder(component, "collision_detail", strings(1));
                     constructor_and_builder(component, "crouch_enabled", booleans(1));
                     walking_ik_binding::register_legacy(component);

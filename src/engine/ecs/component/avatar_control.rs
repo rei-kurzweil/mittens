@@ -319,6 +319,9 @@ pub struct AvatarControlComponent {
 
     /// Body solver mode policy; see `BodyPosture`.
     pub posture: BodyPosture,
+    /// Publish attached cameras from a view offset from the movement root.
+    pub third_person: bool,
+    pub(crate) camera_follow_root: Option<ComponentId>,
     /// Collision fidelity; see `CollisionDetail`.
     pub collision_detail: CollisionDetail,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
@@ -750,6 +753,8 @@ impl Default for AvatarControlComponent {
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
             posture: BodyPosture::Vertical,
+            third_person: false,
+            camera_follow_root: None,
             collision_detail: CollisionDetail::Simple,
             crouch_enabled: true,
             crouch_sole_offsets: None,
@@ -930,6 +935,9 @@ impl Component for AvatarControlComponent {
         }
         if self.posture != BodyPosture::Vertical {
             c = c.with_call("posture", vec![s(self.posture.as_str())]);
+        }
+        if self.third_person {
+            c = c.with_call("third_person", vec![b(true)]);
         }
         if !self.crouch_enabled {
             c = c.with_call("crouch_enabled", vec![b(false)]);

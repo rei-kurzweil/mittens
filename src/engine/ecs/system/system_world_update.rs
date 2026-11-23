@@ -556,6 +556,7 @@ impl SystemWorld {
         self.light.tick(world, visuals, input, dt_sec);
         self.graphics_settings.publish(visuals);
         // Mount/AVC/ancestor changes above are reflected before mirror captures.
+        self.camera.refresh_window_avatar_view(world, visuals);
         self.xr.publish_eye_cameras(world, visuals);
         self.mirror.tick(world, visuals, input, dt_sec);
         for texture_component in self.mirror.take_pending_texture_registrations() {

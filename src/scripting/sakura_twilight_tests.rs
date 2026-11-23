@@ -1,11 +1,14 @@
 //! The sakura twilight fork of the rooftop example loads without its train.
 use crate::engine::Universe;
 use crate::engine::ecs::component::{
-    Camera3DComponent, CameraXRComponent, DestroyableComponent, MirrorComponent, TextComponent,
-    TransformComponent, VelocityComponent,
+    AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
+    DestroyableComponent, MirrorComponent, TextComponent, ToggleComponent, TransformComponent,
+    VelocityComponent, XrButtonControl,
 };
 use crate::engine::ecs::system::{TransformSystem, grabbable_system::grabbable_owner_for_hit};
-use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, KeyboardEvent, SignalEmitter, World,
+};
 
 fn named(scene: &Universe, label: &str) -> ComponentId {
     scene
@@ -80,7 +83,11 @@ fn sakura_twilight_loads_its_city_without_the_train() {
         assert!(!has_label(&scene, panel), "{panel} opens on demand");
     }
     check_dock(&mut scene);
-    open_dock_items(&mut scene, &["avatar", "graphics", "input", "humanoid", "mirror"]);
+    open_dock_items(
+        &mut scene,
+        &["avatar", "graphics", "input", "humanoid", "mirror"],
+    );
+    check_avatar_camera_setting(&mut scene, false);
     let labels: Vec<&str> = scene
         .world
         .all_components()
@@ -99,6 +106,7 @@ fn sakura_twilight_loads_its_city_without_the_train() {
         "sakura_twilight_road_dashes",
         "sakura_twilight_ground",
         "sakura_twilight_pickup",
+        "sakura_twilight_ground_pickup",
         "sakura_twilight_road_ramp",
         "sakura_twilight_ramp_landing",
         "sakura_twilight_road_turn",
@@ -184,7 +192,17 @@ fn sakura_twilight_loads_its_city_without_the_train() {
             payload: None,
         },
     );
-    let pickup = named(&scene, "pickup_truck");
+    let pickup = scene
+        .world
+        .find_component(named(&scene, "sakura_twilight_pickup"), "#pickup_truck")
+        .unwrap();
+    let ground_pickup = scene
+        .world
+        .find_component(
+            named(&scene, "sakura_twilight_ground_pickup"),
+            "#pickup_truck",
+        )
+        .unwrap();
     let mut position = [0.0; 3];
     for _ in 0..690 {
         scene.update(1.0 / 60.0, &Default::default());
@@ -217,6 +235,8 @@ fn sakura_twilight_loads_its_city_without_the_train() {
             && (position[1] + 0.23).abs() < 0.2,
         "pickup should steer left from the landing onto the main road: {position:?}"
     );
+    let [x, y, z] = TransformSystem::world_position(&scene.world, ground_pickup).unwrap();
+    assert!((x - 5.0).abs() < 0.1 && (y + 0.23).abs() < 0.2 && (z + 6.0).abs() < 0.1);
 
     check_mirror_controls(&mut scene);
     drop(scene);
@@ -230,6 +250,7 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     named(&xr, "sakura_twilight_avatar_settings");
     named(&xr, "avatar_height_slider");
     named(&xr, "xr_floor_correction_slider");
+    check_avatar_camera_setting(&mut xr, true);
     check_input_settings(&mut xr);
     assert!(xr.world.all_components().any(|id| {
         xr.world
@@ -252,6 +273,13 @@ fn check_dock(scene: &mut Universe) {
     );
 
     let dock = named(scene, "sakura_twilight_dock");
+    let truck = named(scene, "sakura_twilight_pickup");
+    let dock_x = TransformSystem::world_position(&scene.world, dock).unwrap()[0];
+    let truck_x = TransformSystem::world_position(&scene.world, truck).unwrap()[0];
+    assert!(
+        truck_x - dock_x > 4.0,
+        "dock should spawn clear of the pickup"
+    );
     let title = scene.world.find_component(dock, "#title_bar").unwrap();
     assert_eq!(grabbable_owner_for_hit(&scene.world, title), Some(dock));
 
@@ -291,6 +319,63 @@ fn check_dock(scene: &mut Universe) {
         ancestor = scene.world.parent_of(ancestor.unwrap());
     }
     assert_eq!(ancestor, Some(player), "the slot rides with the player");
+}
+
+fn check_avatar_camera_setting(scene: &mut Universe, xr: bool) {
+    fn check(scene: &Universe, enabled: bool) {
+        let avatar = scene
+            .world
+            .get_component_by_id_as::<AvatarControlComponent>(named(scene, "local_avatar"))
+            .unwrap();
+        let toggle = scene
+            .world
+            .get_component_by_id_as::<ToggleComponent>(named(scene, "avatar_camera_toggle"))
+            .unwrap();
+        let readout = scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(scene, "avatar_camera_readout"))
+            .unwrap();
+        assert_eq!(avatar.third_person, enabled);
+        assert_eq!(toggle.value(), enabled);
+        assert_eq!(readout.text, if enabled { "On" } else { "Off" });
+    }
+    let shortcut = |scene: &mut Universe| {
+        if xr {
+            let source = named(scene, "local_xr_locomotion");
+            scene.command_queue.push_event(
+                source,
+                EventSignal::XrButtonDown {
+                    source_component: source,
+                    hand: ControllerHand::Left,
+                    control: XrButtonControl::ButtonY,
+                    value: 1.0,
+                },
+            );
+        } else {
+            scene.command_queue.push_event(
+                ComponentId::default(),
+                EventSignal::KeyUp(KeyboardEvent {
+                    code: Some("KeyV".into()),
+                    key: "v".into(),
+                }),
+            );
+        }
+        for _ in 0..4 {
+            scene.update(1.0 / 60.0, &Default::default());
+        }
+    };
+    check(scene, false);
+    click(scene, named(scene, "avatar_camera_control"));
+    check(scene, true);
+    shortcut(scene);
+    check(scene, false);
+    open_dock_items(scene, &["humanoid"]);
+    assert!(!has_label(scene, "avatar_camera_control"));
+    shortcut(scene);
+    open_dock_items(scene, &["humanoid"]);
+    check(scene, true);
+    click(scene, named(scene, "avatar_camera_control"));
+    check(scene, false);
 }
 
 fn check_input_settings(scene: &mut Universe) {

@@ -301,6 +301,7 @@ let dock_items = {
                 show_xr = use_xr
                 calibration_file = xr_calibration_file
                 on_height_recommitted = apply_avatar_height
+                camera_view = local.camera_view
             })
         } }
     graphics = { id = "graphics" label = "Graphics" root_name = "twilight_rooftop_graphics_settings"

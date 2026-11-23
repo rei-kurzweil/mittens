@@ -1,7 +1,7 @@
 # Avatar camera anchoring
 
 Date: 2026-08-06
-Updated: 2026-10-28
+Updated: 2026-11-23
 
 Avatar cameras are attached through the owning GLTF's `HumanoidBoneMapReport`; AVC has no camera
 or head bone-name fields.
@@ -61,3 +61,16 @@ The corrected Sakura desktop scene has CPU-skinned front-face/near-plane checks 
 pitch and combined roll, plus inspected Vulkan captures using its authored C3D matrices. User
 smoke feedback reports improved body visibility. See the
 [reproduction and results](../bugs/sakura-desktop-first-person-neck-bend-regression.md).
+
+## Third-person diagnostics
+
+`AVC.third_person(true)` starts the attached C3D or CXR in third person.
+First person is the default. Call `avatar.set_third_person(bool)` to switch
+at runtime. An explicit `AVC.movement_target(...)` should point to the
+locomotion root at floor level.
+
+The camera uses a three-quarter view aimed at the body. It follows the
+world-space translation of the movement root. CXR centers the view using
+the headset pose when entering the mode, then applies live headset movement
+and stereo offsets. The head and hands continue driving the same avatar
+targets in both modes.

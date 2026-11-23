@@ -4075,6 +4075,7 @@ fn apply_call(
                         })?,
                 )
             }
+            "third_person" => avc.third_person = arg_bool(args, 0)?,
             "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
             "crouch_sole_offsets" => {
                 *avc = avc

@@ -1,5 +1,6 @@
 mod arm_ik;
 mod body_operator;
+pub(super) mod camera_view;
 mod capsule;
 mod detail_collision;
 mod eye_blink;

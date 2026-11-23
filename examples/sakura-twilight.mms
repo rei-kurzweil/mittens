@@ -2,6 +2,7 @@
 // for a desktop window. Network role is separate (commands below).
 let use_xr = true
 let use_desktop = false
+let start_in_third_person = false
 // Starting avatars also serve as the peer's fallback if an optional model is unavailable.
 // Supported: "mitten", "lumae".
 let host_avatar = "mitten"
@@ -49,6 +50,7 @@ import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twi
 // MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
 // Desktop: WASD + right-drag to move/look. XR: sticks move, B jumps,
 // double-tap B to toggle flight, and hold B/A to rise/descend in flight.
+// Use Third person camera in Humanoid, V on desktop, or Y on the left XR controller.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
 // left stick between strafing and turning. Collapse it from its title bar,
@@ -199,11 +201,22 @@ if net.is_host() { grab_rank = 1 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
-let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
-    socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 acceleration_drive = true })
+fn arena_pickup(color, id) {
+    return pickup_truck(color, null, true, {
+        socket = socket vehicle_id = "arena.pickup." + id rank = grab_rank mounts = mounts bed_mount = id acceleration_drive = true
+    })
+}
+let pickup = arena_pickup([1.0, 0.606, 0.047], 1)
+let ground_pickup = arena_pickup([0.38, 0.61, 0.87], 2)
+let pickups = [pickup, ground_pickup]
 T.position(roof_x + 3.0, roof_height, ramp_entry_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
     name = "sakura_twilight_pickup"
     pickup
+}
+// Park on the grass shoulder between the road and the ramp.
+T.position(5.0, -0.23, -6.0).rotation(0.0, -Math.pi / 2.0, 0.0) {
+    name = "sakura_twilight_ground_pickup"
+    ground_pickup
 }
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
@@ -255,8 +268,14 @@ ship_input_controller(false, [launcher.grip, street_launcher.grip], pistols)
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
 if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
-let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop camera_far = 250.0 voice_level = voice_level mouth_tuning = mouth_tuning opaque_bucket = "near" })
+let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning opaque_bucket = "near" })
 let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop opaque_bucket = "near" })
+if use_desktop {
+    on_global("KeyUp", fn(event) { if event.code == "KeyV" { local.toggle_camera_view() } })
+}
+if use_xr {
+    on_global("XrButtonDown", fn(event) { if event.control == "ButtonY" { local.toggle_camera_view() } })
+}
 // The picker opens from the dock; its status line outlives each opening.
 let picker_status = { text = local_avatar + " is active" }
 fn report_avatar_status(message) {
@@ -327,13 +346,14 @@ let dock_items = {
                 show_xr = use_xr
                 calibration_file = xr_calibration_file
                 on_height_recommitted = apply_avatar_height
+                camera_view = local.camera_view
             })
         } }
     graphics = { id = "graphics" label = "Graphics" root_name = "sakura_twilight_graphics_settings"
         position = [roof_x - 4.6, roof_height + 2.3, -4.8]
         build = fn() { return graphics_settings_panel({ root_name = "sakura_twilight_graphics_settings" }) } }
 }
-T.position(roof_x + spawn_x + 1.0, roof_height + 1.6, -1.6) {
+T.position(roof_x - 2.3, roof_height + 1.6, -1.65) {
     dock({
         root_name = "sakura_twilight_dock"
         mount = dock_panels
@@ -450,7 +470,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
     pistol_impacts.connect(group, address)
-    pickup.connect(group, address)
+    for vehicle in pickups { vehicle.connect(group, address) }
     hand_curls.connect(group, address)
     links.root = publish("root", address, pose_type)
     links.head = publish("head", address, pose_type)
@@ -488,7 +508,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
     for item in pistols { item.disconnect() }
     pistol_impacts.disconnect()
-    pickup.disconnect()
+    for vehicle in pickups { vehicle.disconnect() }
     hand_curls.disconnect()
     remote.cancel_avatar_load()
     connection.avatar_retry = null

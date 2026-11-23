@@ -10,6 +10,7 @@ pub struct CameraXRComponent {
 
     // Cached ECS id (runtime-only). Filled in during init.
     pub component_id: Option<ComponentId>,
+    pub(crate) avatar_view_owner: Option<ComponentId>,
 
     /// Which output this camera targets for activation.
     ///
@@ -28,6 +29,7 @@ impl CameraXRComponent {
             z_near: Self::DEFAULT_Z_NEAR,
             z_far: Self::DEFAULT_Z_FAR,
             component_id: None,
+            avatar_view_owner: None,
             target: CameraTarget::Xr,
         }
     }

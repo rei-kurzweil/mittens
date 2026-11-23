@@ -14,6 +14,48 @@ fn height_text(meters) {
     return whole + "." + digits + " m"
 }
 
+fn camera_view_text(enabled) {
+    if enabled { return "On" }
+    return "Off"
+}
+
+fn camera_view_row(camera_view) {
+    let enabled = camera_view.enabled()
+    let toggle = null
+    if enabled { toggle = Toggle.on() { name = "avatar_camera_toggle" } }
+    else { toggle = Toggle.off() { name = "avatar_camera_toggle" } }
+    on(toggle, "ToggleChanged", fn(event) { camera_view.set(event.value) })
+    return T {
+        Style {
+            display("flex") flex_direction("row") width(100%) height(3.2)
+            align_items("center") gap(0.35)
+            background_color([0.95, 0.91, 0.79, 1.0]) background_z(-0.02)
+        }
+        T {
+            Style {
+                display("flex") width(12.0) height(3.2)
+                align_items("center") padding_xy(0.35, 0.0) font_size(0.62)
+            }
+            Text { "Third person camera" }
+        }
+        T {
+            name = "avatar_camera_control"
+            Grabbable.off()
+            Raycastable.click_only() { interaction_priority(120.0) }
+            toggle
+            Style {
+                display("flex") width(9.0) height(2.1)
+                align_items("center") justify_content("center") font_size(0.65)
+                background_color([0.88, 0.81, 0.66, 1.0]) background_z(0.01)
+            }
+            T.position(0.0, 0.0, 0.03) {
+                Raycastable.disabled()
+                Text { name = "avatar_camera_readout" camera_view_text(enabled) }
+            }
+        }
+    }
+}
+
 fn avatar_settings_content(options) {
     let desired_meters = AvatarSettings.height.meters()
     let slider_start = desired_meters
@@ -31,6 +73,7 @@ fn avatar_settings_content(options) {
     return T {
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) }
         settings_slider_row("Desired height", slider, readout, TRACK_WIDTH_GU)
+        if options["camera_view"] { camera_view_row(options.camera_view) }
         if options["show_xr"] != false {
             T {
                 Style { display("block") width(100%) font_size(0.70) }
@@ -54,9 +97,16 @@ export fn avatar_settings_panel(options) {
     let selection_guard = Selectable.off()
     root.attach(selection_guard)
     on_global("DataEvent", fn(event) {
-        if event != "XrSettingsChanged" && event != "AvatarSettingsChanged" { return }
+        if event != "XrSettingsChanged" && event != "AvatarSettingsChanged" && event != "AvatarCameraViewChanged" { return }
         let current_panel = query("#" + options.root_name)
         if !current_panel { return }
+        if event == "AvatarCameraViewChanged" && options["camera_view"] {
+            let toggle = current_panel.query("#avatar_camera_toggle")
+            let readout = current_panel.query("#avatar_camera_readout")
+            let enabled = options.camera_view.enabled()
+            if toggle { toggle.sync_value(enabled) }
+            if readout { readout.set_text(camera_view_text(enabled)) }
+        }
         if event == "XrSettingsChanged" { sync_xr_floor_settings(current_panel) }
         if event == "AvatarSettingsChanged" {
             let value = AvatarSettings.height.meters()

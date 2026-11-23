@@ -60,3 +60,9 @@ future scene split can group the rooftop furnishings and their placement while
 leaving player and network wiring in the entry point. Keep both mirror
 controls event-driven and verify their capture states independently in the
 scene without adding UI or sensor polling.
+
+The Panels dock has a fixed roof spawn clear of the truck and its approach to
+the ramp. A second pickup is parked on the grass shoulder by the main road.
+Keep both vehicles on the shared prefab with separate network and cargo-bed
+IDs. Check the dock clearance, initial parking position and full roof-to-road
+drive in the scene fixture.

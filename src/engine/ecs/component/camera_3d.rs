@@ -17,6 +17,7 @@ pub struct Camera3DComponent {
 
     // Cached ECS id (runtime-only). Filled in during init.
     pub component_id: Option<ComponentId>,
+    pub(crate) avatar_view_owner: Option<ComponentId>,
 
     /// Which output this camera targets for activation.
     ///
@@ -41,6 +42,7 @@ impl Camera3DComponent {
             enabled: true,
             handle: None,
             component_id: None,
+            avatar_view_owner: None,
             target: CameraTarget::Window,
             fov_y_degrees: Self::DEFAULT_FOV_Y_DEGREES,
             z_near: Self::DEFAULT_Z_NEAR,

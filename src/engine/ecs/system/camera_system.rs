@@ -4,8 +4,10 @@ use crate::engine::ecs::component::Camera3DComponent;
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::avatar_control_system::camera_view::third_person_model;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::Transform;
+use crate::engine::transform::TransformMatrix;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CameraHandle(pub u32);
@@ -15,6 +17,7 @@ pub struct Camera3D {
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
     pub transform: Transform,
+    avatar_view: Option<TransformMatrix>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +49,23 @@ impl Camera3D {
                 [0.0, 0.0, 0.0, 1.0],
             ],
             transform: Transform::default(),
+            avatar_view: None,
         }
+    }
+
+    fn set_pose(&mut self, model: TransformMatrix, avatar_view: Option<TransformMatrix>) {
+        self.view = invert_affine_transform(&model);
+        self.transform = transform_from_matrix_world(model);
+        self.avatar_view = avatar_view;
+    }
+
+    fn publish(&self, visuals: &mut VisualWorld) {
+        visuals.set_camera_mono_for_target_with_transform(
+            crate::engine::graphics::CameraTarget::Window,
+            self.view,
+            self.proj,
+            self.transform,
+        );
     }
 
     /// Right-handed perspective projection matrix.
@@ -160,6 +179,7 @@ impl CameraSystem {
             view,
             proj,
             transform,
+            avatar_view: None,
         };
 
         let h = CameraHandle(self.next_handle);
@@ -405,49 +425,71 @@ impl CameraSystem {
             return;
         };
 
-        if let Some(handle) = camera3d_comp.handle {
-            if self.active_window_camera == Some(handle) {
-                // Maintain the old call sites' contract: ensure the provided parent really is a Transform.
-                if world
-                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
-                        transform_component_id,
-                    )
-                    .is_none()
-                {
-                    return;
-                }
-
-                // Use the full accumulated world model for the camera component so nested transforms work.
-                let model = TransformSystem::world_model(world, camera3d_component_id)
-                    .unwrap_or_else(|| Camera3D::identity().view);
-                let view = invert_affine_transform(&model);
-
-                let vp = visuals.viewport();
-                let aspect = if vp[1] > 0.0 { vp[0] / vp[1] } else { 1.0 };
-                let proj = Camera3D::perspective_rh_zo(
-                    camera3d_comp.fov_y_degrees.to_radians(),
-                    aspect,
-                    camera3d_comp.z_near,
-                    camera3d_comp.z_far,
-                );
-
-                // Persist into the camera registry so switching cameras updates visuals immediately.
-                if let Some((_, AnyCamera::Camera3D(cam3d))) =
-                    self.cameras.iter_mut().find(|(ch, _)| *ch == handle)
-                {
-                    cam3d.view = view;
-                    cam3d.proj = proj;
-                    cam3d.transform = transform_from_matrix_world(model);
-                }
-
-                visuals.set_camera_mono_for_target_with_transform(
-                    crate::engine::graphics::CameraTarget::Window,
-                    view,
-                    proj,
-                    transform_from_matrix_world(model),
-                );
-            }
+        let Some(handle) = camera3d_comp
+            .handle
+            .filter(|&handle| self.active_window_camera == Some(handle))
+        else {
+            return;
+        };
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                transform_component_id,
+            )
+            .is_none()
+        {
+            return;
         }
+        let Some((_, AnyCamera::Camera3D(cam))) =
+            self.cameras.iter_mut().find(|(ch, _)| *ch == handle)
+        else {
+            return;
+        };
+        let vp = visuals.viewport();
+        let aspect = if vp[1] > 0.0 { vp[0] / vp[1] } else { 1.0 };
+        let proj = Camera3D::perspective_rh_zo(
+            camera3d_comp.fov_y_degrees.to_radians(),
+            aspect,
+            camera3d_comp.z_near,
+            camera3d_comp.z_far,
+        );
+        let avatar_view = third_person_model(world, camera3d_comp.avatar_view_owner);
+        if avatar_view.is_some() && cam.avatar_view == avatar_view && cam.proj == proj {
+            return;
+        }
+        let model = avatar_view
+            .or_else(|| TransformSystem::world_model(world, camera3d_component_id))
+            .unwrap_or_else(|| Camera3D::identity().view);
+        cam.set_pose(model, avatar_view);
+        cam.proj = proj;
+        cam.publish(visuals);
+    }
+
+    /// A different movement root or a mode toggle can move the view without a
+    /// transform event on the camera's head anchor.
+    pub(super) fn refresh_window_avatar_view(&mut self, world: &World, visuals: &mut VisualWorld) {
+        let Some(handle) = self.active_window_camera else {
+            return;
+        };
+        let Some(&id) = self.camera3d_components.get(&handle) else {
+            return;
+        };
+        let owner = world
+            .get_component_by_id_as::<Camera3DComponent>(id)
+            .and_then(|camera| camera.avatar_view_owner);
+        let avatar_view = third_person_model(world, owner);
+        let Some((_, AnyCamera::Camera3D(cam))) =
+            self.cameras.iter_mut().find(|(ch, _)| *ch == handle)
+        else {
+            return;
+        };
+        if cam.avatar_view == avatar_view {
+            return;
+        }
+        let model = avatar_view
+            .or_else(|| TransformSystem::world_model(world, id))
+            .unwrap_or_else(|| Camera3D::identity().view);
+        cam.set_pose(model, avatar_view);
+        cam.publish(visuals);
     }
 
     fn update_active_xr_camera(&mut self, world: &World, visuals: &mut VisualWorld) {
@@ -543,6 +585,7 @@ impl System for CameraSystem {
         _dt_sec: f32,
     ) {
         self.update_active_window_camera(world, visuals);
+        self.refresh_window_avatar_view(world, visuals);
         // Maintain which XR rig is active so the OpenXR system can apply the correct world transform.
         self.update_active_xr_camera(world, visuals);
 

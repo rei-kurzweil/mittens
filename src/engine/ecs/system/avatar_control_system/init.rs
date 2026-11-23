@@ -138,6 +138,7 @@ pub(super) fn try_init_pose_drivers(
     // model_root xz compensation below needs the offset, and the eye_offset
     // also feeds the head IK target_position_offset (used much later).
     let camera_children = discover_camera_children(world, id);
+    camera_view::bind_camera_views(world, id, &camera_children);
     let eye_offset_head_local = eye_offset_head_local(
         world,
         id,

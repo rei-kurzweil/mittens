@@ -114,6 +114,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "set_mouth_open_rms_center_range"
                     | "set_mouth_open_amount"
                     | "capsule_ready"
+                    | "set_third_person"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -167,6 +168,16 @@ pub(crate) fn invoke_component_method(
             Ok(Value::Bool(
                 avatar.collision_enabled && avatar.capsule_ready,
             ))
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_third_person") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err("set_third_person(): expected a boolean".into());
+            };
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_third_person(): expected an AvatarControl component")?;
+            avatar.third_person = *enabled;
+            Ok(Value::Null)
         }
         ("Mirror" | "mirror", "set_enabled") => super::mirror_binding::set_enabled(world,id,args,emit_intent),
         ("Gravity" | "gravity", "set_enabled" | "on" | "off" | "auto") =>
