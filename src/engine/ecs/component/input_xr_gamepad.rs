@@ -76,6 +76,7 @@ pub struct InputXRGamepadComponent {
     pub turn_speed: f32,
     /// Opt-in B double-tap flight. Runtime flight state is never serialized.
     pub enable_flying: bool,
+    pub(crate) flight_permission: Option<bool>,
     pub(crate) flying: bool,
     pub deadzone: f32,
     pub component_id: Option<ComponentId>,
@@ -93,6 +94,7 @@ impl InputXRGamepadComponent {
             stick_mode: XrStickMode::Strafe,
             turn_speed: DEFAULT_TURN_SPEED,
             enable_flying: false,
+            flight_permission: None,
             flying: false,
             deadzone: 0.2,
             component_id: None,
@@ -122,6 +124,14 @@ impl InputXRGamepadComponent {
     pub fn enable_flying(mut self, enable: bool) -> Self {
         self.enable_flying = enable;
         self
+    }
+
+    pub fn flight_enabled(&self) -> bool {
+        self.flight_permission.unwrap_or(self.enable_flying)
+    }
+
+    pub(crate) fn is_flying(&self) -> bool {
+        self.enabled && self.locomotion && self.flight_enabled() && self.flying
     }
 
     pub fn speed(mut self, speed: f32) -> Self {

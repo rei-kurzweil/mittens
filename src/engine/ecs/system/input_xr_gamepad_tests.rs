@@ -1,5 +1,5 @@
 use super::*;
-use crate::engine::ecs::component::{GravityComponent, VelocityComponent};
+use crate::engine::ecs::component::{GravityComponent, GravityMode, VelocityComponent};
 use crate::engine::ecs::system::{
     CameraSystem, LightSystem, TransformOperatorSystem, VelocitySystem,
 };
@@ -116,6 +116,42 @@ fn flight_double_tap_is_opt_in_edge_triggered_and_has_a_strict_window() {
     f.tick(0.4, false);
     f.double_tap();
     assert!(!f.flying(), "another double tap restores walking/gravity");
+}
+
+#[test]
+fn runtime_flight_permission_preserves_jump_and_requires_fresh_taps() {
+    let mut f = Fixture::new(true);
+    f.world
+        .get_component_by_id_as_mut::<VelocityComponent>(f.velocity)
+        .unwrap()
+        .grounded = true;
+    f.system.set_flight_enabled(&mut f.world, f.input, false);
+    f.tick(0.01, true);
+    assert_eq!(
+        f.world
+            .get_component_by_id_as::<VelocityComponent>(f.velocity)
+            .unwrap()
+            .linear_local_mps[1],
+        4.5
+    );
+    f.system.set_flight_enabled(&mut f.world, f.input, true);
+    f.tick(0.01, true);
+    f.tick(0.05, false);
+    f.tick(0.05, true);
+    assert!(!f.flying(), "the held press before unlock does not count");
+    f.tick(0.05, false);
+    f.tick(0.05, true);
+    assert!(f.flying());
+    f.system.set_flight_enabled(&mut f.world, f.input, false);
+    assert!(!f.flying());
+    let gravity = VelocitySystem::gravity_provider(&f.world, f.velocity).unwrap();
+    assert_ne!(
+        f.world
+            .get_component_by_id_as::<GravityComponent>(gravity)
+            .unwrap()
+            .mode(),
+        GravityMode::Off
+    );
 }
 #[test]
 fn flight_moves_at_double_speed_can_rise_descend_and_suspends_gravity() {

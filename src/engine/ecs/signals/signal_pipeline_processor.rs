@@ -138,6 +138,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterInputXr { component_id }
             | IntentValue::RegisterControllerXr { component_id }
             | IntentValue::RegisterInputXrGamepad { component_id }
+            | IntentValue::SetXrFlightEnabled { component_id, .. }
             | IntentValue::RemoveInputXr { component_id }
             | IntentValue::RemoveControllerXr { component_id }
             | IntentValue::RemoveInputXrGamepad { component_id }
@@ -298,6 +299,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterInputXr { component_id }
             | IntentValue::RegisterControllerXr { component_id }
             | IntentValue::RegisterInputXrGamepad { component_id }
+            | IntentValue::SetXrFlightEnabled { component_id, .. }
             | IntentValue::RemoveInputXr { component_id }
             | IntentValue::RemoveControllerXr { component_id }
             | IntentValue::RemoveInputXrGamepad { component_id }

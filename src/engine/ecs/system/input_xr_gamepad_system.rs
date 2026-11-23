@@ -44,6 +44,10 @@ impl InputXRGamepadSystem {
         self.components.insert(component);
     }
 
+    pub(crate) fn set_flight_enabled(&mut self, world: &mut World, id: ComponentId, enabled: bool) {
+        self.flying.set_flight_enabled(world, id, enabled);
+    }
+
     pub fn remove_input_xr_gamepad(&mut self, world: &mut World, component: ComponentId) {
         self.flying.stop(world, component);
         self.components.remove(&component);

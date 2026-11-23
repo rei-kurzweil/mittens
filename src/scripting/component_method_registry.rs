@@ -111,7 +111,10 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "InputVRGamepad"
                 | "InputVrGamepad"
                 | "input_vr_gamepad"
-        ) && matches!(method, "enable" | "disable" | "set_stick_mode" | "flying"))
+        ) && matches!(
+            method,
+            "enable" | "disable" | "set_stick_mode" | "set_flight_enabled" | "flight_enabled" | "flying"
+        ))
         || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
@@ -575,15 +578,36 @@ pub(crate) fn invoke_component_method(
         (
             "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad"
             | "input_vr_gamepad",
-            "flying",
+            "set_flight_enabled",
+        ) => {
+            let [Value::Bool(enabled)] = args else {
+                return Err(format!("{method}(): expected one bool, got {args:?}"));
+            };
+            world
+                .get_component_by_id_as::<InputXRGamepadComponent>(id)
+                .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?;
+            emit_intent(IntentValue::SetXrFlightEnabled {
+                component_id: id,
+                enabled: *enabled,
+            });
+            Ok(Value::Null)
+        }
+        (
+            "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad"
+            | "input_vr_gamepad",
+            "flight_enabled" | "flying",
         ) => {
             if !args.is_empty() {
-                return Err(format!("flying(): expected no arguments, got {args:?}"));
+                return Err(format!("{method}(): expected no arguments, got {args:?}"));
             }
             let input = world
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
-                .ok_or_else(|| "flying(): not an InputXRGamepadComponent".to_string())?;
-            Ok(Value::Bool(input.enabled && input.enable_flying && input.flying))
+                .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?;
+            Ok(Value::Bool(if method == "flight_enabled" {
+                input.flight_enabled()
+            } else {
+                input.is_flying()
+            }))
         }
         ("PoseInput" | "pose_input", "set_flying") => {
             let [Value::Bool(flying)] = args else {

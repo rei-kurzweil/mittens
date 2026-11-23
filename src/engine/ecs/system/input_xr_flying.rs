@@ -33,11 +33,31 @@ impl XrFlying {
             input.flying = false;
         }
     }
+    pub fn set_flight_enabled(&mut self, world: &mut World, id: ComponentId, enabled: bool) {
+        let Some(input) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) else {
+            return;
+        };
+        let changed = input.flight_enabled() != enabled;
+        input.flight_permission = Some(enabled);
+        if changed {
+            input.flying = false;
+            if let Some(state) = self.states.get_mut(&id) {
+                release_override(world, state);
+                state.gravity = None;
+                state.last_tap = None;
+            }
+        }
+    }
     pub fn suspend(&mut self, world: &mut World) {
         self.states.retain(|&id, state| {
             let (valid, flying) = world
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
-                .map(|c| (c.enabled && c.locomotion && c.enable_flying, c.flying))
+                .map(|c| {
+                    (
+                        c.enabled && c.locomotion && (c.enable_flying || c.flight_enabled()),
+                        c.is_flying(),
+                    )
+                })
                 .unwrap_or((false, false));
             state.down = false;
             state.last_tap = None;
@@ -72,11 +92,12 @@ impl XrFlying {
             self.stop(world, id);
             return false;
         };
-        if !config.enabled || !config.locomotion || !config.enable_flying {
+        let flight_enabled = config.flight_enabled();
+        if !config.enabled || !config.locomotion || !(config.enable_flying || flight_enabled) {
             self.stop(world, id);
             return false;
         }
-        let mut flying = config.flying;
+        let mut flying = config.is_flying();
         let mut ancestor = world.parent_of(target);
         let mut velocity = None;
         while let Some(node) = ancestor {
@@ -101,10 +122,11 @@ impl XrFlying {
         }
         let down = xr.hands[1].button_b.is_some_and(|b| b.0);
         if down && !state.down {
-            if state
-                .last_tap
-                .take()
-                .is_some_and(|t| self.clock - t < 0.250)
+            if flight_enabled
+                && state
+                    .last_tap
+                    .take()
+                    .is_some_and(|t| self.clock - t < 0.250)
             {
                 flying = !flying;
                 if let Some(v) =
@@ -114,7 +136,7 @@ impl XrFlying {
                     v.grounded = false;
                 }
             } else {
-                state.last_tap = Some(self.clock);
+                state.last_tap = flight_enabled.then_some(self.clock);
                 if !flying {
                     if let Some(velocity_id) = velocity {
                         if world
@@ -210,7 +232,7 @@ pub(crate) fn is_flying(world: &World, start: ComponentId) -> bool {
         if world.children_of(id).iter().any(|&child| {
             world
                 .get_component_by_id_as::<InputXRGamepadComponent>(child)
-                .is_some_and(|c| c.enabled && c.enable_flying && c.flying)
+                .is_some_and(InputXRGamepadComponent::is_flying)
         }) {
             return true;
         }

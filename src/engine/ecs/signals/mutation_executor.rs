@@ -727,6 +727,11 @@ impl RxMutationExecutor {
                 let component = *component_id;
                 systems.register_input_xr_gamepad(world, visuals, component);
             }
+            IntentValue::SetXrFlightEnabled { component_id, enabled } => {
+                systems
+                    .input_xr_gamepad
+                    .set_flight_enabled(world, *component_id, *enabled);
+            }
             IntentValue::RemoveInputXr { component_id } => {
                 let component = *component_id;
                 systems.remove_input_xr(world, visuals, component);

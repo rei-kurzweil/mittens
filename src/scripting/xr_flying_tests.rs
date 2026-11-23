@@ -22,9 +22,11 @@ fn xr_flying_builder_is_optional_typed_and_roundtrips_without_runtime_state() {
     assert!(inputs.iter().all(|c| !c.flying));
     let mut component = InputXRGamepadComponent::new().enable_flying(true);
     component.flying = true;
+    component.flight_permission = Some(false);
     let text = super::unparser::unparse_component(&component.to_mms_ast(&world));
     assert!(text.contains("enable_flying(true)"));
     assert!(!text.contains(".flying("));
+    assert!(!text.contains("set_flight_enabled"));
     let (mut world, mut rx, mut queue) =
         (World::default(), RxWorld::default(), CommandQueue::new());
     assert!(

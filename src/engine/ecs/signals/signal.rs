@@ -1009,6 +1009,10 @@ pub enum IntentValue {
     RegisterInputXrGamepad {
         component_id: ComponentId,
     },
+    SetXrFlightEnabled {
+        component_id: ComponentId,
+        enabled: bool,
+    },
     RemoveInputXr {
         component_id: ComponentId,
     },
@@ -1285,6 +1289,7 @@ impl IntentValue {
             IntentValue::RegisterInputXr { .. } => "register_input_xr",
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
             IntentValue::RegisterInputXrGamepad { .. } => "register_input_xr_gamepad",
+            IntentValue::SetXrFlightEnabled { .. } => "set_xr_flight_enabled",
             IntentValue::RemoveInputXr { .. } => "remove_input_xr",
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
             IntentValue::RemoveInputXrGamepad { .. } => "remove_input_xr_gamepad",

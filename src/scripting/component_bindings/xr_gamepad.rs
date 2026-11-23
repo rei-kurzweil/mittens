@@ -3,6 +3,7 @@ pub(super) fn register(
     component: &mut mms::ComponentBuilder<'_, MittensBinding>,
     canonical: &'static str,
 ) {
+    component.alias("input_vr_gamepad");
     component.constructor("new", component_signature([]));
     for name in ["enabled", "enable_flying"] {
         constructor_and_builder(component, name, component_signature([mms::ValueType::Bool]));
@@ -35,7 +36,15 @@ pub(super) fn register(
     host_method(
         component,
         canonical,
-        "flying",
-        mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+        "set_flight_enabled",
+        mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
     );
+    for name in ["flight_enabled", "flying"] {
+        host_method(
+            component,
+            canonical,
+            name,
+            mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+        );
+    }
 }

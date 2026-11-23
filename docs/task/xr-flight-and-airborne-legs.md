@@ -99,3 +99,25 @@ methods into the input binding family and separate player construction from
 avatar switching. Preserve direct host dispatch and keep the solver's
 per-avatar path allocation-free. Exercise MMS method dispatch and the replay
 before and after either move.
+
+## Flight permission from MMS
+
+Use `gamepad.set_flight_enabled(bool)` on the local `InputXRGamepad`.
+Permission enables the existing double tap. Revoking it clears flight and
+restores the controller's gravity immediately. Authored jump behavior and
+normal stick input continue while permission is withheld. The override
+belongs to the live controller and is omitted from saved configuration.
+`flight_enabled()` reads the permission and `flying()` reads active
+flight. Peers still receive active flight through the existing channel.
+
+Sakura Twilight Simpler grants permission when one loose STA rocket is
+attached to each thigh slot. React to equipment topology changes, keeping
+ordinary gamepad and IK paths free of per-frame equipment searches. Test
+firmly attached rockets, a same-side or held rocket, takeoff and gravity
+restoration after removing a rocket.
+
+When separating the larger ECS intent and MMS dispatch files, move XR input
+intents and host methods together beside the XR gamepad bindings. Preserve
+direct dispatch for unrelated intents and verify both script and native
+flight lifecycle tests. Keep scene-authored equipment policy separate from
+shared avatar construction.

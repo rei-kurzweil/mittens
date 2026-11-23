@@ -16,6 +16,7 @@ import { shared_impact } from "../assets/components/network/shared_impact.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
@@ -48,7 +49,8 @@ import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/comp
 // Across machines: the host binds 0.0.0.0:7010 by default; the client sets
 // MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
 // Desktop: WASD + right-drag to move/look. XR: sticks move, B jumps,
-// double-tap B to toggle flight, and hold B/A to rise/descend in flight.
+// Equip one STA rocket on each thigh to unlock flight. Double-tap B to
+// toggle it, then hold B/A to rise/descend. Removing either rocket ends flight.
 // Use Third person camera in Humanoid, V on desktop, or Y on the left XR controller.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
@@ -377,8 +379,10 @@ let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_r
     sent_flight = null flight_repeats = 0 flight_elapsed = 0.0 }
 let connection = { root = null avatar_group = null address = null peer_avatar = null
     avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
+let xr_gamepad = query("#local_xr_locomotion")
+if xr_gamepad { require_leg_rockets_for_flight(local.root, xr_gamepad) }
 let hand_curls = controller_hand_curls({
-    socket = socket xr = use_xr input = query("#local_xr_locomotion")
+    socket = socket xr = use_xr input = xr_gamepad
     left_driver = local.left_driver right_driver = local.right_driver
 })
 let channel_groups = T { name = "channel_groups" }

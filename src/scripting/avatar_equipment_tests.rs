@@ -151,6 +151,88 @@ fn equipped_sta_round_hangs_in_its_slot_and_cannot_push_a_body() {
 }
 
 #[test]
+fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
+    use crate::engine::ecs::component::{GravityComponent, GravityMode, InputXRGamepadComponent};
+    use crate::engine::ecs::system::{VelocitySystem, external_xr_frame::ExternalXrFrame};
+    let mut scene = scene(
+        r#"
+        import { mitten_model } from "../assets/components/characters/mitten.mms"
+        import { sta_rocket_ammo } from "../assets/components/projectiles/sta_rocket_ammo.mms"
+        import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
+        let rig = mitten_model("mitten", {})
+        let gamepad = InputXRGamepad.enable_flying(true) { name = "test_gamepad" }
+        let avatar = T { rig.model InputXR.on() { gamepad } }
+        Gravity.enabled(true) {
+            name = "authored_gravity"
+            Velocity { name = "test_velocity" avatar }
+        }
+        T { name = "hand" Pointer { name = "test_pointer" } }
+        T.position(2, 0, 0) { sta_rocket_ammo("first_round") sta_rocket_ammo("second_round") }
+        require_leg_rockets_for_flight(avatar, gamepad)
+        "#,
+    );
+    let left = named(&scene, "equipment_left_thigh");
+    let right = named(&scene, "equipment_right_thigh");
+    let first = named(&scene, "first_round");
+    let second = named(&scene, "second_round");
+    let gamepad = named(&scene, "test_gamepad");
+    let velocity = named(&scene, "test_velocity");
+    let authored_gravity = named(&scene, "authored_gravity");
+    let flight = |scene: &Universe| {
+        let gamepad = scene
+            .world
+            .get_component_by_id_as::<InputXRGamepadComponent>(gamepad)
+            .unwrap();
+        (gamepad.flight_enabled(), gamepad.is_flying())
+    };
+    assert_eq!(flight(&scene), (false, false));
+    drop_round_into(&mut scene, first, left);
+    assert_eq!(flight(&scene), (false, false));
+    drop_round_into(&mut scene, second, left);
+    assert_eq!(flight(&scene), (false, false));
+    drop_round_into(&mut scene, second, right);
+    assert_eq!(flight(&scene), (true, false));
+
+    let mut frame = ExternalXrFrame::default();
+    frame.gamepad.active = true;
+    for down in [true, false, true, false] {
+        frame.gamepad.hands[1].button_b = Some((down, if down { 1.0 } else { 0.0 }));
+        scene.systems.xr.set_external_frame(Some(frame));
+        scene.update(0.04, &Default::default());
+    }
+    assert_eq!(flight(&scene), (true, true));
+    let override_id = VelocitySystem::gravity_provider(&scene.world, velocity).unwrap();
+    assert_eq!(
+        scene
+            .world
+            .get_component_by_id_as::<GravityComponent>(override_id)
+            .unwrap()
+            .mode(),
+        GravityMode::Off
+    );
+
+    grab(&mut scene, second);
+    assert_eq!(flight(&scene), (false, false));
+    assert_eq!(
+        VelocitySystem::gravity_provider(&scene.world, velocity),
+        Some(authored_gravity)
+    );
+    move_to(&mut scene, second, [3.0, 0.0, 0.0]);
+    release(&mut scene, second);
+    drop_round_into(&mut scene, second, right);
+    assert_eq!(flight(&scene), (true, false));
+
+    scene.command_queue.push_intent_now(
+        first,
+        IntentValue::RemoveSubtree {
+            component_id: first,
+        },
+    );
+    step(&mut scene);
+    assert_eq!(flight(&scene), (false, false));
+}
+
+#[test]
 fn mitten_equipment_attaches_on_release_and_stays_grabbable() {
     let mut scene = scene(
         r#"

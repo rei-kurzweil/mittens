@@ -51,10 +51,9 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
     let load = |path: &str| {
         let source = std::fs::read_to_string(path)
             .unwrap()
-            .replace("let use_xr = true", "let use_xr = false")
-            .replace("let use_desktop = false", "let use_desktop = true")
             .replace("AudioInput {}", "AudioInput { enabled(false) }");
         let mut scene = Universe::new(World::default());
+        scene.systems.xr.set_external_frame(Some(Default::default()));
         scene.load_mms_source_at_path(&source, path).unwrap();
         for _ in 0..3 {
             scene.update(1.0 / 60.0, &Default::default());
@@ -74,6 +73,14 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
     let full_layout = layout(&load("examples/sakura-twilight.mms"));
     let scene = load("examples/sakura-twilight-simpler.mms");
     assert_eq!(layout(&scene), full_layout);
+    let gamepad = named(&scene, "local_xr_locomotion");
+    assert!(
+        !scene
+            .world
+            .get_component_by_id_as::<InputXRGamepadComponent>(gamepad)
+            .unwrap()
+            .flight_enabled()
+    );
     let labels: Vec<_> = scene
         .world
         .all_components()
