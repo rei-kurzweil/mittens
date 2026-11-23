@@ -10,6 +10,7 @@ pub(crate) struct MittensHost<'a, 'bindings> {
         Option<&'a mut crate::engine::ecs::system::GraphicsSettingsSystem>,
     pub(super) xr_settings: Option<&'a mut crate::engine::ecs::system::XrSettingsSystem>,
     pub(super) avatar_settings: Option<&'a mut crate::engine::ecs::system::AvatarSettingsSystem>,
+    pub(super) input_settings: Option<&'a mut crate::engine::ecs::system::InputSettingsSystem>,
     pub(super) benchmarks: Option<&'a mut crate::engine::benchmark::Benchmarks>,
     pub emit: &'a mut dyn SignalEmitter,
     pub intents: &'a mut Vec<IntentValue>,
@@ -52,6 +53,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             graphics_settings: None,
             xr_settings: None,
             avatar_settings: None,
+            input_settings: None,
             benchmarks: None,
             emit,
             intents,
@@ -111,6 +113,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             graphics_settings: self.graphics_settings,
             xr_settings: self.xr_settings,
             avatar_settings: self.avatar_settings,
+            input_settings: self.input_settings,
             benchmarks: self.benchmarks,
             emit: self.emit,
             intents: self.intents,
@@ -129,6 +132,14 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         settings: &'a mut crate::engine::ecs::system::AvatarSettingsSystem,
     ) -> Self {
         self.avatar_settings = Some(settings);
+        self
+    }
+
+    pub fn with_input_settings(
+        mut self,
+        settings: &'a mut crate::engine::ecs::system::InputSettingsSystem,
+    ) -> Self {
+        self.input_settings = Some(settings);
         self
     }
 

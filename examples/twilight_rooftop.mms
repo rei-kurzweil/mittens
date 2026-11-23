@@ -17,6 +17,9 @@ import { make_rooftop_player } from "../assets/components/characters/rooftop_pla
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
+import { input_settings_panel } from "../assets/components/panels/input_settings_panel.mms"
+import { mirror_panel } from "../assets/components/panels/mirror_panel.mms"
+import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building_with_openings, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
 import { round_aperture_wall } from "../assets/components/buildings/round_aperture.mms"
@@ -43,6 +46,10 @@ import { rooftop_dusk_sky } from "../assets/components/backgrounds/rooftop_dusk_
 // MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
 // Desktop: WASD + right-drag to move/look. XR: sticks move, B jumps,
 // double-tap B to toggle flight, and hold B/A to rise/descend in flight.
+// The Panels dock beside the spawn opens the avatar picker and the mirror,
+// input, humanoid (avatar settings) and graphics panels; Input switches the
+// left stick between strafing and turning. Collapse it from its title bar,
+// or grab the title bar into the slot in front of you to carry it along.
 // XR-only mode creates no winit window or Camera3D.
 
 // Local voice drives the local avatar's mouth. Stays neutral without a
@@ -172,19 +179,6 @@ let station = train_station(train_pivot, train_motion, train_speed, arc_center[1
 // Third storey of the east building, across the walkway from the outer doors.
 T.position(5.2, floor_y, -13.0).rotation(0.0, -quarter_turn, 0.0) { station.root }
 
-// The roof faces west over open air, so the reflected side stays clear.
-// Grab it (XR grip or desktop left mouse) to move it; it keeps its world pose.
-T.position(roof_x - 7.6, roof_height + 1.3, 0.0).rotation(0.0, quarter_turn, 0.0) {
-    name = "twilight_rooftop_mirror_frame"
-    Grabbable {}
-    T.scale(3.0, 1.4, 1.0) {
-        R.plane() {
-            Raycastable.enabled()
-            Mirror.quality(1024) { name = "twilight_rooftop_mirror" }
-        }
-    }
-}
-
 // Status board.
 let status = Text { "connecting..." C.rgba(0.16, 0.17, 0.22, 1.0) }
 T.position(roof_x - 2.6, roof_height + 3.4, -4.30).scale(0.22, 0.22, 0.22) { status }
@@ -238,29 +232,19 @@ let remote_avatar = host_avatar
 if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
 let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop voice_level = voice_level mouth_tuning = mouth_tuning })
 let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop })
-let picker_status = { update = null }
+// The picker opens from the dock; its status line outlives each opening.
+let picker_status = { text = local_avatar + " is active" }
 fn report_avatar_status(message) {
-    picker_status.update(message)
+    picker_status.text = message
+    let line = query("#avatar_picker_status")
+    if line { line.set_text(message) }
 }
 fn select_local_avatar(choice) {
     local.select_avatar(choice, report_avatar_status)
 }
-let avatar_picker = avatar_picker_panel({
-    root_name = "twilight_rooftop_avatar_picker"
-    status = local_avatar + " is active"
-    choices = [
-        { id = "mitten" label = "Mitten" },
-        { id = "lumae" label = "Lumae" },
-        { id = "miku" label = "Miku" },
-        { id = "succubus" label = "Succubus" },
-    ]
-    on_select = select_local_avatar
-})
-picker_status.update = avatar_picker.set_status
 local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
-T.position(roof_x + spawn_x - avatar_picker.width / 2.0, roof_height + 2.0, -2.2) { avatar_picker.root }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
@@ -272,9 +256,6 @@ if use_desktop && !use_xr {
 } else { local.locomotion }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
-T.position(roof_x - 4.6, roof_height + 2.3, -4.8) {
-    graphics_settings_panel({ root_name = "twilight_rooftop_graphics_settings" })
-}
 let xr_calibration_file = null
 if use_xr {
     xr_calibration_file = XrSettings.floor.default_file()
@@ -284,14 +265,62 @@ fn apply_avatar_height() { local.apply_desired_height(report_avatar_status) }
 on_global("DataEvent", fn(event) {
     if event == "AvatarSettingsChanged" { apply_avatar_height() }
 })
-T.position(roof_x + spawn_x - 4.65, roof_height + 2.3, -2.2) {
-    avatar_settings_panel({
-        root_name = "twilight_rooftop_avatar_settings"
-        show_xr = use_xr
-        calibration_file = xr_calibration_file
-        on_height_recommitted = apply_avatar_height
+// The dock opens each panel on demand at its world placement. Grab its title
+// bar into the slot in front of the player to carry it along.
+let dock_panels = T { name = "twilight_rooftop_dock_panels" }
+dock_panels
+let dock_items = {
+    avatar = { id = "avatar" label = "Avatar" root_name = "twilight_rooftop_avatar_picker"
+        position = [roof_x + spawn_x, roof_height + 2.0, -2.2]
+        build = fn() {
+            let picker = avatar_picker_panel({
+                root_name = "twilight_rooftop_avatar_picker"
+                status = picker_status.text
+                choices = [
+                    { id = "mitten" label = "Mitten" },
+                    { id = "lumae" label = "Lumae" },
+                    { id = "miku" label = "Miku" },
+                    { id = "succubus" label = "Succubus" },
+                ]
+                on_select = select_local_avatar
+            })
+            return T.position(-picker.width / 2.0, 0.0, 0.0) { picker.root }
+        } }
+    // The roof faces west over open air, so the reflected side stays clear.
+    mirror = { id = "mirror" label = "Mirror" root_name = "twilight_rooftop_mirror_frame"
+        position = [roof_x - 7.6, roof_height + 1.3, 0.0] rotation = [0.0, quarter_turn, 0.0]
+        build = fn() { return mirror_panel({ name = "twilight_rooftop_mirror" width = 3.0 height = 1.4 quality = 1024 }) } }
+    input = { id = "input" label = "Input" root_name = "twilight_rooftop_input_settings"
+        position = [roof_x + spawn_x + 1.2, roof_height + 2.3, -2.2]
+        build = fn() { return input_settings_panel({ root_name = "twilight_rooftop_input_settings" }) } }
+    humanoid = { id = "humanoid" label = "Humanoid" root_name = "twilight_rooftop_avatar_settings"
+        position = [roof_x + spawn_x - 4.65, roof_height + 2.3, -2.2]
+        build = fn() {
+            return avatar_settings_panel({
+                root_name = "twilight_rooftop_avatar_settings"
+                show_xr = use_xr
+                calibration_file = xr_calibration_file
+                on_height_recommitted = apply_avatar_height
+            })
+        } }
+    graphics = { id = "graphics" label = "Graphics" root_name = "twilight_rooftop_graphics_settings"
+        position = [roof_x - 4.6, roof_height + 2.3, -4.8]
+        build = fn() { return graphics_settings_panel({ root_name = "twilight_rooftop_graphics_settings" }) } }
+}
+T.position(roof_x + spawn_x + 1.0, roof_height + 1.6, -1.6) {
+    dock({
+        root_name = "twilight_rooftop_dock"
+        mount = dock_panels
+        groups = [
+            [dock_items.avatar, dock_items.mirror],
+            [dock_items.input, dock_items.humanoid, dock_items.graphics],
+        ]
     })
 }
+// Right of and in front of the player, turned to face them.
+local.root.attach(T.position(0.35, 1.25, -0.45).rotation(0.0, -0.66, 0.0) {
+    dock_dropzone({ name = "twilight_rooftop_dock_slot" })
+})
 // Grab this cyan cube with the desktop pointer or either XR hand. The latest
 // grab/release transition wins; simultaneous claims favor the client in this demo.
 let shared_prop = T.position(roof_x, roof_height + 1.1, 0.0) {

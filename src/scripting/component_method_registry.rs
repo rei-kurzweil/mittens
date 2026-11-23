@@ -106,7 +106,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "InputVRGamepad"
                 | "InputVrGamepad"
                 | "input_vr_gamepad"
-        ) && matches!(method, "enable" | "disable"))
+        ) && matches!(method, "enable" | "disable" | "set_stick_mode"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
                 method,
@@ -537,6 +537,22 @@ pub(crate) fn invoke_component_method(
             // Keep the component and its canonical axis/button events live;
             // only transfer authority away from the built-in locomotion map.
             input.locomotion = method == "enable";
+            Ok(Value::Null)
+        }
+        (
+            "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad"
+            | "input_vr_gamepad",
+            "set_stick_mode",
+        ) => {
+            let [Value::String(mode)] = args else {
+                return Err(format!("set_stick_mode(): expected one string, got {args:?}"));
+            };
+            let mode = crate::engine::ecs::component::XrStickMode::parse(mode)
+                .ok_or_else(|| format!("set_stick_mode(): expected strafe or turn, got {mode}"))?;
+            world
+                .get_component_by_id_as_mut::<InputXRGamepadComponent>(id)
+                .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?
+                .stick_mode = mode;
             Ok(Value::Null)
         }
         ("Text" | "TXT" | "text", "set_text") => {

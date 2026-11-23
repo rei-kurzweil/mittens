@@ -15,6 +15,33 @@ impl Default for XrHandPreference {
     }
 }
 
+/// What the locomotion stick's X axis does; Y always moves forward and back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum XrStickMode {
+    /// X strafes left and right.
+    #[default]
+    Strafe,
+    /// X smoothly turns the rig about the headset.
+    Turn,
+}
+
+impl XrStickMode {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "strafe" => Some(Self::Strafe),
+            "turn" => Some(Self::Turn),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strafe => "strafe",
+            Self::Turn => "turn",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XrAxisControl {
     LeftStick,
@@ -43,12 +70,17 @@ pub struct InputXRGamepadComponent {
     pub hand: XrHandPreference,
     pub locomotion: bool,
     pub speed: f32,
+    pub stick_mode: XrStickMode,
+    /// Turn-mode yaw rate at full stick deflection, in radians per second.
+    pub turn_speed: f32,
     /// Opt-in B double-tap flight. Runtime flight state is never serialized.
     pub enable_flying: bool,
     pub(crate) flying: bool,
     pub deadzone: f32,
     pub component_id: Option<ComponentId>,
 }
+
+const DEFAULT_TURN_SPEED: f32 = 2.0;
 
 impl InputXRGamepadComponent {
     pub fn new() -> Self {
@@ -57,6 +89,8 @@ impl InputXRGamepadComponent {
             hand: XrHandPreference::Default,
             locomotion: true,
             speed: 3.0,
+            stick_mode: XrStickMode::Strafe,
+            turn_speed: DEFAULT_TURN_SPEED,
             enable_flying: false,
             flying: false,
             deadzone: 0.2,
@@ -91,6 +125,16 @@ impl InputXRGamepadComponent {
 
     pub fn speed(mut self, speed: f32) -> Self {
         self.speed = speed;
+        self
+    }
+
+    pub fn stick_mode(mut self, mode: XrStickMode) -> Self {
+        self.stick_mode = mode;
+        self
+    }
+
+    pub fn turn_speed(mut self, turn_speed: f32) -> Self {
+        self.turn_speed = turn_speed;
         self
     }
 
@@ -170,6 +214,12 @@ impl Component for InputXRGamepadComponent {
         }
         if (self.speed - 3.0).abs() > f32::EPSILON {
             ce = ce.with_call("speed", vec![num(self.speed as f64)]);
+        }
+        if self.stick_mode != XrStickMode::Strafe {
+            ce = ce.with_call("stick_mode", vec![s(self.stick_mode.as_str())]);
+        }
+        if (self.turn_speed - DEFAULT_TURN_SPEED).abs() > f32::EPSILON {
+            ce = ce.with_call("turn_speed", vec![num(self.turn_speed as f64)]);
         }
         if (self.deadzone - 0.2).abs() > f32::EPSILON {
             ce = ce.with_call("deadzone", vec![num(self.deadzone as f64)]);

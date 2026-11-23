@@ -15,6 +15,34 @@ fn named(scene: &Universe, label: &str) -> ComponentId {
         .unwrap_or_else(|| panic!("missing {label}"))
 }
 
+fn click(scene: &mut Universe, button: ComponentId) {
+    scene.command_queue.push_event(
+        button,
+        EventSignal::Click {
+            raycaster: button,
+            renderable: button,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..4 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+}
+
+fn open_dock_items(scene: &mut Universe, items: &[&str]) {
+    for item in items {
+        click(scene, named(scene, &format!("dock_{item}")));
+    }
+}
+
+fn has_label(scene: &Universe, label: &str) -> bool {
+    scene
+        .world
+        .all_components()
+        .any(|id| scene.world.component_label(id) == Some(label))
+}
+
 #[test]
 fn sakura_twilight_loads_its_city_without_the_train() {
     let path = "examples/sakura-twilight.mms";
@@ -40,6 +68,19 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     for _ in 0..3 {
         scene.update(1.0 / 60.0, &Default::default());
     }
+    // Settings panels start closed and open from the dock.
+    named(&scene, "sakura_twilight_dock");
+    for panel in [
+        "sakura_twilight_avatar_picker",
+        "sakura_twilight_graphics_settings",
+        "sakura_twilight_input_settings",
+        "sakura_twilight_avatar_settings",
+        "sakura_twilight_mirror",
+    ] {
+        assert!(!has_label(&scene, panel), "{panel} opens on demand");
+    }
+    check_dock(&mut scene);
+    open_dock_items(&mut scene, &["avatar", "graphics", "input", "humanoid", "mirror"]);
     let labels: Vec<&str> = scene
         .world
         .all_components()
@@ -61,6 +102,11 @@ fn sakura_twilight_loads_its_city_without_the_train() {
         "sakura_twilight_road_ramp",
         "sakura_twilight_ramp_landing",
         "sakura_twilight_road_turn",
+        "sakura_twilight_avatar_picker",
+        "avatar_picker_miku",
+        "sakura_twilight_graphics_settings",
+        "sakura_twilight_input_settings",
+        "input_stick_mode_turn",
         "sakura_twilight_avatar_settings",
         "avatar_height_slider",
         "ship_washroom_suite",
@@ -152,14 +198,107 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     for _ in 0..3 {
         xr.update(1.0 / 60.0, &Default::default());
     }
+    open_dock_items(&mut xr, &["humanoid"]);
     named(&xr, "sakura_twilight_avatar_settings");
     named(&xr, "avatar_height_slider");
     named(&xr, "xr_floor_correction_slider");
+    check_input_settings(&mut xr);
     assert!(xr.world.all_components().any(|id| {
         xr.world
             .get_component_by_id_as::<CameraXRComponent>(id)
             .is_some_and(|camera| camera.z_far == 250.0)
     }));
+}
+
+fn check_dock(scene: &mut Universe) {
+    let height = |scene: &Universe, item: &str| {
+        TransformSystem::world_position(&scene.world, named(scene, &format!("dock_{item}")))
+            .unwrap()[1]
+    };
+    let [avatar, mirror, input, humanoid, graphics] =
+        ["avatar", "mirror", "input", "humanoid", "graphics"].map(|item| height(scene, item));
+    assert!(avatar > mirror && mirror > input && input > humanoid && humanoid > graphics);
+    assert!(
+        mirror - input > input - humanoid + 0.05,
+        "a gap separates the avatar group from the settings group"
+    );
+
+    let dock = named(scene, "sakura_twilight_dock");
+    let title = scene.world.find_component(dock, "#title_bar").unwrap();
+    assert_eq!(grabbable_owner_for_hit(&scene.world, title), Some(dock));
+
+    // Collapsing removes the buttons; restoring rebuilds them.
+    let toggle = scene.world.find_component(dock, "#accordion_toggle").unwrap();
+    click(scene, toggle);
+    assert!(!has_label(scene, "dock_avatar"));
+    click(scene, toggle);
+    assert!(has_label(scene, "dock_avatar"));
+
+    // The slot in front of the player takes the dock and nothing else.
+    let slot = named(scene, "sakura_twilight_dock_slot");
+    let drop = |scene: &mut Universe, target: ComponentId| {
+        let pointer = named(scene, "local_desktop_pointer");
+        scene.command_queue.push_event(
+            slot,
+            EventSignal::ZoneDropped {
+                zone: slot,
+                other_zone: None,
+                pointer,
+                target,
+            },
+        );
+        for _ in 0..4 {
+            scene.update(1.0 / 60.0, &Default::default());
+        }
+    };
+    let prop = named(scene, "shared_prop");
+    let prop_parent = scene.world.parent_of(prop);
+    drop(scene, prop);
+    assert_eq!(scene.world.parent_of(prop), prop_parent);
+    drop(scene, dock);
+    assert_eq!(scene.world.parent_of(dock), Some(slot));
+    let player = named(scene, "local_root");
+    let mut ancestor = scene.world.parent_of(slot);
+    while ancestor.is_some_and(|id| id != player) {
+        ancestor = scene.world.parent_of(ancestor.unwrap());
+    }
+    assert_eq!(ancestor, Some(player), "the slot rides with the player");
+}
+
+fn check_input_settings(scene: &mut Universe) {
+    use crate::engine::ecs::component::{InputXRGamepadComponent, XrStickMode};
+    fn stick_mode(scene: &Universe) -> XrStickMode {
+        scene
+            .world
+            .get_component_by_id_as::<InputXRGamepadComponent>(named(scene, "local_xr_locomotion"))
+            .unwrap()
+            .stick_mode
+    }
+    fn label(scene: &Universe, mode: &str) -> String {
+        let label = named(scene, &format!("input_stick_mode_{mode}_label"));
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(label)
+            .unwrap()
+            .text
+            .clone()
+    }
+    assert_eq!(stick_mode(scene), XrStickMode::Strafe);
+    open_dock_items(scene, &["input"]);
+    assert_eq!(label(scene, "strafe"), "(o) Move + strafe");
+    assert_eq!(label(scene, "turn"), "( ) Move + turn");
+    click(scene, named(scene, "input_stick_mode_turn"));
+    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Turn);
+    assert_eq!(stick_mode(scene), XrStickMode::Turn);
+    assert_eq!(label(scene, "strafe"), "( ) Move + strafe");
+    assert_eq!(label(scene, "turn"), "(o) Move + turn");
+
+    // Clicking the dock item again closes the panel; reopening reflects the setting.
+    open_dock_items(scene, &["input"]);
+    assert!(!has_label(scene, "sakura_twilight_input_settings"));
+    assert_eq!(stick_mode(scene), XrStickMode::Turn);
+    open_dock_items(scene, &["input"]);
+    assert_eq!(label(scene, "turn"), "(o) Move + turn");
 }
 
 fn check_mirror_controls(scene: &mut Universe) {
@@ -174,18 +313,6 @@ fn check_mirror_controls(scene: &mut Universe) {
         for _ in 0..4 {
             scene.update(1.0 / 60.0, &Default::default());
         }
-    }
-    fn click(scene: &mut Universe, button: ComponentId) {
-        scene.command_queue.push_event(
-            button,
-            EventSignal::Click {
-                raycaster: button,
-                renderable: button,
-                hit_point: [0.0; 3],
-                screen_pos_px: None,
-            },
-        );
-        advance(scene);
     }
     fn move_player(scene: &mut Universe, player: ComponentId, translation: [f32; 3]) {
         // These waypoints place the rig directly. Discard the preceding physics

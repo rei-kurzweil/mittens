@@ -119,6 +119,7 @@ pub mod vr_types;
 pub mod xr_eye_tracking_system;
 pub mod xr_settings_system;
 pub mod avatar_settings_system;
+pub mod input_settings_system;
 pub mod zone_query;
 pub mod zone_visualization_system;
 
@@ -215,6 +216,7 @@ pub use vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 pub use xr_eye_tracking_system::XREyeTrackingSystem;
 pub use xr_settings_system::XrSettingsSystem;
 pub use avatar_settings_system::AvatarSettingsSystem;
+pub use input_settings_system::InputSettingsSystem;
 pub use zone_query::{
     ZoneContact, ZoneOverlap, ZoneQueryError, ZoneRelation, ZoneSeparation, ZoneSweepHit,
     classify_point as classify_zone_point, contact_zones, overlap_zones, resolve_zone_frame,

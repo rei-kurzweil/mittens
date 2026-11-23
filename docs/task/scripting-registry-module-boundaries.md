@@ -143,3 +143,14 @@ transform-operator family. Keep angle reads and writes on the typed host
 dispatch path and refresh the affected transform subtree through the existing
 intent. Validate constructor signatures, live angle updates, and scene
 round trips after moving the family.
+
+## XR gamepad method family (2026-11-22)
+
+`InputXRGamepad.set_stick_mode` joined `enable`/`disable` in
+`component_method_registry.rs`, while its declarations live in
+`component_bindings/xr_gamepad.rs` and its builders in
+`registries/xr_gamepad_registry.rs`. Move the gamepad's runtime methods next
+to those declarations as one XR gamepad family, keeping the typed direct
+dispatch arm and the shared argument conversion. Validate the live
+locomotion gate test, stick-mode parsing errors, and the Sakura Twilight
+input settings scene test. This note does not perform the split.

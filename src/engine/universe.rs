@@ -107,6 +107,7 @@ impl Universe {
         .with_graphics_settings(&mut self.systems.graphics_settings)
         .with_xr_settings(&mut self.systems.xr_settings)
         .with_avatar_settings(&mut self.systems.avatar_settings)
+        .with_input_settings(&mut self.systems.input_settings)
     }
 
     /// Load and retain one MMS source file through the engine-owned scripting
@@ -121,6 +122,7 @@ impl Universe {
         let previous_settings = self.systems.graphics_settings.clone();
         let previous_xr_settings = self.systems.xr_settings.clone();
         let previous_avatar_settings = std::mem::take(&mut self.systems.avatar_settings);
+        let previous_input_settings = std::mem::take(&mut self.systems.input_settings);
         self.systems.graphics_settings.reset();
         self.systems.xr_settings.reset();
         let mut intents = Vec::new();
@@ -135,6 +137,7 @@ impl Universe {
                     self.systems.graphics_settings = previous_settings;
                     self.systems.xr_settings = previous_xr_settings;
                     self.systems.avatar_settings = previous_avatar_settings;
+                    self.systems.input_settings = previous_input_settings;
                     return Err(error);
                 }
             }
@@ -166,6 +169,7 @@ impl Universe {
         self.systems.graphics_settings.reset();
         self.systems.xr_settings.reset();
         self.systems.avatar_settings = Default::default();
+        self.systems.input_settings = Default::default();
         self.drain_pending_signals();
     }
 

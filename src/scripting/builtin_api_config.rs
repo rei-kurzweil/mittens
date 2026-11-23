@@ -25,6 +25,7 @@ pub(super) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
 
     crate::scripting::host::xr_settings_api::register(builder);
     crate::scripting::host::avatar_settings_api::register(builder);
+    crate::scripting::host::input_settings_api::register(builder);
 
     crate::scripting::host::graphics_settings_api::register(builder);
     crate::scripting::host::benchmark_api::register(builder);
