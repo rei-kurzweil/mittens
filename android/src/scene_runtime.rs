@@ -318,7 +318,7 @@ impl SceneRuntime {
                 requested.as_str(), feedback.status.as_str(), feedback.applied));
         }
         let benchmark_ticket = self.universe.systems.benchmarks.frame_ticket();
-        let stats: Stats = match self.renderer.draw(index, &self.universe.visuals, &cameras) {
+        let stats: Stats = match self.renderer.draw(index, &mut self.universe.visuals, &cameras) {
             Ok(stats) => stats,
             #[cfg(feature = "launcher")]
             Err(error) if self.launcher.as_ref().is_some_and(|l| !l.at_home()) => {

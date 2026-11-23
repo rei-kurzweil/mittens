@@ -13,6 +13,7 @@ mod scene;
 #[path = "../../../src/scene_runtime.rs"]
 mod scene_runtime;
 mod shell;
+mod skinned;
 mod target;
 #[path = "../../../src/xr_resolution.rs"]
 mod xr_resolution;
@@ -356,6 +357,10 @@ fn main() {
         Some("--destruction" | "--destruction-groups")
     ) {
         destruction::run();
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--skinned") {
+        skinned::run();
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("--shell-preview") {

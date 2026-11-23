@@ -109,8 +109,9 @@ the same eye pass, with translation removed and depth writes disabled.
 
 The renderer supports single-layer alpha-blended custom surfaces in the same
 render pass, used by the settings UI. It rejects legacy materials, other bases,
-multilayer transparency, cutouts, skin/morph data, clips, outlines, extra phases, post-processing,
-mirrors and BC7 uploads. Standard transmission values alone do not activate
+multilayer transparency, cutouts, clips, outlines, extra phases, post-processing,
+mirrors and BC7 uploads. Skinned and morphed meshes are supported through the
+compute deformation path below; morph targets without a skin are rejected. Standard transmission values alone do not activate
 transmission; material capabilities define that behavior. Directional, point
 and spot light records are passed to custom shaders, which decide how to shade;
 shadow maps are not implemented. Features must be added deliberately.
@@ -204,8 +205,24 @@ or assume compute output is transient tile memory. Validate the 8 compute storag
 bindings and 64-invocation workgroups and run the actual kernel on Focus 3; the
 earlier probe checked basic limits, not this kernel's execution.
 
-The current new renderer still rejects skin/morph meshes. This is the planned
-animated-mesh slice, not functionality already enabled in its opaque APK.
+Implemented on branch `android-skinning-mirrors` (not yet built or run on the
+Focus 3). `renderer/deformation.rs` keeps append-only base/skin/morph arenas
+for skinned meshes, uploads only dirty bone ranges of the engine palette, and
+builds jobs for instances whose deformation is dirty. One dispatch is recorded
+before both eye passes, followed by a compute-write to vertex-read barrier. The
+output persists between frames; an unchanged pose dispatches nothing. Skinned
+batches use `shaders/surface-skinned.vert`, which reads position and normal at
+set 0 binding 2 by `deformed_base + gl_VertexIndex` and keeps UVs from the
+vertex buffer; instances carry `deformed_base` at location 7 (96-byte
+instance records). A batch whose instances have no deformation range yet draws
+its bind pose through the static pipeline. When the output grows, every live
+range is recomputed instead of copied. The arenas are not compacted when meshes
+are released; the launcher rebuilds the renderer per scene.
+
+Desktop GPU check: `cargo run --release --manifest-path android/validation/renderer-smoke/Cargo.toml -- --skinned`
+loads `assets/models/mitten.glb` with one custom material, requires dispatches
+on the first drawn frames, and requires a changed image after turning a joint.
+Packed 16-bit skin inputs and the Focus 3 kernel timing remain open.
 
 ### Packed skinning inputs
 

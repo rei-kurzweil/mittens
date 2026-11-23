@@ -192,7 +192,7 @@ pub fn render(output: &str) {
         })
         .unwrap()
     });
-    let stats = renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    let stats = renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
     let pixels = target.pixels();
     let left_eye = &pixels[..1440 * 960 * 4];
     let cream = left_eye

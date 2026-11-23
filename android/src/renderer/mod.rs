@@ -1,5 +1,6 @@
 //! Application-owned, classic-pass opaque surface renderer for mobile Vulkan.
 //! The engine supplies retained materials, transforms and the ordered draw stream.
+mod deformation;
 mod foveation;
 mod gpu_timing;
 mod materials;
@@ -32,6 +33,9 @@ struct Mesh {
 struct Draw {
     model: [[f32; 4]; 4],
     color: [f32; 4],
+    /// First output vertex of a deformed instance (instance location 7).
+    deformed_base: u32,
+    _pad: [u32; 3],
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -48,6 +52,7 @@ pub(crate) struct Stats {
     pub cpu_record_ms: f64,
     pub gpu_wait_ms: f64,
     pub gpu_ms: Option<f64>,
+    pub deformation_jobs: usize,
 }
 pub(crate) struct SceneRenderer {
     gpu: Arc<Gpu>,
@@ -61,6 +66,9 @@ pub(crate) struct SceneRenderer {
     textures: Vec<Image>,
     instance_buffer: Buffer,
     instances: Vec<Draw>,
+    /// Per packed instance: whether its deformation output is valid.
+    deformed: Vec<bool>,
+    deformation: deformation::Deformation,
     gpu_timing: Option<gpu_timing::GpuTiming>,
 }
 impl Drop for SceneRenderer {
@@ -94,6 +102,8 @@ impl SceneRenderer {
         let foveation =
             foveation::FixedFoveation::new(gpu.clone(), format, extent, images, samples);
         let materials = Materials::new(gpu.clone())?;
+        let deformation = deformation::Deformation::new(gpu.clone())?;
+        materials.bind_deformed(&deformation.output);
         let instance_buffer = Buffer::new(
             gpu.clone(),
             64 * std::mem::size_of::<Draw>(),
@@ -109,6 +119,8 @@ impl SceneRenderer {
             textures: Vec::new(),
             instance_buffer,
             instances: Vec::with_capacity(64),
+            deformed: Vec::with_capacity(64),
+            deformation,
             gpu_timing,
             pool: vk::CommandPool::null(),
             command: vk::CommandBuffer::null(),
@@ -179,7 +191,7 @@ impl SceneRenderer {
     pub fn draw(
         &mut self,
         index: usize,
-        visuals: &VisualWorld,
+        visuals: &mut VisualWorld,
         cameras: &[EyeCamera; 2],
     ) -> Result<Stats> {
         let pass = self.foveation.pass().unwrap_or(&self.pass);
@@ -204,13 +216,11 @@ impl SceneRenderer {
                 || (instance.multiple_layers
                     && (instance.opacity < 0.999 || instance.color[3] < 0.999))
                 || instance.toon_outline.is_some()
-                || instance.bones_count != 0
-                || instance.deformed_count != 0
                 || instance.stencil_ref != 0
                 || instance.is_stencil_clip
             {
                 return Err(format!(
-                    "unsupported mobile surface: opacity={} alpha={} cutout={} background={} overlay={} occluded_lit={} emissive={} transmission={} outline={} bones={} deformed={} stencil={} clip={}",
+                    "unsupported mobile surface: opacity={} alpha={} cutout={} background={} overlay={} occluded_lit={} emissive={} transmission={} outline={} stencil={} clip={}",
                     instance.opacity,
                     instance.color[3],
                     instance.transparent_cutout,
@@ -220,8 +230,6 @@ impl SceneRenderer {
                     instance.emissive,
                     instance.transmission[2],
                     instance.toon_outline.is_some(),
-                    instance.bones_count,
-                    instance.deformed_count,
                     instance.stencil_ref,
                     instance.is_stencil_clip
                 ));
@@ -233,6 +241,11 @@ impl SceneRenderer {
                 );
             }
         }
+        // Jobs for dirty skinned instances; recorded before both eye passes.
+        if self.deformation.prepare(visuals)? {
+            self.materials.bind_deformed(&self.deformation.output);
+        }
+        let visuals = &*visuals;
         self.materials.collect(&visuals.materials)?;
         self.materials.update_lights(visuals.lights())?;
         let (ops, indices) = visuals.opaque_stream();
@@ -244,9 +257,28 @@ impl SceneRenderer {
         {
             return Err("stencil clips are unsupported by the mobile opaque pass".into());
         }
+        self.instances.clear();
+        self.deformed.clear();
+        for &index in visuals
+            .background_order()
+            .iter()
+            .chain(indices)
+            .chain(transparent_indices)
+        {
+            let instance = &visuals.instances()[index as usize];
+            let mut color = instance.color;
+            color[3] *= instance.opacity;
+            self.instances.push(Draw {
+                model: instance.transform.matrix_world,
+                color,
+                deformed_base: instance.deformed_base,
+                _pad: [0; 3],
+            });
+            self.deformed.push(instance.deformed_count != 0);
+        }
         // Upload/compile work happens before recording the pass. Resources and
         // descriptors are retained between frames, and shared by both eyes.
-        for (background, transparent, batch, _) in batches(visuals) {
+        for (background, transparent, batch, base) in batches(visuals) {
             if batch.stencil_ref != 0 {
                 return Err("stencil clips are unsupported".into());
             }
@@ -261,6 +293,7 @@ impl SceneRenderer {
             let id = batch
                 .material_instance
                 .ok_or("missing custom material in draw batch")?;
+            let skinned = self.skinned(batch, base);
             self.materials.prepare(
                 &visuals.materials,
                 (id, batch.texture, batch.texture_filtering),
@@ -270,6 +303,7 @@ impl SceneRenderer {
                 background,
                 transparent,
                 foveated,
+                skinned,
             )?;
         }
         for (eye, camera) in cameras.iter().enumerate() {
@@ -280,23 +314,6 @@ impl SceneRenderer {
                 })?;
             }
         }
-        self.instances.clear();
-        self.instances.extend(
-            visuals
-                .background_order()
-                .iter()
-                .chain(indices)
-                .chain(transparent_indices)
-                .map(|&index| {
-                    let instance = &visuals.instances()[index as usize];
-                    let mut color = instance.color;
-                    color[3] *= instance.opacity;
-                    Draw {
-                        model: instance.transform.matrix_world,
-                        color,
-                    }
-                }),
-        );
         let size = std::mem::size_of_val(self.instances.as_slice());
         if size > self.instance_buffer.capacity {
             self.instance_buffer = Buffer::new(
@@ -325,6 +342,7 @@ impl SceneRenderer {
             if let Some(timing) = &self.gpu_timing {
                 timing.start(self.command);
             }
+            self.deformation.record(self.command);
             for eye in 0..2 {
                 pass.begin(self.command, index, eye, visuals.clear_color());
                 for (background, transparent, batch, base) in batches(visuals) {
@@ -341,6 +359,7 @@ impl SceneRenderer {
                         background,
                         transparent,
                         foveated,
+                        self.skinned(batch, base),
                     ) else {
                         continue;
                     };
@@ -422,7 +441,18 @@ impl SceneRenderer {
         stats.textures = self.textures.len();
         stats.instance_capacity = self.instance_buffer.capacity;
         stats.lights = visuals.lights().len();
+        stats.deformation_jobs = self.deformation.jobs_last_frame;
         Ok(stats)
+    }
+    /// A batch of a skinned mesh draws from the deformation output once every
+    /// instance has a deformation range; until then it draws its bind pose.
+    fn skinned(&self, batch: &DrawBatch, base: usize) -> bool {
+        let first = base + batch.start;
+        self.deformation.is_skinned(batch.mesh)
+            && self
+                .deformed
+                .get(first..first + batch.count)
+                .is_some_and(|instances| instances.iter().all(|&deformed| deformed))
     }
 }
 impl MeshUploader for SceneRenderer {
@@ -432,6 +462,7 @@ impl MeshUploader for SceneRenderer {
         if let Some(slot) = self.meshes.get_mut(handle.0 as usize) {
             *slot = None;
         }
+        self.deformation.release(handle);
     }
     fn upload_mesh(
         &mut self,
@@ -447,9 +478,14 @@ impl MeshUploader for SceneRenderer {
         {
             return Err("invalid triangle mesh".into());
         }
-        if mesh.joints0.is_some() || mesh.weights0.is_some() || !mesh.morph_targets.is_empty() {
-            return Err("mobile renderer does not yet support skinning/morph meshes".into());
-        }
+        let index = self
+            .meshes
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or(self.meshes.len());
+        let handle = MeshHandle(u32::try_from(index)?);
+        // Skinned meshes also keep their static buffers for the bind pose.
+        self.deformation.upload(handle, mesh)?;
         let mut vertices = Buffer::new(
             self.gpu.clone(),
             std::mem::size_of_val(mesh.vertices.as_slice()),
@@ -467,12 +503,6 @@ impl MeshUploader for SceneRenderer {
             indices,
             count: u32::try_from(mesh.indices_u32.len())?,
         };
-        let index = self
-            .meshes
-            .iter()
-            .position(Option::is_none)
-            .unwrap_or(self.meshes.len());
-        let handle = MeshHandle(u32::try_from(index)?);
         if index == self.meshes.len() {
             self.meshes.push(Some(mesh));
         } else {

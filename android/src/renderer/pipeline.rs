@@ -47,12 +47,17 @@ impl Pipeline {
         sample_count: vk::SampleCountFlags,
         background: bool,
         transparent: bool,
+        skinned: bool,
     ) -> Result<Self> {
-        let words = ash::util::read_spv(&mut Cursor::new(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/surface.vert.spv"
-        ))))
-        .api("read mobile surface vertex SPIR-V")?;
+        // Deformed meshes read position/normal from the deformation output
+        // (set 0 binding 2) instead of the static vertex buffer.
+        let spirv: &[u8] = if skinned {
+            include_bytes!(concat!(env!("OUT_DIR"), "/surface-skinned.vert.spv"))
+        } else {
+            include_bytes!(concat!(env!("OUT_DIR"), "/surface.vert.spv"))
+        };
+        let words = ash::util::read_spv(&mut Cursor::new(spirv))
+            .api("read mobile surface vertex SPIR-V")?;
         let vertex_shader = Shader::new(gpu.clone(), &words)?;
         let fragment_shader = Shader::new(gpu.clone(), fragment)?;
         let stages = [
@@ -75,7 +80,7 @@ impl Pipeline {
             },
             vk::VertexInputBindingDescription {
                 binding: 1,
-                stride: 80,
+                stride: 96,
                 input_rate: vk::VertexInputRate::INSTANCE,
             },
         ];
@@ -112,6 +117,13 @@ impl Pipeline {
             binding: 1,
             format: vk::Format::R32G32B32A32_SFLOAT,
             offset: 64,
+        });
+        // First deformed vertex of this instance; unused by static meshes.
+        attributes.push(vk::VertexInputAttributeDescription {
+            location: 7,
+            binding: 1,
+            format: vk::Format::R32_UINT,
+            offset: 80,
         });
         let vertex = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&bindings)

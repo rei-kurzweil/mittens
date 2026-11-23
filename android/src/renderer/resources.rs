@@ -112,13 +112,17 @@ impl Buffer {
         Ok(buffer)
     }
     pub fn write(&mut self, bytes: &[u8]) -> Result<()> {
-        if bytes.len() > self.capacity {
+        self.write_at(0, bytes)
+    }
+    /// Writes `bytes` starting `offset` bytes into the buffer.
+    pub fn write_at(&mut self, offset: usize, bytes: &[u8]) -> Result<()> {
+        if offset + bytes.len() > self.capacity {
             return Err("mapped scene buffer capacity exceeded".into());
         }
         unsafe {
             std::ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
-                self.mapped.unwrap().as_ptr(),
+                self.mapped.unwrap().as_ptr().add(offset),
                 bytes.len(),
             );
             if !self.coherent {
