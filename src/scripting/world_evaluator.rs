@@ -3329,6 +3329,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "XrButtonUp" => Ok(SignalKind::XrButtonUp),
         "XrButtonChanged" => Ok(SignalKind::XrButtonChanged),
         "XrAxisChanged" => Ok(SignalKind::XrAxisChanged),
+        "XrGamepadLocomotion" => Ok(SignalKind::XrGamepadLocomotion),
         "TextInputFocusChanged" => Ok(SignalKind::TextInputFocusChanged),
         "TextInputChanged" => Ok(SignalKind::TextInputChanged),
         "HttpRequest" => Ok(SignalKind::HttpRequest),

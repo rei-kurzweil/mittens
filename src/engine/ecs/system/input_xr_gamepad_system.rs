@@ -27,6 +27,32 @@ fn xr_input_event_log_enabled() -> bool {
 struct ComponentEventState {
     buttons: HashMap<(ControllerHand, XrButtonControl), bool>,
     axes: HashMap<(ControllerHand, XrAxisControl), [f32; 2]>,
+    movement: Option<LocomotionMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocomotionMode {
+    Walking,
+    Flying,
+}
+
+impl ComponentEventState {
+    fn set_movement(
+        &mut self,
+        cid: ComponentId,
+        movement: Option<LocomotionMode>,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        if self.movement != movement {
+            self.movement = movement;
+            emit.push_event(
+                cid,
+                EventSignal::XrGamepadLocomotion {
+                    active: movement.is_some(),
+                },
+            );
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -78,6 +104,9 @@ impl InputXRGamepadSystem {
         if !xr_state.active {
             self.flying.suspend(world);
             if self.xr_active_last_frame {
+                for (&cid, state) in &mut self.previous {
+                    state.set_movement(cid, None, emit);
+                }
                 eprintln!("[input_xr_gamepad_system] XR gamepad input inactive");
             }
             self.xr_active_last_frame = false;
@@ -99,12 +128,18 @@ impl InputXRGamepadSystem {
             };
             if !cfg.enabled {
                 self.flying.stop(world, cid);
+                if let Some(state) = self.previous.get_mut(&cid) {
+                    state.set_movement(cid, None, emit);
+                }
                 continue;
             }
 
             let Some(input_xr_owner) = nearest_ancestor_component::<InputXRComponent>(world, cid)
             else {
                 self.flying.stop(world, cid);
+                if let Some(state) = self.previous.get_mut(&cid) {
+                    state.set_movement(cid, None, emit);
+                }
                 if self.logged_missing_owner.insert(cid) {
                     eprintln!(
                         "[input_xr_gamepad_system] component {:?} has no owning InputXR ancestor; skipping XR input",
@@ -119,13 +154,13 @@ impl InputXRGamepadSystem {
                 cfg.flying = self.flying.update(world, cid, target, &xr_state);
             } else {
                 self.flying.stop(world, cid);
+                cfg.flying = false;
             }
             let prev = self.previous.get(&cid).cloned().unwrap_or_default();
             let mut next = ComponentEventState::default();
             emit_axis_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
             emit_button_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
-            self.previous.insert(cid, next);
-
+            let mut movement = None;
             if cfg.locomotion {
                 let moved = apply_locomotion(
                     world,
@@ -136,7 +171,14 @@ impl InputXRGamepadSystem {
                     emit,
                     dt_sec,
                 );
-                if moved {
+                if let Some(translating) = moved {
+                    if translating {
+                        movement = Some(if cfg.flying {
+                            LocomotionMode::Flying
+                        } else {
+                            LocomotionMode::Walking
+                        });
+                    }
                     self.logged_missing_locomotion_target.remove(&cid);
                 } else if xr_locomotion_target_transform(world, input_xr_owner).is_none()
                     && self.logged_missing_locomotion_target.insert(cid)
@@ -147,6 +189,9 @@ impl InputXRGamepadSystem {
                     );
                 }
             }
+            next.movement = prev.movement;
+            next.set_movement(cid, movement, emit);
+            self.previous.insert(cid, next);
         }
     }
 }
@@ -339,14 +384,14 @@ fn apply_locomotion(
     xr: &XrGamepadState,
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
-) -> bool {
+) -> Option<bool> {
     if !dt_sec.is_finite() || dt_sec <= 0. {
-        return false;
+        return None;
     }
     let (move_hand, stick) =
         resolve_locomotion_stick(cfg.hand, xr).unwrap_or((ControllerHand::Left, [0.; 2]));
     if !stick[0].is_finite() || !stick[1].is_finite() {
-        return false;
+        return None;
     }
     let [dx, dz] = radial_deadzone([stick[0], -stick[1]], cfg.deadzone);
     let turn = match cfg.stick_mode {
@@ -371,12 +416,10 @@ fn apply_locomotion(
         0.
     };
     if dx == 0. && dz == 0. && vertical == 0. && turn == 0. {
-        return false;
+        return None;
     }
 
-    let Some(target_tcid) = xr_locomotion_target_transform(world, input_xr_owner) else {
-        return false;
-    };
+    let target_tcid = xr_locomotion_target_transform(world, input_xr_owner)?;
 
     // OpenXR has already published the final world-space eye transforms for the
     // active CameraXR this frame. Use that authoritative rendered orientation
@@ -435,9 +478,7 @@ fn apply_locomotion(
         };
         (pivot.map(|p| to_local(p, 1.)), to_local([0., 1., 0.], 0.))
     });
-    let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid) else {
-        return false;
-    };
+    let t = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid)?;
     for axis in 0..3 {
         t.transform.translation[axis] += delta_local[axis];
     }
@@ -462,7 +503,7 @@ fn apply_locomotion(
             scale: transform.scale,
         },
     );
-    true
+    Some(delta_world.iter().any(|axis| axis.abs() > f32::EPSILON))
 }
 
 fn radial_deadzone(v: [f32; 2], deadzone: f32) -> [f32; 2] {

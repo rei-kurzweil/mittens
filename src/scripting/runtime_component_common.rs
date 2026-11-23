@@ -49,6 +49,7 @@ pub(crate) fn register(
             method(vec![mms::ValueType::U32], mms::ValueType::Null),
         ),
         ("remove_subtree", method(vec![], mms::ValueType::Null)),
+        ("is_alive", method(vec![], mms::ValueType::Bool)),
         (
             "set_color",
             method(vec![mms::ValueType::Array], mms::ValueType::Null),

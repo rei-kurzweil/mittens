@@ -21,6 +21,37 @@ one default behavior also disables unrelated controls. Input already exposes
 translation/rotation toggles and XRGamepad can disable locomotion, but those
 are coarser than per-binding overrides.
 
+## Current MMS input surfaces
+
+- `on(gamepad, "XrAxisChanged", fn(event) { ... })` sees raw axes with
+  `hand`, `control`, and a two-element `value`. Controls include `LeftStick`
+  and `RightStick`. Analog values can change every frame, before the locomotion
+  deadzone. An unavailable axis is skipped, so a consumer that latches a
+  raw axis cannot rely on receiving a final zero on controller loss.
+- `XrButtonDown` and `XrButtonUp` give physical buttons such as `ButtonA`
+  and `ButtonB`. OpenXR interaction profiles determine which controls are
+  available. The built-in flight map uses right B for jump, double-tap and
+  ascent, and right A for descent. Those assignments live in native code.
+- `XrGamepadLocomotion` sends `{ active }` to the owning `InputXRGamepad`
+  when native translation starts or stops. It also reports an active edge
+  when locomotion mode changes while movement is held. The engine resolves
+  the configured hand (default prefers left and falls back to right), radial
+  deadzone, and vertical controls. Turn-only input leaves it inactive.
+  Tracking loss ends the active state. It reports translation input before
+  collision resolution, so a held stick against a wall can stay active.
+  Use component-scoped listeners to keep the source identity. Use
+  `gamepad.flying()` separately for effects specific to flight.
+- Desktop MMS keyboard events expose physical `code` and logical `key`.
+  Built-in `Input` still handles its own logical WASD, arrow look, and roll
+  controls. The desktop gamepad proposal tracks a separate input source.
+
+An action binding layer should preserve raw input for tools, expose resolved
+actions such as `move` and `jump`, and define device profile fallbacks. Give
+each binding explicit focus, authority and release semantics, especially on
+controller loss, UI capture, or remapping while held. `XrGamepadLocomotion`
+continues to describe the built-in driver, so scripts that replace the
+driver will need to publish or observe the actions they implement.
+
 ## Proposed behavior
 
 - Provide useful automatic default bindings for Input and InputXRGamepad,

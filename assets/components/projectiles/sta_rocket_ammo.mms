@@ -1,3 +1,5 @@
+import { loose_rocket_exhaust } from "./rocket_exhaust.mms"
+
 let ammo_zone_name = "sta_rocket_ammo_zone"
 
 fn sta_rocket_model() {
@@ -14,7 +16,7 @@ export fn sta_rocket_body(name) {
 }
 
 export fn sta_rocket_ammo(name) {
-    let state = { claimed = false }
+    let state = { claimed = false exhaust = null }
     let pickup = Grabbable {}
     let pickup_target = Raycastable.enabled()
     let round = T {
@@ -31,8 +33,17 @@ export fn sta_rocket_ammo(name) {
     }
     round.attach(probe)
     round.align_to_equipment_slot = true
+    round.activate = fn() {
+        if state.claimed { return }
+        if !state.exhaust { state.exhaust = loose_rocket_exhaust(round) }
+        state.exhaust.activate()
+    }
+    round.deactivate = fn() {
+        if state.exhaust { state.exhaust.deactivate() }
+    }
     round.claim_sta_round = fn() {
         if state.claimed { return false }
+        round.deactivate()
         state.claimed = true
         pickup.remove_subtree()
         pickup_target.remove_subtree()

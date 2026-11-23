@@ -1429,6 +1429,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "XrButtonUp",
         "XrButtonChanged",
         "XrAxisChanged",
+        "XrGamepadLocomotion",
         "HttpRequest",
         "HttpResponse",
         "HttpError",

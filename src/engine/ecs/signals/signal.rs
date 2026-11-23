@@ -391,6 +391,10 @@ pub enum EventSignal {
         control: XrAxisControl,
         value: [f32; 2],
     },
+    /// Built-in XR gamepad translation started, stopped, or changed locomotion mode.
+    XrGamepadLocomotion {
+        active: bool,
+    },
 
     HttpRequest {
         request_id: u64,
@@ -513,6 +517,7 @@ impl EventSignal {
             EventSignal::XrButtonUp { .. } => SignalKind::XrButtonUp,
             EventSignal::XrButtonChanged { .. } => SignalKind::XrButtonChanged,
             EventSignal::XrAxisChanged { .. } => SignalKind::XrAxisChanged,
+            EventSignal::XrGamepadLocomotion { .. } => SignalKind::XrGamepadLocomotion,
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
@@ -1397,6 +1402,7 @@ pub enum SignalKind {
     XrButtonUp,
     XrButtonChanged,
     XrAxisChanged,
+    XrGamepadLocomotion,
     HttpRequest,
     HttpResponse,
     HttpError,

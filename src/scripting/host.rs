@@ -501,6 +501,13 @@ impl mms::Host for MittensHost<'_, '_> {
                 {
                     return Ok(S::Value(mms::Value::Null));
                 }
+                if *method == "is_alive" {
+                    return Ok(S::Value(mms::Value::Bool(
+                        self.world
+                            .get_component_record(Self::component_id(component))
+                            .is_some(),
+                    )));
+                }
                 let id = self.existing_id(component, "invoke_component_method")?;
                 if *component_type == "Transform"
                     && matches!(*method, "set_translation" | "set_rotation_quat")
@@ -989,6 +996,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "XrButtonUp" => SignalKind::XrButtonUp,
         "XrButtonChanged" => SignalKind::XrButtonChanged,
         "XrAxisChanged" => SignalKind::XrAxisChanged,
+        "XrGamepadLocomotion" => SignalKind::XrGamepadLocomotion,
         "HttpRequest" => SignalKind::HttpRequest,
         "HttpResponse" => SignalKind::HttpResponse,
         "HttpError" => SignalKind::HttpError,

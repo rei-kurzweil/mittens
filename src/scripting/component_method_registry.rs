@@ -34,6 +34,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             | "detach_all"
             | "remove_child"
             | "remove_subtree"
+            | "is_alive"
             | "set_color"
     ) || (matches!(component_type, "T" | "Transform" | "transform")
         && matches!(
@@ -145,6 +146,9 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        (_, "is_alive") if args.is_empty() => {
+            Ok(Value::Bool(world.get_component_record(id).is_some()))
+        }
         ("TOP" | "TransformOperator" | "transform_operator", "axis_angle" | "set_angle") => {
             let hinge = world
                 .get_component_by_id_as_mut::<TransformOperatorComponent>(id)

@@ -1,6 +1,6 @@
 import { rocket_explosion } from "./rocket_explosion.mms"
 import { sta_rocket_body } from "./sta_rocket_ammo.mms"
-import { emissive_surface } from "../materials/emissive_surface.mms"
+import { rocket_flame } from "./rocket_exhaust.mms"
 import { toon_rocket_exhaust } from "../materials/toon_rocket_exhaust.mms"
 
 let trail_length = 3.0
@@ -8,8 +8,6 @@ let trail_length = 3.0
 let trail_radius = 0.75
 // The recentered GLB's rear face ends at z=0.17875 with a diameter of 0.0385.
 let nozzle_z = 0.18
-let flame_width = 0.114
-let flame_length = 0.48
 
 // World direction of local -Z, the rocket's flight axis.
 fn forward_of(q) {
@@ -43,17 +41,7 @@ export fn launch_rocket(round, spec) {
     let state = { alive = true }
     let zone = Zone.sphere(0.055) { ProjectileImpact {} }
     let model = round.query("[name='sta_rocket_model']")
-    // The glow cone starts at the rear face and narrows to a point behind
-    // the rocket (the unit cone's tip is local +Z, away
-    // from the -Z flight direction).
-    let nozzle = T.position(0.0, 0.0, nozzle_z + flame_length * 0.5) {
-        name = "sta_rocket_nozzle"
-        emissive_surface()
-        Emissive.on().intensity(3.0)
-        T.scale(flame_width, flame_width, flame_length) {
-            R.cone() { C.rgba(1.0, 0.45, 0.04, 1.0) }
-        }
-    }
+    let nozzle = rocket_flame("sta_rocket_nozzle", nozzle_z, 1.0)
     let launch = spec.pose.translation
     let trail = exhaust_trail(toon_rocket_exhaust(
         [launch[0], launch[1], launch[2]],

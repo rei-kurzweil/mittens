@@ -121,3 +121,13 @@ intents and host methods together beside the XR gamepad bindings. Preserve
 direct dispatch for unrelated intents and verify both script and native
 flight lifecycle tests. Keep scene-authored equipment policy separate from
 shared avatar construction.
+
+## Equipped rocket exhaust
+
+Sakura Twilight Simpler calls the loose rounds' `activate()` and
+`deactivate()` methods from its thigh equipment controller. The rig uses
+`XrGamepadLocomotion` and `gamepad.flying()` together. Translating in flight
+lights both cones, including ascent and descent. Hover ends emission and lets
+the short, widening smoke tail fade. Losing an equipped round cuts ignition
+and revokes flight permission. The exhaust uses the lower tip on the existing
+nose-down thigh mount. It is local to the equipment owner.
