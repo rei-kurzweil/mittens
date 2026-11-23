@@ -25,6 +25,7 @@ To hand a run to an agent on the GPU/headset machine, give it the
 | Twilight moon: sampled vs analytic | desktop | — | `cargo test --release --lib profile_twilight -- --ignored --nocapture` |
 | Sakura stereo profile | desktop | — | `cargo test --release --lib profile_sakura_lumae_stereo -- --ignored --nocapture` |
 | Android multiview A/B | focus3 | [Android multiview](android-multiview.md) | planned |
+| Bloom × foveation (FDM/no-FDM APKs) | focus3 | [mittens-benchmark Android app](mittens-benchmark-android.md) | planned: `scripts/android_benchmark.py run both --suite bloom-fdm` |
 
 ### What the numbers mean
 
