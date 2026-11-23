@@ -5,7 +5,8 @@
 //     list and grabs the dock; dock_dropzone slots accept it.
 //   mount: a transform that receives opened panels; the caller places it.
 //   groups: lists of items, drawn top to bottom with a gap between groups.
-//     Each item is { id, label, root_name, position, rotation?, build }.
+//     Each item is { id, label, root_name, position, rotation?, build }; the
+//     dock records the item's open panel on it as item.frame.
 //     root_name: the opened panel's movable root. Grip grabbing may reparent
 //       it, so closing removes it by name as well as through its slot.
 //     position/rotation: the panel's placement in mount space.
@@ -25,11 +26,11 @@ fn item_text(item, open) {
     return "  " + item.label
 }
 
-// Buttons are rebuilt whenever the dock is restored from collapsed; the slot
-// keeps whether the item's panel is open across those rebuilds.
-fn dock_button(slot, mount) {
-    let item = slot.item
-    let label = Text { name = "dock_" + item.id + "_label" item_text(item, slot.frame != null) }
+// Buttons are rebuilt whenever the dock is restored from collapsed. Each item
+// table records its open panel frame (item.frame), so the open state survives
+// those rebuilds without a separate list.
+fn dock_button(item, mount) {
+    let label = Text { name = "dock_" + item.id + "_label" item_text(item, item["frame"] != null) }
     let button = T {
         name = "dock_" + item.id
         Grabbable.off()
@@ -42,11 +43,11 @@ fn dock_button(slot, mount) {
         T.position(0.0, 0.0, 0.03) { Raycastable.disabled() label }
     }
     on(button, "Click", fn(event) {
-        if slot.frame {
+        if item["frame"] != null {
             let panel = query("#" + item.root_name)
             if panel { panel.remove_subtree() }
-            slot.frame.remove_subtree()
-            slot.frame = null
+            item.frame.remove_subtree()
+            item.frame = null
             label.set_text(item_text(item, false))
             return
         }
@@ -58,36 +59,30 @@ fn dock_button(slot, mount) {
             item.build()
         }
         mount.attach(frame)
-        slot.frame = frame
+        item.frame = frame
         label.set_text(item_text(item, true))
     })
     return button
 }
 
-fn dock_content(slot_groups, mount) {
+fn dock_content(groups, mount) {
     return T {
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.45) }
-        for index in range(len(slot_groups)) {
+        for index in range(len(groups)) {
             if index > 0 { T { Style { width(100%) height(GROUP_GAP_GU) } } }
-            for slot in slot_groups[index] { dock_button(slot, mount) }
+            for item in groups[index] { dock_button(item, mount) }
         }
     }
 }
 
 export fn dock(options) {
-    let slot_groups = []
-    for group in options.groups {
-        let slots = []
-        for item in group { slots.push({ item = item frame = null }) }
-        slot_groups.push(slots)
-    }
     let panel = info_panel({
         root_name = options.root_name
         width_gu = WIDTH_GU
         unit_scale = UNIT_SCALE
         title = "Panels"
         toggle_icon_glow_intensity = 0.0
-        content_factory = fn() { return dock_content(slot_groups, options.mount) }
+        content_factory = fn() { return dock_content(options.groups, options.mount) }
     })
     let root = panel.query("#" + options.root_name)
     root.attach(Selectable.off())
