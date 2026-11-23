@@ -13,6 +13,8 @@ mod activity;
 mod demo_assets;
 #[cfg(all(target_os = "android", feature = "mobile-renderer"))]
 mod frame_profile;
+#[cfg(all(target_os = "android", feature = "launcher"))]
+mod launcher;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
 mod frame_renderer;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]

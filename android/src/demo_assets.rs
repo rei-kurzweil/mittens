@@ -11,6 +11,8 @@ pub(crate) enum DemoScene {
     SakuraLean,
     SakuraCollision,
     NoiseBench,
+    /// Prepared by `launcher::Launcher` from the project root, not installed here.
+    Launcher,
 }
 pub(crate) struct SceneSource {
     pub source: String,
@@ -82,6 +84,43 @@ const NOISE_BENCH_FILES: &[(&str, &[u8])] = bundle![
     "assets/textures/noise/perlin-1024-astc4x4.astc",
     "assets/textures/noise/perlin-1024-astc8x8.astc",
 ];
+/// The launcher and its imports. Installed into the project root only where a
+/// pushed project has not already supplied the file, so pushed files win.
+#[cfg(feature = "launcher")]
+pub(crate) const LAUNCHER_FILES: &[(&str, &[u8])] = bundle![
+    "android/examples/launcher.mms",
+    "assets/components/mitten_droid/ui.mms",
+    "assets/components/internal/ui/accordion.mms",
+    "assets/components/icons.mms",
+    "assets/components/materials/ui_unlit.mms",
+    "assets/components/materials/anime_surface.mms",
+    "assets/components/panels/graphics_settings_panel.mms",
+    "assets/components/ui/info_panel.mms",
+    "assets/components/ui/dock.mms",
+    "assets/shaders/mitten-droid-ui.frag",
+    "assets/shaders/mitten-droid-gold.frag",
+    "assets/shaders/ui-unlit.frag",
+    "assets/shaders/anime-surface.frag",
+    "assets/shaders/bvh-snapshot.frag",
+];
+/// Writes bundled files that are missing under `root`, without rewriting
+/// paths: launcher scenes run with `root` as the working directory.
+#[cfg(feature = "launcher")]
+pub(crate) fn install_missing(root: &Path, files: &[(&str, &[u8])]) -> Result<()> {
+    let font: (&str, &[u8]) = (
+        "assets/textures/font_system.png",
+        include_bytes!("../assets/font_system.png"),
+    );
+    for &(relative, bytes) in files.iter().chain(std::iter::once(&font)) {
+        let target = root.join(relative);
+        if target.exists() {
+            continue;
+        }
+        std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::write(&target, bytes).map_err(|e| format!("{}: {e}", target.display()))?;
+    }
+    Ok(())
+}
 /// Shader NOISE_MODE variants written by the installer (no includes/defines in MMS).
 const NOISE_BENCH_SHADER: &str = include_str!("../../assets/shaders/perlin-noise-benchmark.frag");
 const NOISE_BENCH_MODES: [u8; 4] = [0, 1, 2, 3];
@@ -96,6 +135,7 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
     match scene {
+        DemoScene::Launcher => Err("the launcher scene is prepared by launcher::Launcher".into()),
         DemoScene::Cubes => {
             let fragment = root.join("albedo.frag");
             std::fs::write(fragment, include_str!("../assets/albedo.frag"))
@@ -181,7 +221,7 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
                     "android/examples/noise-bench.mms",
                     "noise texture vs procedural GPU benchmark",
                 ),
-                DemoScene::Cubes => unreachable!(),
+                DemoScene::Cubes | DemoScene::Launcher => unreachable!(),
             };
             let path = root.join(relative);
             let source = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;

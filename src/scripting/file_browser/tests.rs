@@ -314,3 +314,64 @@ fn pointer_selection_uses_selection_component_and_scroll_reuses_the_grid() {
     })
     .unwrap();
 }
+#[test]
+fn launcher_launches_the_selected_script_through_the_host() {
+    use crate::engine::app_launch::{self, LaunchRequest};
+    let _lock = app_launch::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    app_launch::set_enabled(true);
+    let _ = app_launch::take();
+    let mut scene = Universe::new(World::default());
+    // Browse the bundled folder so the first tile is a known MMS file.
+    scene
+        .load_mms_source_at_path(
+            &include_str!("../../../android/examples/launcher.mms")
+                .replace("if pushed { start = \"examples\" }", ""),
+            "android/examples/launcher.mms",
+        )
+        .unwrap();
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    for id in scene.world.all_components().filter(|&id| {
+        scene
+            .world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .is_some()
+    }) {
+        assert!(
+            matches!(
+                crate::engine::ecs::system::material_system::MaterialSystem::resolve_surface(
+                    &scene.world,
+                    id
+                ),
+                Some(crate::engine::ecs::system::material_system::SurfaceSource::Material(_))
+            ),
+            "launcher geometry {id:?} must use a generic custom material for Android"
+        );
+    }
+    pointer_select(&mut scene, 0);
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    let launch = named(&scene, "launcher_launch");
+    scene.systems.rx.push_event(
+        launch,
+        EventSignal::Click {
+            raycaster: launch,
+            renderable: launch,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    let request = app_launch::take();
+    app_launch::set_enabled(false);
+    assert_eq!(
+        request,
+        Some(LaunchRequest::Scene("android/examples/launcher.mms".into()))
+    );
+}

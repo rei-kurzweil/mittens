@@ -26,6 +26,10 @@ static STATE: Mutex<State> = Mutex::new(State {
     last_error: String::new(),
 });
 
+/// Serializes tests that use the process-wide request slot.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 fn state() -> std::sync::MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
@@ -68,9 +72,9 @@ pub fn last_error() -> String {
 mod tests {
     use super::*;
 
-    // One test owns the process-wide state so parallel tests cannot interleave.
     #[test]
     fn requests_require_an_enabled_host_and_mms_paths() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         set_enabled(false);
         assert!(request(LaunchRequest::Home).is_err());
         set_enabled(true);

@@ -26,6 +26,9 @@ resolution-render-probe = ["mobile-renderer"]
 profile-ui = ["mobile-renderer"]
 profile-collision = ["mobile-renderer"]
 noise-bench = ["mobile-renderer"]
+# Headset home screen: browse and open MMS files pushed with
+# packaging/sync-project.sh; hold the left menu button to return.
+launcher = ["mobile-renderer"]
 
 [build-dependencies]
 shaderc = "0.8.3"

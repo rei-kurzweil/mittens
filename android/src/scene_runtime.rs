@@ -20,25 +20,75 @@ pub(crate) struct SceneRuntime {
     announced: bool,
     profile: crate::frame_profile::FrameProfile,
     terminal: Option<UdpTerminalHost>,
+    /// Kept to rebuild the renderer, and so drop the previous scene's GPU
+    /// resources, whenever the launcher switches scenes.
+    target: RenderTarget,
+    #[cfg(feature = "launcher")]
+    launcher: Option<crate::launcher::Launcher>,
+    #[cfg_attr(not(feature = "launcher"), allow(dead_code))]
+    menu_down: bool,
+    /// The current scene was rejected; return home at the next frame boundary.
+    #[cfg_attr(not(feature = "launcher"), allow(dead_code))]
+    failed: bool,
+}
+struct RenderTarget {
+    gpu: Arc<Gpu>,
+    format: vk::Format,
+    extent: vk::Extent2D,
+    images: Vec<u64>,
+}
+impl RenderTarget {
+    fn renderer(&self) -> Result<SceneRenderer> {
+        SceneRenderer::with_samples(
+            self.gpu.clone(),
+            self.format,
+            self.extent,
+            self.images.clone(),
+            vk::SampleCountFlags::TYPE_4,
+        )
+    }
 }
 pub(crate) struct PreparedScene {
     universe: Universe,
     label: &'static str,
     terminal: Option<UdpTerminalHost>,
+    #[cfg(feature = "launcher")]
+    launcher: Option<crate::launcher::Launcher>,
+}
+/// A scene whose XR input comes from the host; the scene creates no XR session.
+fn new_universe(source: &str, path: &Path) -> Result<Universe> {
+    let mut universe = Universe::new(World::default());
+    universe
+        .systems
+        .xr
+        .set_external_frame(Some(Default::default()));
+    universe
+        .load_mms_source_at_path(source, &path.to_string_lossy())
+        .map_err(|e| format!("load mobile MMS scene: {e}"))?;
+    Ok(universe)
+}
+#[cfg(feature = "launcher")]
+fn load_universe(path: &Path) -> Result<Universe> {
+    let source =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    new_universe(&source, path)
 }
 impl PreparedScene {
     pub fn load(directory: &Path, scene: DemoScene) -> Result<Self> {
+        #[cfg(feature = "launcher")]
+        if matches!(scene, DemoScene::Launcher) {
+            let launcher = crate::launcher::Launcher::prepare(directory)?;
+            return Ok(Self {
+                universe: load_universe(launcher.home())?,
+                label: "launcher",
+                terminal: None,
+                launcher: Some(launcher),
+            });
+        }
         let source = demo_assets::install(directory, scene)?;
         #[cfg(target_os = "android")]
         mittens_engine::engine::runtime_assets::set_root(&directory.join("mittens-demo"))?;
-        let mut universe = Universe::new(World::default());
-        universe
-            .systems
-            .xr
-            .set_external_frame(Some(Default::default()));
-        universe
-            .load_mms_source_at_path(&source.source, &source.path.to_string_lossy())
-            .map_err(|e| format!("load mobile MMS scene: {e}"))?;
+        let mut universe = new_universe(&source.source, &source.path)?;
         if matches!(scene, DemoScene::SakuraLean) {
             let colliders: Vec<_> = universe.world.all_components().filter(|&id| universe.world
                 .get_component_by_id_as::<mittens_engine::engine::ecs::component::CollidableComponent>(id).is_some()).collect();
@@ -62,6 +112,8 @@ impl PreparedScene {
             terminal,
             universe,
             label: source.label,
+            #[cfg(feature = "launcher")]
+            launcher: None,
         })
     }
 
@@ -132,8 +184,13 @@ impl SceneRuntime {
         scene: PreparedScene,
         report: &mut Report,
     ) -> Result<Self> {
-        let renderer =
-            SceneRenderer::with_samples(gpu, format, extent, images, vk::SampleCountFlags::TYPE_4)?;
+        let target = RenderTarget {
+            gpu,
+            format,
+            extent,
+            images,
+        };
+        let renderer = target.renderer()?;
         report.line(renderer.attachment_policy());
         report.line(format!("mobile scene loaded: {}; custom opaque materials, ambient/directional/point/spot lights, plain sky; no legacy pipelines", scene.label));
         Ok(Self {
@@ -143,7 +200,62 @@ impl SceneRuntime {
             last_time: None,
             announced: false,
             profile: crate::frame_profile::FrameProfile::default(),
+            target,
+            #[cfg(feature = "launcher")]
+            launcher: scene.launcher,
+            menu_down: false,
+            failed: false,
         })
+    }
+
+    /// Left menu button state from the host's controller sample.
+    pub fn set_menu_down(&mut self, down: bool) {
+        self.menu_down = down;
+    }
+
+    /// Replaces the scene at a frame boundary: home after a failure, a held
+    /// menu button, or an `App` request. A scene that fails to load returns
+    /// home with its error; a launcher that fails to load is fatal.
+    #[cfg(feature = "launcher")]
+    fn switch_scene(&mut self, dt: f32, report: &mut Report) -> Result<()> {
+        use mittens_engine::engine::app_launch;
+        let Some(launcher) = self.launcher.as_mut() else {
+            return Ok(());
+        };
+        let next = if std::mem::take(&mut self.failed) {
+            Some(launcher.home().to_path_buf())
+        } else {
+            launcher.poll(self.menu_down, dt)
+        };
+        let Some(mut path) = next else {
+            return Ok(());
+        };
+        let universe = match load_universe(&path) {
+            Ok(universe) => {
+                if path != launcher.home() {
+                    app_launch::set_last_error("");
+                }
+                universe
+            }
+            Err(error) if path != launcher.home() => {
+                let shown = launcher.display(&path);
+                report.line(format!("LAUNCH failed scene={shown} error={error}"));
+                app_launch::set_last_error(format!("{shown}: {error}"));
+                path = launcher.home().to_path_buf();
+                load_universe(&path)?
+            }
+            Err(error) => return Err(error),
+        };
+        // Engine mesh/texture handles belong to one renderer instance, so the
+        // previous scene's GPU resources go with it.
+        self.renderer = self.target.renderer()?;
+        self.universe = universe;
+        self.terminal = None;
+        self.announced = false;
+        self.profile = crate::frame_profile::FrameProfile::default();
+        launcher.set_current(&path);
+        report.line(format!("LAUNCH scene={}", launcher.display(&path)));
+        Ok(())
     }
     pub fn draw(
         &mut self,
@@ -158,6 +270,8 @@ impl SceneRuntime {
             ((now - last) as f64 * 1e-9).clamp(0.0, 0.1) as f32
         });
         self.last_time = Some(now);
+        #[cfg(feature = "launcher")]
+        self.switch_scene(dt, report)?;
         let start = std::time::Instant::now();
         let input = self.universe.input_providers.poll();
         if let Some(terminal) = &self.terminal {
@@ -204,9 +318,19 @@ impl SceneRuntime {
                 requested.as_str(), feedback.status.as_str(), feedback.applied));
         }
         let benchmark_ticket = self.universe.systems.benchmarks.frame_ticket();
-        let stats: Stats = self
-            .renderer
-            .draw(index, &self.universe.visuals, &cameras)?;
+        let stats: Stats = match self.renderer.draw(index, &self.universe.visuals, &cameras) {
+            Ok(stats) => stats,
+            #[cfg(feature = "launcher")]
+            Err(error) if self.launcher.as_ref().is_some_and(|l| !l.at_home()) => {
+                // Rejected before recording: the image is released unrendered
+                // for one frame while the host returns home.
+                report.line(format!("LAUNCH render rejected: {error}"));
+                mittens_engine::engine::app_launch::set_last_error(error);
+                self.failed = true;
+                return Ok("scene_rejected");
+            }
+            Err(error) => return Err(error),
+        };
         self.universe
             .systems
             .benchmarks

@@ -16,6 +16,8 @@ pub(crate) struct Controllers {
     b: xr::Action<bool>,
     x: xr::Action<bool>,
     y: xr::Action<bool>,
+    menu: xr::Action<bool>,
+    menu_down: bool,
     hands: [xr::Path; 2],
     aim_spaces: [xr::Space; 2],
     grip_spaces: [xr::Space; 2],
@@ -67,6 +69,10 @@ impl Controllers {
         let y = set
             .create_action::<bool>("y", "Y", &hands)
             .api("create Y action")?;
+        // Left menu only: the right controller's menu is the runtime's system button.
+        let menu = set
+            .create_action::<bool>("menu", "Menu", &hands[..1])
+            .api("create menu action")?;
         let path = |s: &str| instance.string_to_path(s).api("controller binding path");
         let mut bindings = Vec::new();
         for side in ["left", "right"] {
@@ -96,6 +102,7 @@ impl Controllers {
             (&b, "right", "b"),
             (&x, "left", "x"),
             (&y, "left", "y"),
+            (&menu, "left", "menu"),
         ] {
             bindings.push(xr::Binding::new(
                 action,
@@ -133,6 +140,8 @@ impl Controllers {
             b,
             x,
             y,
+            menu,
+            menu_down: false,
             hands,
             aim_spaces,
             grip_spaces,
@@ -159,6 +168,11 @@ impl Controllers {
         };
         let mut aim = [None; 2];
         let mut grip = [None; 2];
+        self.menu_down = active
+            && self
+                .menu
+                .state(session, self.hands[0])
+                .is_ok_and(|v| v.is_active && v.current_state);
         if active {
             for i in 0..2 {
                 let hand = self.hands[i];
@@ -248,5 +262,10 @@ impl Controllers {
             input,
             gamepad,
         }
+    }
+
+    /// Left menu button state from the latest sample; the host's Home control.
+    pub fn menu_down(&self) -> bool {
+        self.menu_down
     }
 }

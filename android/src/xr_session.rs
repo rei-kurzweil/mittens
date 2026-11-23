@@ -394,12 +394,15 @@ impl XrSession {
             return Err("xrLocateViews returned an unexpected view count".into());
         }
         #[cfg(feature = "mobile-renderer")]
-        self.renderer.set_external_frame(self.controllers.sample(
-            &self.session,
-            &self.space,
-            time,
-            [views[0], views[1]],
-        ));
+        {
+            self.renderer.set_external_frame(self.controllers.sample(
+                &self.session,
+                &self.space,
+                time,
+                [views[0], views[1]],
+            ));
+            self.renderer.set_menu_down(self.controllers.menu_down());
+        }
         let index = self
             .swapchain
             .acquire_image()
