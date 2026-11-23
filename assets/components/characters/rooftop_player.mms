@@ -86,6 +86,7 @@ export fn make_rooftop_player(options) {
     let local_player = options.local_player
     let use_xr = options.use_xr
     let use_desktop = options.use_desktop
+    let camera_far = options["camera_far"]
     let voice_level = options["voice_level"]
     let mouth_tuning = options["mouth_tuning"]
     let track_hands = local_player && use_xr
@@ -161,6 +162,7 @@ export fn make_rooftop_player(options) {
             name = "local_desktop_camera_anchor"
             C3D {
                 fov(65.0) near(0.01)
+                if camera_far != null { far(camera_far) }
                 Pointer {
                     name = "local_desktop_pointer"
                     Raycast.event_driven().min_distance(0.75) {}
@@ -169,7 +171,7 @@ export fn make_rooftop_player(options) {
         }
         if local_player && use_xr {
             name = "local_xr_camera_anchor"
-            CXR {}
+            CXR { if camera_far != null { far(camera_far) } }
         }
     }
     let eye_tracking = XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)

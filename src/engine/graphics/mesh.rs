@@ -553,7 +553,7 @@ impl MeshFactory {
                     pos: [ring_radius * cos, y, ring_radius * sin],
                     uv: [
                         segment as f32 / radial as f32,
-                        0.5 - latitude / std::f32::consts::PI,
+                        0.5 - y / (2.0 * (radius + half_segment).max(f32::EPSILON)),
                     ],
                     normal: [latitude.cos() * cos, normal_y, latitude.cos() * sin],
                 });

@@ -1,8 +1,11 @@
 //! The sakura twilight fork of the rooftop example loads without its train.
 use crate::engine::Universe;
-use crate::engine::ecs::component::{DestroyableComponent, TransformComponent, VelocityComponent};
-use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
+use crate::engine::ecs::component::{
+    Camera3DComponent, CameraXRComponent, DestroyableComponent, MirrorComponent, TextComponent,
+    TransformComponent, VelocityComponent,
+};
+use crate::engine::ecs::system::{TransformSystem, grabbable_system::grabbable_owner_for_hit};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 
 fn named(scene: &Universe, label: &str) -> ComponentId {
     scene
@@ -15,21 +18,20 @@ fn named(scene: &Universe, label: &str) -> ComponentId {
 #[test]
 fn sakura_twilight_loads_its_city_without_the_train() {
     let path = "examples/sakura-twilight.mms";
-    let mut source = std::fs::read_to_string(path)
-        .unwrap()
+    let original = std::fs::read_to_string(path).unwrap();
+    let mut source = original
         .replace("let use_xr = true", "let use_xr = false")
         .replace("let use_desktop = false", "let use_desktop = true");
     source.push_str(
         r##"
         let ramp_test = T { name = "ramp_test_driver" }
         on(ramp_test, "DataEvent", fn(event) {
-            if event != "DriveRamp" { return }
             let truck = pickup.query("#pickup_truck")
-            let yaw = Math.atan2(-37.8, 12.6)
-            truck.set_translation([roof_x + 3.0, roof_height, ramp_entry_z + 3.2/3.0], "world")
-            truck.set_rotation_quat([0, Math.sin(yaw/2), 0, Math.cos(yaw/2)], "world")
-            truck.set_powered(true)
-            truck.drive_command(1,0,false)
+            if event == "DriveRamp" {
+                truck.set_powered(true)
+                truck.drive_command(1,0,false)
+            }
+            if event == "TurnLeft" { truck.drive_command(1,-0.63,false) }
         })
     "##,
     );
@@ -54,8 +56,16 @@ fn sakura_twilight_loads_its_city_without_the_train() {
         "sakura_twilight_row_2",
         "sakura_twilight_row_3",
         "sakura_twilight_road_dashes",
+        "sakura_twilight_ground",
         "sakura_twilight_pickup",
         "sakura_twilight_road_ramp",
+        "sakura_twilight_ramp_landing",
+        "sakura_twilight_road_turn",
+        "sakura_twilight_avatar_settings",
+        "avatar_height_slider",
+        "ship_washroom_suite",
+        "ship_womens_washroom",
+        "ship_washroom_passage",
         "sakura_twilight_row_sta_launcher_grip",
         "sakura_twilight_row_sta_ammo_cabinet",
         "kawaii_twilight_sky",
@@ -66,6 +76,12 @@ fn sakura_twilight_loads_its_city_without_the_train() {
             "{name}"
         );
     }
+    assert!(scene.world.all_components().any(|id| {
+        scene
+            .world
+            .get_component_by_id_as::<Camera3DComponent>(id)
+            .is_some_and(|camera| camera.z_far == 250.0)
+    }));
     for (building, floors) in [
         ("main", 3),
         ("row_0", 2),
@@ -86,8 +102,9 @@ fn sakura_twilight_loads_its_city_without_the_train() {
             }));
         }
     }
+    let driver = named(&scene, "ramp_test_driver");
     scene.command_queue.push_event(
-        named(&scene, "ramp_test_driver"),
+        driver,
         EventSignal::DataEvent {
             name: "DriveRamp".into(),
             payload: None,
@@ -98,14 +115,146 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     for _ in 0..690 {
         scene.update(1.0 / 60.0, &Default::default());
         position = TransformSystem::world_position(&scene.world, pickup).unwrap();
-        if position[0] >= 26.0 && position[1] < 0.1 {
+        if position[0] >= 33.5 && position[1] < 0.1 {
             break;
         }
     }
     assert!(
-        position[0] >= 26.0 && (position[1] + 0.23).abs() < 0.3,
-        "pickup should reach the road from its roof: {position:?}"
+        position[0] >= 33.5 && (position[1] + 0.23).abs() < 0.2 && (position[2] + 0.4).abs() < 1.27,
+        "pickup should reach the level landing from its authored roof spawn: {position:?}"
     );
+    scene.command_queue.push_event(
+        driver,
+        EventSignal::DataEvent {
+            name: "TurnLeft".into(),
+            payload: None,
+        },
+    );
+    for _ in 0..260 {
+        scene.update(1.0 / 60.0, &Default::default());
+        position = TransformSystem::world_position(&scene.world, pickup).unwrap();
+        if position[2] < -9.0 {
+            break;
+        }
+    }
+    assert!(
+        (36.0..47.0).contains(&position[0])
+            && position[2] < -9.0
+            && (position[1] + 0.23).abs() < 0.2,
+        "pickup should steer left from the landing onto the main road: {position:?}"
+    );
+
+    check_mirror_controls(&mut scene);
+    drop(scene);
+    let mut xr = Universe::new(World::default());
+    xr.systems.xr.set_external_frame(Some(Default::default()));
+    xr.load_mms_source_at_path(&original, path).unwrap();
+    for _ in 0..3 {
+        xr.update(1.0 / 60.0, &Default::default());
+    }
+    named(&xr, "sakura_twilight_avatar_settings");
+    named(&xr, "avatar_height_slider");
+    named(&xr, "xr_floor_correction_slider");
+    assert!(xr.world.all_components().any(|id| {
+        xr.world
+            .get_component_by_id_as::<CameraXRComponent>(id)
+            .is_some_and(|camera| camera.z_far == 250.0)
+    }));
+}
+
+fn check_mirror_controls(scene: &mut Universe) {
+    fn enabled(scene: &Universe, mirror: ComponentId) -> bool {
+        scene
+            .world
+            .get_component_by_id_as::<MirrorComponent>(mirror)
+            .unwrap()
+            .enabled
+    }
+    fn advance(scene: &mut Universe) {
+        for _ in 0..4 {
+            scene.update(1.0 / 60.0, &Default::default());
+        }
+    }
+    fn click(scene: &mut Universe, button: ComponentId) {
+        scene.command_queue.push_event(
+            button,
+            EventSignal::Click {
+                raycaster: button,
+                renderable: button,
+                hit_point: [0.0; 3],
+                screen_pos_px: None,
+            },
+        );
+        advance(scene);
+    }
+    fn move_player(scene: &mut Universe, player: ComponentId, translation: [f32; 3]) {
+        // These waypoints place the rig directly. Discard the preceding physics
+        // sweep so the move from the roof cannot catch on the bathroom roof.
+        scene
+            .systems
+            .static_contact
+            .forget_target(&scene.world, player);
+        scene.command_queue.push_intent_now(
+            player,
+            IntentValue::UpdateTransform {
+                component_id: player,
+                translation,
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            },
+        );
+        advance(scene);
+        let position = TransformSystem::world_position(&scene.world, player).unwrap();
+        assert!(
+            (position[1] - translation[1]).abs() < 0.3,
+            "player should be at the doorway's floor level: {position:?}"
+        );
+    }
+    fn readout(scene: &Universe) -> &str {
+        let label = named(scene, "sakura_twilight_mirror_toggle_label");
+        &scene
+            .world
+            .get_component_by_id_as::<TextComponent>(label)
+            .unwrap()
+            .text
+    }
+
+    let frame = named(scene, "sakura_twilight_mirror_frame");
+    let rooftop = named(scene, "sakura_twilight_mirror");
+    let bathroom = named(scene, "ship_womens_washroom_mirror");
+    let button = named(scene, "sakura_twilight_mirror_toggle");
+    let title = scene.world.find_component(frame, "#title_bar").unwrap();
+    assert_eq!(grabbable_owner_for_hit(&scene.world, title), Some(frame));
+    assert_eq!(grabbable_owner_for_hit(&scene.world, rooftop), Some(frame));
+    assert_eq!(grabbable_owner_for_hit(&scene.world, button), None);
+    assert!(!enabled(scene, rooftop) && !enabled(scene, bathroom));
+    assert_eq!(readout(scene), "Off");
+
+    click(scene, button);
+    assert!(enabled(scene, rooftop) && !enabled(scene, bathroom));
+    assert_eq!(readout(scene), "On");
+
+    // Enter from the street, turn into the bathroom, then return by the same route.
+    let player = named(scene, "local_root");
+    let front_door = [29.4, -0.07, -22.8];
+    let hallway = [21.0, 0.015, -22.8];
+    let bathroom_door = [21.0, 0.015, -25.0];
+    move_player(scene, player, front_door);
+    move_player(scene, player, hallway);
+    assert!(!enabled(scene, bathroom));
+    move_player(scene, player, bathroom_door);
+    assert!(enabled(scene, bathroom) && enabled(scene, rooftop));
+    click(scene, button);
+    assert!(!enabled(scene, rooftop) && enabled(scene, bathroom));
+    assert_eq!(readout(scene), "Off");
+    move_player(scene, player, hallway);
+    assert!(enabled(scene, bathroom));
+    move_player(scene, player, front_door);
+    assert!(!enabled(scene, bathroom) && !enabled(scene, rooftop));
+    move_player(scene, player, hallway);
+    assert!(!enabled(scene, bathroom));
+    move_player(scene, player, bathroom_door);
+    assert!(enabled(scene, bathroom));
 }
 
 #[test]

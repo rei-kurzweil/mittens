@@ -89,6 +89,11 @@ pub(super) fn create(
             let component = RenderableComponent::cylinder(assets, radius, height, sides)?;
             Ok(world.add_component(component))
         }),
+        Some("capsule_y") => with_render_assets_mut(|assets| {
+            let component =
+                RenderableComponent::capsule_y(assets, arg_f32(args, 0)?, arg_f32(args, 1)?)?;
+            Ok(world.add_component(component))
+        }),
         Some("helix") => with_render_assets_mut(|assets| {
             let inner = arg_f32(args, 0).unwrap_or(0.5);
             let outer = arg_f32(args, 1).unwrap_or(1.0);

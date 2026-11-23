@@ -206,7 +206,26 @@ fn storey_layout(spec) {
     return { count = count levels = levels roof = y }
 }
 
-fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings, roof_exit) {
+// The washroom suite's north wall has three clerestory panes and its east
+// doorway aligns with the 2 m passage. The remaining facade is solid.
+fn washroom_facades(data, width, depth, storey) {
+    let door = {center = 3.2 width = 2.1}
+    facade_band(data, door, "x", 1.0, width / 2.0, depth, 1.4, 2.8, false)
+    building_box(data, [width / 2.0, (storey + 2.8) / 2.0, 0.0], [0.24, storey - 2.8, depth], true)
+    building_box(data, [-width / 2.0, storey / 2.0, 0.0], [0.24, storey, depth], false)
+    building_box(data, [0.0, storey / 2.0, depth / 2.0], [width, storey, 0.24], false)
+    building_box(data, [0.0, 2.0, -depth / 2.0], [width, 4.0, 0.24], false)
+    building_box(data, [0.0, (storey + 4.7) / 2.0, -depth / 2.0], [width, storey - 4.7, 0.24], true)
+    let left = -width / 2.0
+    for center in [-5.0, -3.0, -1.0] {
+        let edge = center - 0.6
+        building_box(data, [(left + edge) / 2.0, 4.35, -depth / 2.0], [edge - left, 0.70, 0.24], true)
+        left = center + 0.6
+    }
+    building_box(data, [(left + width / 2.0) / 2.0, 4.35, -depth / 2.0], [width / 2.0 - left, 0.70, 0.24], true)
+}
+
+fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell, openings, roof_exit, washroom) {
     let width = 14.0
     let depth = 12.0
     let layout = storey_layout(floor_spec)
@@ -255,24 +274,26 @@ fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tile
             } else {
                 building_box(floor_data, [0.0, y - slab / 2.0, 0.0], [width, slab, depth], false)
             }
-            // The upper trim follows the ceiling and the low sill leaves an open window band.
-            for side in [-1.0, 1.0] {
-                // Front/back facades along Z; columns are emitted separately.
-                let front_opening = facade_opening(openings, floor, "z", side)
-                facade_band(floor_data, front_opening, "z", side, depth / 2.0, width, sill_y, sill_height, false)
-                building_box(floor_data, [0.0, trim_y, side * depth / 2.0], [width, trim_height, 0.24], true)
-                if front_opening != null { opening_header(floor_data, front_opening, depth / 2.0, y, band_top) }
-                // Street-facing facade has a door-sized opening on the ground floor.
-                let side_opening = facade_opening(openings, floor, "x", side)
-                if floor == 0 && side == street_side {
-                    for end in [-1.0, 1.0] {
-                        building_box(floor_data, [side * width / 2.0, sill_y, end * 4.0], [0.24, sill_height, 4.0], false)
+            if washroom {
+                washroom_facades(floor_data, width, depth, storey)
+            } else {
+                // Ordinary pool buildings leave an open band above the sill.
+                for side in [-1.0, 1.0] {
+                    let front_opening = facade_opening(openings, floor, "z", side)
+                    facade_band(floor_data, front_opening, "z", side, depth / 2.0, width, sill_y, sill_height, false)
+                    building_box(floor_data, [0.0, trim_y, side * depth / 2.0], [width, trim_height, 0.24], true)
+                    if front_opening != null { opening_header(floor_data, front_opening, depth / 2.0, y, band_top) }
+                    let side_opening = facade_opening(openings, floor, "x", side)
+                    if floor == 0 && side == street_side {
+                        for end in [-1.0, 1.0] {
+                            building_box(floor_data, [side * width / 2.0, sill_y, end * 4.0], [0.24, sill_height, 4.0], false)
+                        }
+                    } else {
+                        facade_band(floor_data, side_opening, "x", side, width / 2.0, depth, sill_y, sill_height, false)
                     }
-                } else {
-                    facade_band(floor_data, side_opening, "x", side, width / 2.0, depth, sill_y, sill_height, false)
+                    building_box(floor_data, [side * width / 2.0, trim_y, 0.0], [0.24, trim_height, depth], true)
+                    if side_opening != null { opening_header(floor_data, side_opening, width / 2.0, y, band_top) }
                 }
-                building_box(floor_data, [side * width / 2.0, trim_y, 0.0], [0.24, trim_height, depth], true)
-                if side_opening != null { opening_header(floor_data, side_opening, width / 2.0, y, band_top) }
             }
             if floor > 0 {
                 // One continuous balcony per storey, facing the street.
@@ -283,7 +304,7 @@ fn build_pool_building(label, origin, floor_spec, street_side, roof_access, tile
                     building_box(floor_data, [x, y + 0.48, end * 5.45], [1.9, 0.96, 0.14], false)
                 }
             }
-            if per_floor { building_columns(floor_data, y + storey / 2.0, storey, width, depth, openings, floor) }
+            if per_floor && !washroom { building_columns(floor_data, y + storey / 2.0, storey, width, depth, openings, floor) }
         }
     }
     // Distant buildings keep continuous columns and one combined pair overall.
@@ -358,4 +379,8 @@ export fn pool_building_with_openings(label, origin, floors, street_side, tiles,
 // Existing pool_building callers retain their original slabs and top-floor stairs.
 export fn pool_building_with_stairs(label, origin, floors, street_side, tiles, trim_color, roof_exit) {
     return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true, null, roof_exit)
+}
+
+export fn pool_washroom_building(label, origin, tiles, trim_color) {
+    return build_pool_building(label, origin, [5.2], 1.0, false, tiles, trim_color, true, true, false, null, null, true)
 }

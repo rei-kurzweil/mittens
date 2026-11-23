@@ -1,14 +1,14 @@
-// Standalone title-bar building blocks. Existing panels do not use these yet.
+// Standalone title-bar building blocks.
 import { minimize_circle_icon } from "../icons.mms"
 
 // The caller owns window behavior and supplies buttons in display order.
 // Future close/minimize/maximize order puts minimize in the middle.
 // Maximize sizing is deliberately left to the owning panel/container.
 // Use LayoutRoot.unit_scale(1); scale the owning panel's transform for world size.
-export fn title_bar(title, buttons) {
+export fn title_bar(title, buttons, grab_parent) {
     return T {
         name = "title_bar"
-        Grabbable.parent()
+        if grab_parent != false { Grabbable.parent() }
         Raycastable.enabled()
         Style {
             display("flex") flex_direction("row") align_items("center")

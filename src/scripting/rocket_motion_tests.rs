@@ -45,7 +45,10 @@ pub(super) fn advance(scene: &mut crate::engine::Universe, clock: &TestClock) {
     scene.update(1.0 / 120.0, &Default::default());
 }
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::VelocityComponent;
+use crate::engine::ecs::component::{
+    VelocityComponent,
+    renderable::{AuthoredRenderableShape, RenderableComponent},
+};
 
 fn has(world: &World, name: &str) -> bool {
     world
@@ -164,7 +167,26 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         &mut uploader,
         &mut scene.command_queue,
     );
-    assert!(has(&scene.world, "sta_rocket_trail"), "rocket carries its exhaust ribbon");
+    assert!(has(&scene.world, "sta_rocket_trail"));
+    let capsules = scene
+        .world
+        .all_components()
+        .filter(|&id| {
+            scene
+                .world
+                .get_component_by_id_as::<RenderableComponent>(id)
+                .is_some_and(|renderable| {
+                    matches!(
+                        renderable.authored_shape,
+                        Some(AuthoredRenderableShape::CapsuleY {
+                            radius: 0.25,
+                            half_segment: 1.25
+                        })
+                    )
+                })
+        })
+        .count();
+    assert_eq!(capsules, 1, "one closed exhaust capsule");
     let nozzle_glow: Vec<_> = scene
         .visuals
         .instances()
@@ -172,18 +194,24 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         .filter(|instance| instance.emissive == 3.0)
         .collect();
     assert_eq!(nozzle_glow.len(), 1, "one exhaust cone emits light");
-    // The trail is a single axis-locked billboard quad, not two crossed planes.
-    let trail_bases: Vec<_> = scene
+    let (trail_base, exhaust_shader) = scene
         .visuals
         .instances()
         .iter()
-        .filter_map(|instance| {
-            let material = scene.visuals.materials.instance(instance.material_instance?)?;
+        .find_map(|instance| {
+            let material = scene
+                .visuals
+                .materials
+                .instance(instance.material_instance?)?;
             let definition = scene.visuals.materials.definition(material.definition)?;
-            (definition.base == scene.visuals.materials.axial_billboard_base).then_some(())
+            let custom = definition.custom.as_ref()?;
+            custom
+                .fragment_uri
+                .ends_with("toon-rocket-exhaust.frag")
+                .then(|| (definition.base, custom.clone()))
         })
-        .collect();
-    assert_eq!(trail_bases.len(), 1, "one billboard trail quad");
+        .expect("rocket exhaust material");
+    assert_eq!(trail_base, scene.visuals.materials.surface_base);
     for disc in nozzle_glow {
         let material = scene
             .visuals
@@ -227,7 +255,9 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         "impact removes projectile"
     );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while scene.systems.destroyable.cuts == 0 && std::time::Instant::now() < deadline {
+    while (scene.systems.destroyable.cuts == 0 || exhaust_shader.compiled.get().is_none())
+        && std::time::Instant::now() < deadline
+    {
         scene.systems.prepare_render(
             &mut scene.world,
             &mut scene.visuals,
@@ -237,6 +267,12 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         );
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
+    exhaust_shader
+        .compiled
+        .get()
+        .expect("exhaust shader compilation")
+        .as_ref()
+        .unwrap();
     assert!(
         scene.systems.destroyable.cuts > 0,
         "damage must produce a completed wall cut"

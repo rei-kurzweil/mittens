@@ -1,11 +1,9 @@
 import { f32, vec3 } from "types"
 
-// Apply to a translucent local-XY quad with UV y=0 at the rocket. The axial
-// billboard base keeps the quad's local Y along the flight line and turns it
-// about that line toward each view, so one quad replaces two crossed planes.
+// Apply to a translucent capsule with UV y=0 at the rocket's nozzle.
 // Each rocket needs its own instance because launch_origin/flight_direction
 // are per shot; the compiled definition is shared through module caching.
-let definition = MaterialDefinition(MaterialBase.axial_billboard())
+let definition = MaterialDefinition(MaterialBase())
     .fragment("assets/shaders/toon-rocket-exhaust.frag")
     .inputs({
         launch_origin: vec3
@@ -15,9 +13,10 @@ let definition = MaterialDefinition(MaterialBase.axial_billboard())
         wave_frequency: f32
         wave_amplitude: f32
         trail_length: f32
+        trail_radius: f32
     })
 
-export fn toon_rocket_exhaust(launch_origin, flight_direction, trail_length) {
+export fn toon_rocket_exhaust(launch_origin, flight_direction, trail_length, trail_radius) {
     return Material(definition).inputs({
         launch_origin = launch_origin
         flight_direction = flight_direction
@@ -26,5 +25,6 @@ export fn toon_rocket_exhaust(launch_origin, flight_direction, trail_length) {
         wave_frequency = 7.0
         wave_amplitude = 0.08
         trail_length = trail_length
+        trail_radius = trail_radius
     })
 }

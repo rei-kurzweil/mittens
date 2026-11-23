@@ -4,7 +4,7 @@ import { emissive_surface } from "../materials/emissive_surface.mms"
 import { toon_rocket_exhaust } from "../materials/toon_rocket_exhaust.mms"
 
 let trail_length = 3.0
-let trail_width = 0.9
+let trail_radius = 0.25
 // The recentered GLB's rear face ends at z=0.17875 with a diameter of 0.0385.
 let nozzle_z = 0.18
 // Exhaust cone length behind the rear face.
@@ -19,15 +19,14 @@ fn forward_of(q) {
     return [-2.0 * (x * z + w * y), -2.0 * (y * z - w * x), -(1.0 - 2.0 * (x * x + y * y))]
 }
 
-// One quad from the nozzle (UV y=0) back along local +Z. Its axial billboard
-// material turns it about that line to face each view, so it never goes
-// edge-on; the shader clips it at the launch point.
+// The capsule's +Y cap points toward the nozzle. Its profile is visible from
+// behind the rocket as well as from the side of the flight line.
 fn exhaust_trail(material) {
     return T.position(0.0, 0.0, nozzle_z + trail_length * 0.5) {
         name = "sta_rocket_trail"
         T.rotation(-Math.pi / 2.0, 0.0, 0.0) {
-            T.scale(trail_width, trail_length, 1.0) {
-                R.plane() { material C.rgba(1.0, 1.0, 1.0, 0.95) }
+            R.capsule_y(trail_radius, trail_length * 0.5 - trail_radius) {
+                material C.rgba(1.0, 1.0, 1.0, 0.95)
             }
         }
     }
@@ -59,6 +58,7 @@ export fn launch_rocket(round, spec) {
         [launch[0], launch[1], launch[2]],
         forward_of(spec.pose.rotation_quat_xyzw),
         trail_length,
+        trail_radius,
     ))
     let motion = Velocity {}
     let root = T {

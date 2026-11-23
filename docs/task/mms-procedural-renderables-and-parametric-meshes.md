@@ -4,6 +4,14 @@ Date: 2026-06-30
 
 Status: proposed
 
+Follow-up for the renderable component. Move procedural constructor metadata
+and serialization into a shape-family module as their inventory grows. Move
+revolved mesh builders out of the mesh factory body into a cohesive geometry
+module. Keep cached mesh lookup and shader reuse on the existing paths. Validate
+save/load, handle reuse across multiple rockets, and steady geometry counts
+after repeated shots. Separate flight and VFX tests if the projectile test
+module grows further, preserving their shared headless render setup.
+
 ## Goal
 
 Allow MMS to author parameterized procedural meshes directly via `Renderable`

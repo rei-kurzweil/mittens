@@ -16,9 +16,12 @@ import { controller_hand_curls } from "../assets/components/network/controller_h
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
-import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
+import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
+import { mirror_panel } from "../assets/components/panels/mirror_panel.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
-import { pool_building, pool_building_with_stairs } from "../assets/components/buildings/pool_building.mms"
+import { pool_building, pool_building_with_stairs, pool_washroom_building } from "../assets/components/buildings/pool_building.mms"
+import { ship_washroom_suite } from "../assets/components/rooms/ship_washroom_suite.mms"
+import { sakura_twilight_street } from "../assets/components/buildings/sakura_twilight_street.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
@@ -110,7 +113,7 @@ fn flat_material(shade_color) {
         rim_strength = 0.0
     })
 }
-let ground_material = flat_material([0.32, 0.25, 0.30])
+let ground_material = flat_material([0.24, 0.32, 0.27])
 let road_material = flat_material([0.20, 0.20, 0.26])
 let white = [0.94, 0.96, 0.97]
 let pink = [0.88, 0.65, 0.73]
@@ -132,96 +135,42 @@ fn roof_tree(origin, height) {
 
 let ramp_entry_z = -0.4
 pool_building_with_stairs("sakura_twilight_main", [roof_x, 0.0, 0.0], main_floors, 1.0, tiles, pink,
-    { side = 1.0 center = ramp_entry_z - 0.28 width = 5.0 })
+    { side = 1.0 center = ramp_entry_z width = 5.0 })
 roof_tree([roof_x, 0.0, 0.0], roof_height)
 
-// Ground slab top at y = -0.23, as in twilight_rooftop.
-T {
-    name = "sakura_twilight_ground"
-    T.position(0.0, -0.48, -13.0).scale(120.0, 0.5, 120.0) {
-        R.cube() { ground_material C.rgba(0.40, 0.31, 0.32, 1.0) }
-        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
-    }
-}
-
-// Road along X between the players' building and the row, visual only: it
-// sits 2 cm proud of the ground, which carries the collision. The dashed
-// centre line is one CombineMesh, so its 30 dashes are a single draw.
-let road_z = -13.0
-let road_width = 9.0
-let road_length = 120.0
-
-fn road_ramp(top, bottom, width) {
-    let dx = bottom[0] - top[0]
-    let dy = bottom[1] - top[1]
-    let dz = bottom[2] - top[2]
-    let run = Math.sqrt(dx * dx + dz * dz)
-    let length = Math.sqrt(run * run + dy * dy)
-    return T.position((top[0] + bottom[0]) / 2.0, (top[1] + bottom[1]) / 2.0, (top[2] + bottom[2]) / 2.0)
-        .rotation(0.0, Math.atan2(-dx, -dz), 0.0) {
-        name = "sakura_twilight_road_ramp"
-        T.rotation(Math.atan2(dy, run), 0.0, 0.0) {
-            T.position(0.0, -0.15, 0.0).scale(width, 0.30, length) {
-                R.cube() { road_material C.rgba(0.29, 0.28, 0.32, 1.0) }
-                Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.56) {} }
-            }
-            for side in [-1.0, 1.0] {
-                T.position(side * (width / 2.0 - 0.09), 0.14, 0.0).scale(0.18, 0.28, length - 0.30) {
-                    R.cube() { hardware C.rgba(0.82, 0.68, 0.69, 1.0) }
-                    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
-                }
-            }
-        }
-    }
-}
-// Overlap the top with the roof slab so the diagonal deck spans the parapet opening.
-let ramp_top = [roof_x + 6.20, roof_height, ramp_entry_z]
-let ramp_bottom = [26.0, -0.23, road_z]
-road_ramp(ramp_top, ramp_bottom, 4.25)
-T {
-    name = "sakura_twilight_road"
-    Raycastable.disabled()
-    T.position(0.0, -0.22, road_z).scale(road_length, 0.02, road_width) {
-        R.cube() { road_material C.rgba(0.24, 0.23, 0.28, 1.0) }
-    }
-    CombineMesh.keep_transforms() {
-        name = "sakura_twilight_road_dashes"
-        road_material
-        for dash in range(30) {
-            T.position(-road_length / 2.0 + 2.0 + dash * 4.0, -0.205, road_z).scale(2.0, 0.01, 0.18) {
-                R.cube() { C.rgba(0.93, 0.90, 0.80, 1.0) }
-            }
-        }
-    }
-}
+sakura_twilight_street(roof_x, roof_height, ramp_entry_z, ground_material, road_material, hardware)
 
 // The row: twilight_rooftop's north building (4 storeys) as two 2-storey
 // buildings, and its east building (3 storeys) as a 2- and a 1-storey one.
 // Same 14 x 12 m footprint; each street side (+Z) faces the road.
 let row_z = -26.0
+// Detect the local player even when the selected avatar has collision disabled.
+let washroom_probe = Zone.sphere(0.18) {
+    name = "sakura_twilight_washroom_probe"
+    Collidable.sensor() {}
+}
+let washroom_probe_frame = T.position(0.0, 1.0, 0.0) { washroom_probe }
 let row = [
     { name = "sakura_twilight_row_0" x = -26.0 floors = 2 color = white },
     { name = "sakura_twilight_row_1" x = -10.0 floors = 2 color = blue },
     { name = "sakura_twilight_row_2" x = 6.0 floors = 2 color = white },
-    { name = "sakura_twilight_row_3" x = 22.0 floors = 1 color = blue },
+    { name = "sakura_twilight_row_3" x = 22.0 floors = 1 color = blue washroom = true },
 ]
 for building in row {
     let origin = [building.x, 0.0, row_z]
-    pool_building(building.name, origin, building.floors, 1.0, false, tiles, building.color, true, true)
-    roof_tree(origin, building.floors * storey_height)
+    if building["washroom"] {
+        pool_washroom_building(building.name, origin, tiles, building.color)
+        T.position(origin[0], origin[1], origin[2]) { ship_washroom_suite(washroom_probe) }
+        roof_tree(origin, 5.2)
+    } else {
+        pool_building(building.name, origin, building.floors, 1.0, false, tiles, building.color, true, true)
+        roof_tree(origin, building.floors * storey_height)
+    }
 }
 
-// The roof faces west over open air, so the reflected side stays clear.
-// Grab it (XR grip or desktop left mouse) to move it; it keeps its world pose.
+// Keep the back of the rooftop mirror over open air.
 T.position(roof_x - 7.6, roof_height + 1.3, 0.0).rotation(0.0, quarter_turn, 0.0) {
-    name = "sakura_twilight_mirror_frame"
-    Grabbable {}
-    T.scale(3.0, 1.4, 1.0) {
-        R.plane() {
-            Raycastable.enabled()
-            Mirror.quality(1024) { name = "sakura_twilight_mirror" }
-        }
-    }
+    mirror_panel({ name = "sakura_twilight_mirror" width = 3.0 height = 1.4 quality = 1024 })
 }
 
 // Status board.
@@ -250,11 +199,7 @@ if net.is_host() { grab_rank = 1 }
 let mounts = shared_mounts()
 let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
     socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 acceleration_drive = true })
-let pickup_x = roof_x + 3.0
-let ramp_dx = ramp_bottom[0] - ramp_top[0]
-let ramp_dz = ramp_bottom[2] - ramp_top[2]
-let pickup_z = ramp_top[2] + (pickup_x - ramp_top[0]) * ramp_dz / ramp_dx
-T.position(pickup_x, roof_height, pickup_z).rotation(0.0, Math.atan2(-ramp_dx, -ramp_dz), 0.0) {
+T.position(roof_x + 3.0, roof_height, ramp_entry_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
     name = "sakura_twilight_pickup"
     pickup
 }
@@ -267,7 +212,7 @@ let second_pistol = ship_machine_pistol("rooftop_machine_pistol_2", weapon_optio
 let launcher = shared_sta_launcher("rooftop_sta_launcher", weapon_options("arena.sta.1"))
 let street_launcher = shared_sta_launcher("sakura_twilight_row_sta_launcher", weapon_options("arena.sta.2"))
 fn weapon_stand(x, weapon) {
-    return T.position(x, roof_height, -1.1) {
+    return T.position(x, roof_height, -3.1) {
         T.position(0.0, 1.04, 0.0) { weapon }
         box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
     }
@@ -275,7 +220,7 @@ fn weapon_stand(x, weapon) {
 weapon_stand(roof_x - 0.25, pistol)
 weapon_stand(roof_x + 0.65, second_pistol)
 weapon_stand(roof_x + 1.55, launcher.root)
-T.position(roof_x + 2.65, roof_height, -1.55) {
+T.position(roof_x + 2.65, roof_height, -4.15) {
     sta_ammo_cabinet("twilight_sta_ammo_cabinet")
 }
 T.position(row[1].x - 1.4, row[1].floors * storey_height, row_z + 1.3) {
@@ -288,7 +233,7 @@ ship_input_controller(false, [pistol.grip, second_pistol.grip, launcher.grip, st
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
 if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
-let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop voice_level = voice_level mouth_tuning = mouth_tuning opaque_bucket = "near" })
+let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop camera_far = 250.0 voice_level = voice_level mouth_tuning = mouth_tuning opaque_bucket = "near" })
 let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop opaque_bucket = "near" })
 let picker_status = { update = null }
 fn report_avatar_status(message) {
@@ -314,6 +259,7 @@ let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
 T.position(roof_x + spawn_x - avatar_picker.width / 2.0, roof_height + 2.0, -2.2) { avatar_picker.root }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
+local.root.attach(washroom_probe_frame)
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
     I.speed(2.0) {
@@ -327,12 +273,22 @@ remote.root
 T.position(roof_x - 4.6, roof_height + 2.3, -4.8) {
     graphics_settings_panel({ root_name = "sakura_twilight_graphics_settings" })
 }
+let xr_calibration_file = null
 if use_xr {
-    let xr_calibration_file = XrSettings.floor.default_file()
+    xr_calibration_file = XrSettings.floor.default_file()
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
-    T.position(roof_x + spawn_x - 3.65, roof_height + 2.3, -2.2) {
-        xr_settings_panel({ root_name = "sakura_twilight_xr_settings", calibration_file = xr_calibration_file })
-    }
+}
+fn apply_avatar_height() { local.apply_desired_height(report_avatar_status) }
+on_global("DataEvent", fn(event) {
+    if event == "AvatarSettingsChanged" { apply_avatar_height() }
+})
+T.position(roof_x + spawn_x - 4.65, roof_height + 2.3, -2.2) {
+    avatar_settings_panel({
+        root_name = "sakura_twilight_avatar_settings"
+        show_xr = use_xr
+        calibration_file = xr_calibration_file
+        on_height_recommitted = apply_avatar_height
+    })
 }
 // Grab this cyan cube with the desktop pointer or either XR hand. The latest
 // grab/release transition wins; simultaneous claims favor the client in this demo.

@@ -67,6 +67,10 @@ pub(super) fn configure(component: &mut mms::ComponentBuilder<'_, MittensBinding
         // component_registry::polygon_args.
         .constructor("polygon", any(2))
         .constructor(
+            "capsule_y",
+            component_signature([mms::ValueType::F32, mms::ValueType::F32]),
+        )
+        .constructor(
             "cylinder",
             optional_component_signature(
                 [

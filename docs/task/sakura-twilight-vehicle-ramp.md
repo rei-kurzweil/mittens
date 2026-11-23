@@ -42,3 +42,21 @@ street access geometry into a scene-specific asset and keep network ownership
 and player wiring in the entry point. Keep the existing per-floor batches,
 shared materials, and collision/damage ownership. Validate the scene load and
 the same number of retained draws for each intact building before the split.
+
+The next street layout follows the building grid. An eastbound ramp eases
+down to a straight landing before a quarter-annulus curves north to the main
+road. The ground provides continuous collision under the landing and curve.
+Validate a drive across the toe, then steer toward the main road. Keep the
+street geometry with the ramp layout and let the scene own player and network
+placement.
+
+If the ceramic building factory grows further, separate its facade profiles
+from stair and roof slab layout. Keep each intact floor's material batches and
+destructible markers together. Validate collision apertures and batch counts
+for the clerestory variant and the existing open-sided buildings.
+
+Keep the rooftop mirror's title and capture toggle in a reusable panel. A
+future scene split can group the rooftop furnishings and their placement while
+leaving player and network wiring in the entry point. Keep both mirror
+controls event-driven and verify their capture states independently in the
+scene without adding UI or sensor polling.

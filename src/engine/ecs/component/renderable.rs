@@ -47,6 +47,10 @@ pub enum AuthoredRenderableShape {
         height: f32,
         sides: u32,
     },
+    CapsuleY {
+        radius: f32,
+        half_segment: f32,
+    },
     Helix {
         inner: f32,
         outer: f32,
@@ -403,6 +407,27 @@ impl RenderableComponent {
         Ok(component)
     }
 
+    pub fn capsule_y(
+        assets: &mut RenderAssets,
+        radius: f32,
+        half_segment: f32,
+    ) -> Result<Self, String> {
+        if !radius.is_finite() || radius <= 0.0 || !half_segment.is_finite() || half_segment < 0.0 {
+            return Err(
+                "capsule_y requires a positive radius and a nonnegative half segment".into(),
+            );
+        }
+        let mut component = Self::from_cpu_mesh_handle(
+            assets.capsule_y_mesh(radius, half_segment),
+            MaterialHandle::TOON_MESH,
+        );
+        component.authored_shape = Some(AuthoredRenderableShape::CapsuleY {
+            radius,
+            half_segment,
+        });
+        Ok(component)
+    }
+
     pub fn helix(
         assets: &mut RenderAssets,
         inner: f32,
@@ -583,6 +608,14 @@ impl Component for RenderableComponent {
                 "Renderable",
                 "icosahedron",
                 vec![num(*tessellations as f64), num(*sphericalness as f64)],
+            ),
+            Some(AuthoredRenderableShape::CapsuleY {
+                radius,
+                half_segment,
+            }) => ce_call(
+                "Renderable",
+                "capsule_y",
+                vec![num(*radius as f64), num(*half_segment as f64)],
             ),
             Some(AuthoredRenderableShape::PartialAnnulus2d {
                 inner_radius,
