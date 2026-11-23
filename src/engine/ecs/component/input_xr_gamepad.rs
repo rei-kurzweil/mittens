@@ -15,13 +15,14 @@ impl Default for XrHandPreference {
     }
 }
 
-/// What the locomotion stick's X axis does; Y always moves forward and back.
+/// How the thumbsticks drive locomotion. The locomotion stick always moves
+/// and strafes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum XrStickMode {
-    /// X strafes left and right.
+    /// Only the locomotion stick is used.
     #[default]
     Strafe,
-    /// X smoothly turns the rig about the headset.
+    /// The other hand's stick X smoothly turns the rig about the headset.
     Turn,
 }
 
