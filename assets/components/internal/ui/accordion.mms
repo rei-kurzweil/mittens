@@ -19,6 +19,7 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //                    owns its layout/markers, receives the minimize control last
 //   body             one component rooted at #accordion_body
 //   unlit            use a shared, non-blooming UI material
+//   native_toggle    the native editor adapter owns toggle clicks and restore
 //
 // The returned object is the layout-owned outer slot. The default minimize
 // toggle is always inserted before caller children. Accordion events originate
@@ -169,16 +170,17 @@ export fn accordion(options) {
         if value { emit_data(panel_root,"AccordionRestoreRequested",body_mount) }
         else { emit_data(panel_root,"AccordionMinimized",body_mount) }
     }
-    panel_root.set_expanded = set_expanded
-    panel_root.is_expanded = fn() { return state.expanded }
-    layout_slot.set_expanded = set_expanded
-    layout_slot.is_expanded = fn() { return state.expanded }
+    if !options["native_toggle"] {
+        panel_root.set_expanded = set_expanded
+        panel_root.is_expanded = fn() { return state.expanded }
+        layout_slot.set_expanded = set_expanded
+        layout_slot.is_expanded = fn() { return state.expanded }
+        on(toggle,"Click",fn(event) { set_expanded(!state.expanded) })
+    }
     if !state.expanded {
         toggle_icon.update_transform(
             [ACCORDION_TOGGLE_WIDTH_GU/2.0*accordion_unit_scale,-ACCORDION_TITLE_HEIGHT_GU/2.0*accordion_unit_scale,0.02],
             [0,0,-1.570796],[1.62*accordion_unit_scale,1.62*accordion_unit_scale,1.0])
     }
-    on(toggle,"Click",fn(event) { set_expanded(!state.expanded) })
-
     return layout_slot
 }

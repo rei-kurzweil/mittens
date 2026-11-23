@@ -189,12 +189,14 @@ fn mitten_equipment_attaches_on_release_and_stays_grabbable() {
     let left = named(&scene, "equipment_left_thigh");
     let right = named(&scene, "equipment_right_thigh");
     let back = named(&scene, "equipment_back");
+    let head_slot = named(&scene, "equipment_head");
     let plain = named(&scene, "plain");
     let shaped = named(&scene, "shaped");
     let higher = named(&scene, "higher");
     let [x, y, z] = position(&scene, left);
     assert!(x > 0.18 && position(&scene, right)[0] < -0.18);
-    assert!(position(&scene, back)[2] < -0.16);
+    assert!(position(&scene, back)[2] < -0.24);
+    assert!(position(&scene, head_slot)[1] > position(&scene, back)[1]);
 
     grab(&mut scene, plain);
     move_to(&mut scene, plain, [x, y, z]);
@@ -262,9 +264,12 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
     }
     let mut scene = scene(&format!(
         r#"
-        import {{ install_miku_equipment }} from "../assets/components/characters/tda_miku_rig.mms"
+        import {{ install_miku_equipment, miku_twintails, miku_hand_colliders }} from "../assets/components/characters/tda_miku_rig.mms"
         import {{ sta_rocket_ammo }} from "../assets/components/projectiles/sta_rocket_ammo.mms"
-        let model = GLTF.new("{MODEL}").default_height_if_outside(1.0, 3.0, 1.7) {{}}
+        let model = GLTF.new("{MODEL}").default_height_if_outside(1.0, 3.0, 1.7) {{
+            miku_twintails()
+            miku_hand_colliders()
+        }}
         T {{ model }}
         install_miku_equipment(model)
         T {{ name = "hand" Pointer {{ name = "test_pointer" }} }}
@@ -280,8 +285,24 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
     let right = position(&scene, named(&scene, "equipment_right_thigh"));
     let back_zone = named(&scene, "equipment_back");
     let back = position(&scene, back_zone);
+    let crown = named(&scene, "equipment_head");
     assert!(left[0] > 0.18 && right[0] < -0.18);
     assert!(back[1] > left[1] && back[2] < -0.12);
+    assert!(position(&scene, crown)[1] > back[1]);
+    for _ in 0..4 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let chains = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    assert_eq!(chains.len(), 2);
+    for chain in chains {
+        assert_eq!(chain.colliders.len(), 2);
+        assert!(
+            chain
+                .colliders
+                .iter()
+                .all(|collider| (collider.scaled_base_radius - 0.11).abs() < 1e-4)
+        );
+    }
     let prop = named(&scene, "prop");
     grab(&mut scene, prop);
     move_to(&mut scene, prop, back);
@@ -300,5 +321,56 @@ fn miku_equipment_zones_follow_the_scaled_rig() {
         let zone = named(&scene, name);
         drop_round_into(&mut scene, round, zone);
         assert_round_hangs_at_slot(&scene, round, zone);
+    }
+}
+
+#[test]
+fn succubus_preset_drops_equipment_on_the_crown_and_releases_it_on_removal() {
+    if !std::path::Path::new("assets/models/local/succubus.glb").is_file() {
+        return;
+    }
+    let mut scene = scene(r#"
+        import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+        import { detach_avatar_equipment } from "../assets/components/characters/avatar_equipment.mms"
+        let avatar = make_rooftop_player({
+            prefix = "succubus_test" avatar = "succubus"
+            local_player = false use_xr = false use_desktop = false
+        })
+        avatar.root
+        on(avatar.root, "DataEvent", fn(event) {
+            if event == "remove_avatar" {
+                detach_avatar_equipment(avatar.head)
+                avatar.root.remove_subtree()
+            }
+        })
+        T { name = "hand" Pointer { name = "test_pointer" } }
+        T.position(3, 0, 0) { name = "crown_prop" Grabbable {} R.cube() }
+    "#);
+    let avatar = named(&scene, "succubus_test_root");
+    let head = named(&scene, "equipment_head");
+    let back = named(&scene, "equipment_back");
+    named(&scene, "equipment_left_thigh");
+    named(&scene, "equipment_right_thigh");
+    assert!(position(&scene, head)[1] > position(&scene, back)[1]);
+    let prop = named(&scene, "crown_prop");
+    let crown_position = position(&scene, head);
+    grab(&mut scene, prop);
+    move_to(&mut scene, prop, crown_position);
+    release(&mut scene, prop);
+    assert_eq!(scene.world.parent_of(prop), Some(head));
+    let attached_position = position(&scene, prop);
+    scene.command_queue.push_event(
+        avatar,
+        EventSignal::DataEvent {
+            name: "remove_avatar".into(),
+            payload: None,
+        },
+    );
+    step(&mut scene);
+    step(&mut scene);
+    assert!(scene.world.get_component_record(avatar).is_none());
+    assert_eq!(scene.world.parent_of(prop), None);
+    for (actual, expected) in position(&scene, prop).into_iter().zip(attached_position) {
+        assert!((actual - expected).abs() < 1e-5);
     }
 }

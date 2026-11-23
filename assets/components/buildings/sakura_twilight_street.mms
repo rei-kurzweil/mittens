@@ -1,3 +1,5 @@
+import { radio_tower } from "./radio_tower.mms"
+
 // The eastbound descent, landing, and quarter turn share one road layout.
 fn ramp_segment(x0, y0, x1, y1, z, width, road_material, rail_material) {
     let dx = x1 - x0
@@ -92,15 +94,15 @@ fn corner_grass(label, outline, x, y, z) {
 export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, road_material, rail_material) {
     let road_z = -13.0
     let road_width = 9.0
-    let road_length = 200.0
+    let road_x0 = -100.0
+    let road_x1 = 188.0
+    let road_length = road_x1 - road_x0
     let ground_y = -0.23
     let surface_y = ground_y + 0.004
     let ground_x0 = -120.0
-    let ground_x1 = 120.0
+    let ground_x1 = 208.0
     let ground_z0 = road_z - 90.0
     let ground_z1 = road_z + 90.0
-    let road_x0 = -road_length / 2.0
-    let road_x1 = road_length / 2.0
     let road_far_z = road_z - road_width / 2.0
     let ramp_top_x = roof_x + 6.20
     let ramp_bottom_x = ramp_top_x + 40.0
@@ -130,7 +132,8 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
     return T {
         T { name = "sakura_twilight_ground"
             ground_material
-            T.position(0.0, ground_y - 0.25, road_z).scale(240.0, 0.50, 180.0) {
+            T.position((ground_x0 + ground_x1) / 2.0, ground_y - 0.25, road_z)
+                .scale(ground_x1 - ground_x0, 0.50, ground_z1 - ground_z0) {
                 Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
             }
             for region in grass_regions {
@@ -154,9 +157,18 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
                 ramp_segment(ramp_bottom_x - r0, y0, ramp_bottom_x - r1, y1, ramp_z, ramp_width, road_material, null)
             }
         }
+        T.position(road_x1 - 36.0, ground_y, road_z - 10.0) {
+            radio_tower("sakura_twilight_radio_tower_1", rail_material)
+        }
+        T.position(road_x1 - 22.0, ground_y, road_z + 11.0) {
+            radio_tower("sakura_twilight_radio_tower_2", rail_material)
+        }
+        T.position(road_x1 - 10.0, ground_y, road_z - 12.0) {
+            radio_tower("sakura_twilight_radio_tower_3", rail_material)
+        }
         T { name = "sakura_twilight_road"
             Raycastable.disabled()
-            flat_road(0.0, surface_y, road_z, road_length, road_width, road_material)
+            flat_road((road_x0 + road_x1) / 2.0, surface_y, road_z, road_length, road_width, road_material)
             T { name = "sakura_twilight_ramp_landing"
                 flat_road((ramp_bottom_x + landing_end_x) / 2.0, surface_y, ramp_z, landing_end_x - ramp_bottom_x, ramp_width, road_material)
             }
@@ -169,8 +181,8 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
             CombineMesh.keep_transforms() {
                 name = "sakura_twilight_road_dashes"
                 road_material
-                for dash in range(50) {
-                    T.position(-road_length / 2.0 + 2.0 + dash * 4.0, -0.201, road_z).scale(2.0, 0.01, 0.18) {
+                for dash in range(Math.floor(road_length / 4.0)) {
+                    T.position(road_x0 + 2.0 + dash * 4.0, -0.201, road_z).scale(2.0, 0.01, 0.18) {
                         R.cube() { C.rgba(0.93, 0.90, 0.80, 1.0) }
                     }
                 }

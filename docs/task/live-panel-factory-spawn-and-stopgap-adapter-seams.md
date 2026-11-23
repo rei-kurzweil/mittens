@@ -48,6 +48,13 @@ Recent regressions made the architectural conflict visible:
 That is a sign that runtime live semantics and editor template materialization are still
 sharing one path when they should be separated.
 
+The dock's on-demand Settings panel uses the native adapter for accordion
+clicks and restore. Keep that behavior on the Settings factory when dividing
+`assets/components/internal/panels.mms` into settings, paint/color, and
+inspector/world panel families. Retain the same number of panel instances,
+avoid per-frame scene scans in the settings-only workspace, and verify opening,
+closing, and reopening it from the Sakura Twilight dock.
+
 ## Design direction
 
 Prefer live world assembly for panel shells.

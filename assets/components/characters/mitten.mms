@@ -4,7 +4,7 @@ import { bisket_colliders } from "../colliders/bisket.mms"
 import { bisket_shirt_physics } from "../secondary_motion/bisket-shirt-physics.mms"
 import { mitten_bow_secondary_motion } from "../secondary_motion/mitten-bow.mms"
 import { tail_wag } from "../animations/tail_wag.mms"
-import { install_avatar_equipment } from "./avatar_equipment.mms"
+import { install_vroid_equipment } from "./avatar_equipment.mms"
 
 // Shared mitten avatar model, for VR and desktop scenes. Returns the spec
 // shape used by rooftop_player's avatar factories:
@@ -44,11 +44,7 @@ export fn mitten_model(model_name, options) {
             for child in children { child }
         }
     }
-    install_avatar_equipment(model, [
-        ["J_Bip_L_UpperLeg", [0.13, 0.17, 0.0], 0.12, Math.pi / 2.0],
-        ["J_Bip_R_UpperLeg", [-0.13, 0.17, 0.0], 0.12, Math.pi / 2.0],
-        ["J_Bip_C_UpperChest", [0.0, 0.05, -0.21], 0.16, -1.29]
-    ])
+    install_vroid_equipment(model)
     if tail_style {
         on(model, "GLTFInitialized", fn(event) {
             let tail = event.gltf.query("[name='tail']")

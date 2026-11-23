@@ -7,8 +7,8 @@ import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
 import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
-import { miku_twintails, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
-import { detach_avatar_equipment } from "./avatar_equipment.mms"
+import { miku_twintails, miku_hand_colliders, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
+import { detach_avatar_equipment, install_vroid_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
 
 // The TDA export is in MMD units (~8 cm), about 20 m tall as meters. Its
@@ -49,6 +49,7 @@ fn make_lumae(model_name, track_hands, bucket, target_meters) {
         lumae_colliders()
         lumae_secondary_motion()
     }
+    install_vroid_equipment(model)
     return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
@@ -62,6 +63,7 @@ fn make_miku(model_name, track_hands, bucket, target_meters) {
         bisket_anime_shading(bucket)
         miku_humanoid_bone_map()
         miku_twintails()
+        miku_hand_colliders()
     }
     install_miku_equipment(model)
     return { model = model eye_height = MIKU_EYE_GLB * MIKU_ASSUMED_SCALE import_scale = MIKU_ASSUMED_SCALE }
@@ -76,6 +78,7 @@ fn make_succubus(model_name, track_hands, bucket, target_meters) {
         vroid_humanoid_bone_map()
         vroid_face()
     }
+    install_vroid_equipment(model)
     return { model = model eye_height = 1.659 sole_offset = [0.0, 0.055684, 0.091826] }
 }
 
@@ -341,7 +344,7 @@ export fn make_rooftop_player(options) {
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
-            detach_avatar_equipment(state.model)
+            detach_avatar_equipment(state.head)
             state.head.remove_subtree()
             state.head = next_head
             state.avatar = body

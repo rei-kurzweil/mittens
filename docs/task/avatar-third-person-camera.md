@@ -54,6 +54,9 @@ still needs a separate reproduction.
   replacements. As the prefab and scene grow, extract their multiplayer and
   avatar-loading responsibilities into cohesive modules. Keep panel controls
   synchronized on change and rebuild them from the current state when opened.
+  Keep per-rig spring and equipment placement with the avatar presets.
+  Check crown attachment and release when the head bone is spliced out
+  of the model hierarchy during avatar control.
 - If the Sakura scene tests grow further, group dock and settings interaction
   checks separately from vehicle and city checks. Retain coverage for both XR
   and desktop and keep each scene loaded once per fixture.

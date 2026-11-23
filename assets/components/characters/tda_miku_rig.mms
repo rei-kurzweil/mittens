@@ -6,7 +6,17 @@ export fn miku_twintails() {
     return SecondaryMotion {
         for root in ["[name='������.R_032']", "[name='������.L_041']"] {
             SpringBone.from_root(root).stiffness(2.4).drag_force(0.55)
+                .colliders(["#miku_hand_colliders"])
+                .hit_radius(0.025)
                 .gravity(0.8, [0, -1, 0]).virtual_end_length_ratio(1.0)
+        }
+    }
+}
+
+export fn miku_hand_colliders() {
+    return SpringColliders {
+        SpringCollider.spheres(["[name='������.L_0104']", "[name='������.R_059']"], 0.11) {
+            name = "miku_hand_colliders"
         }
     }
 }
@@ -14,9 +24,10 @@ export fn miku_twintails() {
 export fn install_miku_equipment(model) {
     let down = -Math.pi / 2.0
     install_avatar_equipment(model, [
-        ["���D.L_0162", [1.55, -2.0, 0.0], 1.35, down],
-        ["���D.R_0172", [-1.55, -2.0, 0.0], 1.35, down],
-        ["���������2_010", [0.0, 0.2, -2.15], 1.8, down]
+        ["���D.L_0162", [1.55, -2.0, 0.0], 2.05, down],
+        ["���D.R_0172", [-1.55, -2.0, 0.0], 2.05, down],
+        ["���������2_010", [0.0, 0.2, -3.35], 2.6, down],
+        ["���_012", [0.0, 2.65, 0.0], 2.15, down]
     ])
 }
 

@@ -1,11 +1,11 @@
-let slot_names = ["equipment_left_thigh", "equipment_right_thigh", "equipment_back"]
+let slot_names = ["equipment_left_thigh", "equipment_right_thigh", "equipment_back", "equipment_head"]
 let avatar_attachment_index = 0
 
 // Each placement is [bone name, local center, local radius, round pitch] in
 // the GLB's own units and radians; they follow any scale baked on import.
 export fn install_avatar_equipment(model, placements) {
     on(model, "GLTFInitialized", fn(event) {
-        for i in [0, 1, 2] {
+        for i in range(len(placements)) {
             let placement = placements[i]
             let bone = event.gltf.query("[name='" + placement[0] + "']")
             if bone {
@@ -33,9 +33,18 @@ export fn install_avatar_equipment(model, placements) {
     })
 }
 
-export fn detach_avatar_equipment(model) {
+export fn install_vroid_equipment(model) {
+    install_avatar_equipment(model, [
+        ["J_Bip_L_UpperLeg", [0.14, 0.17, 0.0], 0.18, Math.pi / 2.0],
+        ["J_Bip_R_UpperLeg", [-0.14, 0.17, 0.0], 0.18, Math.pi / 2.0],
+        ["J_Bip_C_UpperChest", [0.0, 0.05, -0.30], 0.23, -1.29],
+        ["J_Bip_C_Head", [0.0, 0.24, 0.0], 0.19, -Math.pi / 2.0]
+    ])
+}
+
+export fn detach_avatar_equipment(root) {
     for name in slot_names {
-        for item in model.query_all("[name='" + name + "'] > transform") {
+        for item in root.query_all("[name='" + name + "'] > transform") {
             let pose = item.world_trs()
             item.detach()
             item.world_trs(pose)

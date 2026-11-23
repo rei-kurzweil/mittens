@@ -26,13 +26,13 @@ import { pool_tile_material } from "../assets/components/materials/pool_tiles.mm
 import { pool_building, pool_building_with_stairs, pool_washroom_building } from "../assets/components/buildings/pool_building.mms"
 import { ship_washroom_suite } from "../assets/components/rooms/ship_washroom_suite.mms"
 import { sakura_twilight_street } from "../assets/components/buildings/sakura_twilight_street.mms"
+import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
-import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
 
 // Sakura twilight: a fork of twilight_rooftop.mms with no train. The players
 // share a three-storey roof across a road from a row of short buildings,
@@ -65,6 +65,8 @@ let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 
 let net = MultiplayerSession.from_env() {}
 net
+let grab_rank = 2
+if net.is_host() { grab_rank = 1 }
 
 RendererSettings { window_visible(use_desktop) window_size(1280, 800) }
 // Eye/blink clip timestamps below use seconds converted to beats.
@@ -74,24 +76,6 @@ RenderGraph {
     EmissivePass {}
     Bloom { intensity(0.65) radius_ndc(0.035) emissive_scale(1.0) half_res(true) }
 }
-Raycastable.disabled() {
-    Selectable.off()
-    // The moon-glow sky in twilight_rooftop's dusk palette: beige horizon,
-    // lilac band, deep violet zenith, with a pale crescent and lilac glow.
-    kawaii_twilight_sky({
-        low_color = [0.93, 0.80, 0.66], low_point = 0.0,
-        middle_color = [0.68, 0.56, 0.84], middle_point = 0.24,
-        high_color = [0.22, 0.17, 0.36], high_point = 0.95,
-        cloud_color = [0.86, 0.76, 0.90], cloud_strength = 0.35,
-        moon_direction = [-0.35, 0.34, -0.87], moon_radius = 0.055,
-        moon_color = [0.98, 0.94, 0.90], moon_strength = 1.2,
-        glow_color = [0.80, 0.66, 0.92], glow_strength = 0.8
-    })
-}
-// Warm low light from the beige horizon, with a cool lilac fill from above.
-AL.rgb(0.26, 0.24, 0.32)
-T.position(-0.70, 0.35, -0.60) { DL.color(1.0, 0.86, 0.70).intensity(1.3) }
-T.position(0.5, 0.8, 0.3) { DL.color(0.70, 0.66, 1.0).intensity(0.4) }
 
 // City: the players' three-storey building, a road, and across it a row of
 // short buildings split from twilight_rooftop's north and east buildings.
@@ -111,6 +95,12 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
+let lighting = sakura_twilight_lighting(grab_rank, hardware)
+lighting.world
+// On the south side of the main roof, facing back toward the spawn.
+T.position(roof_x + 1.3, roof_height, 3.4).rotation(0.0, Math.pi, 0.0) {
+    lighting.pedestal
+}
 // Ground and road: large, mostly covered surfaces drawn last.
 let far_anime = MaterialDefinition.anime().opaque_bucket("far")
 fn flat_material(shade_color) {
@@ -196,8 +186,6 @@ if !net.is_host() { channel_port = 7012 remote_port = 7011 }
 let socket = UdpSocket.bind("0.0.0.0:" + channel_port) {}
 socket
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
-let grab_rank = 2
-if net.is_host() { grab_rank = 1 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
@@ -352,6 +340,13 @@ let dock_items = {
     graphics = { id = "graphics" label = "Graphics" root_name = "sakura_twilight_graphics_settings"
         position = [roof_x - 4.6, roof_height + 2.3, -4.8]
         build = fn() { return graphics_settings_panel({ root_name = "sakura_twilight_graphics_settings" }) } }
+    editor = { id = "editor" label = "Editor" root_name = "sakura_twilight_editor"
+        position = [roof_x + 0.6, roof_height + 2.3, -4.9]
+        build = fn() {
+            let ui = EditorUI.panels([{ panel = "settings" }])
+            let editor = Editor.active()
+            return T { name = "sakura_twilight_editor" ui editor }
+        } }
 }
 T.position(roof_x - 2.3, roof_height + 1.6, -1.65) {
     dock({
@@ -360,6 +355,7 @@ T.position(roof_x - 2.3, roof_height + 1.6, -1.65) {
         groups = [
             [dock_items.avatar, dock_items.mirror],
             [dock_items.input, dock_items.humanoid, dock_items.graphics],
+            [dock_items.editor],
         ]
     })
 }
@@ -472,6 +468,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     pistol_impacts.connect(group, address)
     for vehicle in pickups { vehicle.connect(group, address) }
     hand_curls.connect(group, address)
+    lighting.connect(socket, group, address)
     links.root = publish("root", address, pose_type)
     links.head = publish("head", address, pose_type)
     links.left = publish("left-hand", address, pose_type)
@@ -510,6 +507,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     pistol_impacts.disconnect()
     for vehicle in pickups { vehicle.disconnect() }
     hand_curls.disconnect()
+    lighting.disconnect()
     remote.cancel_avatar_load()
     connection.avatar_retry = null
     if connection.root { connection.root.remove_subtree() connection.root = null }
@@ -541,6 +539,7 @@ on_global("FrameTick", fn(event) {
     channel_state.send_elapsed = channel_state.send_elapsed + event.dt_sec
     if channel_state.send_elapsed < 0.05 { return }
     hand_curls.tick(channel_state.send_elapsed)
+    lighting.send()
     channel_state.send_elapsed = 0.0
     // A switch (or a join, which clears sent_avatar) starts a short burst so
     // one lost packet cannot drop the event. Repeats wait for the channel.

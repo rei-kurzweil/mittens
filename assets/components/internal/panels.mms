@@ -286,6 +286,7 @@ export fn editor_settings_panel_body(config) {
 export fn editor_settings_panel(title, title_color, panel_background_color, config) {
     return accordion({
         unlit = true
+        native_toggle = true
         root_name = "editor_settings_panel_root"
         width_gu = SETTINGS_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE

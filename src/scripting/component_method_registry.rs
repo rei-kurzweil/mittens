@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::{
-    AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
-    AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
-    BoneRestPoseComponent, EmissiveComponent, InputComponent,
+    AmbientLightComponent, AmplitudeComponent, AnimationComponent, AnimationState,
+    AnimationStepDirection, AudioBandPassFilterComponent, AudioInputComponent,
+    AvatarControlComponent, BoneRestPoseComponent, ColorComponent, DirectionalLightComponent,
+    EmissiveComponent, InputComponent,
     InputXRGamepadComponent, RayCastComponent, SliderComponent,
     TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
     TransitionComponent, VelocityComponent,
@@ -51,6 +52,10 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             && matches!(method, "apply" | "overlay" | "apply_blended"))
         || (matches!(component_type, "EM" | "Emissive" | "emissive")
             && matches!(method, "set_intensity" | "on" | "off"))
+        || (matches!(component_type, "AmbientLight" | "AL" | "ambient_light")
+            && method == "set_rgb")
+        || (matches!(component_type, "DirectionalLight" | "DL" | "directional_light")
+            && matches!(method, "set_rgb" | "set_intensity"))
         || (matches!(component_type, "Toggle" | "toggle") && method == "sync_value")
         || (matches!(component_type, "Slider" | "slider")
             && matches!(
@@ -767,6 +772,57 @@ pub(crate) fn invoke_component_method(
                 component_id: id,
                 rgba,
             });
+            Ok(Value::Null)
+        }
+        (
+            "AmbientLight" | "AL" | "ambient_light" | "DirectionalLight" | "DL" | "directional_light",
+            "set_rgb",
+        ) => {
+            if args.len() != 3 {
+                return Err("set_rgb(): expected three color channels".into());
+            }
+            let rgb = [arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?];
+            if rgb.iter().any(|value| !value.is_finite() || *value < 0.0) {
+                return Err("set_rgb(): expected finite non-negative color channels".into());
+            }
+            let intent = if let Some(ambient) =
+                world.get_component_by_id_as_mut::<AmbientLightComponent>(id)
+            {
+                ambient.rgb = rgb;
+                IntentValue::RegisterAmbientLight { component_id: id }
+            } else {
+                let light = world
+                    .get_component_by_id_as_mut::<DirectionalLightComponent>(id)
+                    .ok_or("set_rgb(): expected an ambient or directional light")?;
+                light.color = rgb;
+                IntentValue::RegisterLight { component_id: id }
+            };
+            let color = world.children_of(id).iter().copied().find(|&child| {
+                world
+                    .get_component_by_id_as::<ColorComponent>(child)
+                    .is_some()
+            });
+            if let Some(color) =
+                color.and_then(|child| world.get_component_by_id_as_mut::<ColorComponent>(child))
+            {
+                color.rgba[..3].copy_from_slice(&rgb);
+            }
+            emit_intent(intent);
+            Ok(Value::Null)
+        }
+        ("DirectionalLight" | "DL" | "directional_light", "set_intensity") => {
+            if args.len() != 1 {
+                return Err("set_intensity(): expected one intensity".into());
+            }
+            let intensity = arg_f32(args, 0)?;
+            if !intensity.is_finite() || intensity < 0.0 {
+                return Err("set_intensity(): expected a finite non-negative intensity".into());
+            }
+            let light = world
+                .get_component_by_id_as_mut::<DirectionalLightComponent>(id)
+                .ok_or("set_intensity(): expected a directional light")?;
+            light.intensity = intensity;
+            emit_intent(IntentValue::RegisterLight { component_id: id });
             Ok(Value::Null)
         }
         (

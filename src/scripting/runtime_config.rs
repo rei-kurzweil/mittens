@@ -384,11 +384,29 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "AmbientLight" => {
                     host_constructor(component, canonical, "rgb", floats(3));
+                    host_method(
+                        component,
+                        canonical,
+                        "set_rgb",
+                        method(vec![mms::ValueType::F32; 3], mms::ValueType::Null),
+                    );
                 }
                 "DirectionalLight" | "PointLight" | "SpotLight" => {
                     if canonical == "DirectionalLight" {
                         host_constructor_and_builder(component, canonical, "intensity", floats(1));
                         host_constructor_and_builder(component, canonical, "color", floats(3));
+                        host_method(
+                            component,
+                            canonical,
+                            "set_rgb",
+                            method(vec![mms::ValueType::F32; 3], mms::ValueType::Null),
+                        );
+                        host_method(
+                            component,
+                            canonical,
+                            "set_intensity",
+                            method(vec![mms::ValueType::F32], mms::ValueType::Null),
+                        );
                     } else {
                         constructor_and_builder(component, "intensity", floats(1));
                         constructor_and_builder(component, "color", floats(3));

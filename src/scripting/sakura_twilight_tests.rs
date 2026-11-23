@@ -264,13 +264,28 @@ fn check_dock(scene: &mut Universe) {
         TransformSystem::world_position(&scene.world, named(scene, &format!("dock_{item}")))
             .unwrap()[1]
     };
-    let [avatar, mirror, input, humanoid, graphics] =
-        ["avatar", "mirror", "input", "humanoid", "graphics"].map(|item| height(scene, item));
-    assert!(avatar > mirror && mirror > input && input > humanoid && humanoid > graphics);
+    let [avatar, mirror, input, humanoid, graphics, editor] =
+        ["avatar", "mirror", "input", "humanoid", "graphics", "editor"]
+            .map(|item| height(scene, item));
+    assert!(
+        avatar > mirror
+            && mirror > input
+            && input > humanoid
+            && humanoid > graphics
+            && graphics > editor
+    );
     assert!(
         mirror - input > input - humanoid + 0.05,
         "a gap separates the avatar group from the settings group"
     );
+    assert!(graphics - editor > input - humanoid + 0.05);
+    assert!(!has_label(scene, "editor_settings_panel_root"));
+    for _ in 0..2 {
+        open_dock_items(scene, &["editor"]);
+        assert!(has_label(scene, "editor_settings_panel_root"));
+        open_dock_items(scene, &["editor"]);
+        assert!(!has_label(scene, "editor_settings_panel_root"));
+    }
 
     let dock = named(scene, "sakura_twilight_dock");
     let truck = named(scene, "sakura_twilight_pickup");
