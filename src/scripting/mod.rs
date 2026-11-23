@@ -8,6 +8,7 @@ pub mod block_effect_analyzer {
 mod camera_xr_binding;
 pub mod component_method_registry;
 pub mod component_registry;
+mod app_api;
 mod configured_registry;
 mod file_api;
 mod file_browser;

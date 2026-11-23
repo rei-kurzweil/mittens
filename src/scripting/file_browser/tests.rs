@@ -27,6 +27,23 @@ fn parent_navigation_preserves_root_and_invalidates_entry_ids() {
     assert_eq!(model.path, "examples/mitten-droid");
 }
 #[test]
+fn selection_reports_root_relative_path_for_launching() {
+    let mut model = Model::local(".", "examples/mitten-droid").unwrap();
+    assert_eq!(model.selected_root_path(), "");
+    let hello = model
+        .entries
+        .iter()
+        .find(|e| e.name == "hello.mms")
+        .unwrap()
+        .id
+        .clone();
+    model.activate("open", &hello).unwrap();
+    assert_eq!(model.selected_root_path(), "examples/mitten-droid/hello.mms");
+    // Leaving the directory leaves nothing launchable selected.
+    model.activate("up", "").unwrap();
+    assert_eq!(model.selected_root_path(), "");
+}
+#[test]
 fn remote_listing_has_no_pc_paths_and_actions_reference_displayed_revision() {
     let local = Model::local("examples", "mitten-droid").unwrap();
     let mut remote = Model::default();

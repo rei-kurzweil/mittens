@@ -275,6 +275,11 @@ impl mms::Host for MittensHost<'_, '_> {
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::FileListDir,
                     ) => super::file_api::list_dir(args),
+                    super::runtime_config::MittensBinding::Api(api)
+                        if super::app_api::supports(*api) =>
+                    {
+                        super::app_api::invoke(*api, args)
+                    }
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::JsonTryParseObject,
                     ) => super::json_api::try_parse_object(args),

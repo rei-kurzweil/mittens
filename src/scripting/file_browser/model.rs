@@ -120,6 +120,25 @@ impl Model {
             })
             .collect();
     }
+    /// The selected local file as a `/`-separated path under the browser
+    /// root, or empty when nothing in the current directory is selected.
+    pub fn selected_root_path(&self) -> String {
+        let Some(root) = &self.root else {
+            return String::new();
+        };
+        self.entries
+            .iter()
+            .find(|entry| !self.selected_id.is_empty() && entry.id == self.selected_id)
+            .and_then(|entry| entry.path.as_ref()?.strip_prefix(root).ok())
+            .map(|relative| {
+                relative
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .unwrap_or_default()
+    }
     pub fn local(root: &str, relative: &str) -> Result<Self, String> {
         let root = Path::new(root).canonicalize().map_err(|e| e.to_string())?;
         let mut model = Self {

@@ -31,6 +31,7 @@ pub(super) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
     crate::scripting::host::benchmark_api::register(builder);
 
     crate::scripting::file_api::register(builder);
+    crate::scripting::app_api::register(builder);
     crate::scripting::file_browser::register(builder);
     crate::scripting::json_api::register(builder);
 

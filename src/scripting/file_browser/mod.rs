@@ -260,6 +260,7 @@ pub(super) fn invoke(
             Api::BrowserSelection => R::Transport(V::Table(Vec::from([
                 ("name".into(), V::String(model.selected_name.clone())),
                 ("source".into(), V::String(model.preview.clone())),
+                ("path".into(), V::String(model.selected_root_path())),
             ]))),
             Api::BrowserAction => R::Transport(model.action.clone().unwrap_or(V::Null)),
             Api::BrowserScroll => {
