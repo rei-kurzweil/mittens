@@ -100,6 +100,61 @@ Shortlist and compare these routes rather than implementing every combination:
   versus tight halos, limited range or reduced resolution can be good trade-offs
   if they preserve the intended style. Physically based radiance is not required.
 
+### 3. Foveation and subsampled intermediates (XR2)
+
+The Android renderer already has fixed foveation through
+`VK_EXT_fragment_density_map`, but only on the eye pass
+(`android/src/renderer/foveation.rs`). A density map belongs to a render pass,
+so a bloom intermediate is foveated only if its own pass attaches one.
+
+- **MRT emissive output** written in the eye pass is foveated with it, but it
+  must be stored for bloom to sample. Unlike today's color and depth, it
+  leaves tile memory.
+- **Separate full- and half-resolution passes** (extraction, first
+  downsample/blur) save fragment invocations and texture taps in the
+  periphery. A 2×2 coarse fragment shades once for four pixels. Bloom is
+  blurry by design, so the coarse periphery should be invisible. The 1/4 and
+  smaller levels save little: shading there is already cheap, fixed per-pass
+  costs dominate, and the density map's 32×32 minimum texel size leaves
+  little to vary.
+- **Normal vs subsampled images.** With `fragmentDensityMapNonSubsampledImages`
+  (reported as supported on the Focus 3), FDM passes can write ordinary images
+  that later passes sample with ordinary samplers. The spec pages don't state
+  that coarse fragments fill every pixel, but our 2026-11-02 readback of an
+  FDM-rendered ordinary image found every pixel written. Shading is saved;
+  store bandwidth presumably isn't. Images created with
+  `VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT` keep a compact layout and may save that
+  bandwidth too. The cost:
+  - reads are undefined ("poison") unless they use a
+    `VK_SAMPLER_CREATE_SUBSAMPLED_BIT_EXT` sampler as an immutable combined
+    image sampler;
+  - loads are valid only with `subsampledLoads`;
+  - a pipeline layout holds at most `maxDescriptorSetSubsampledSamplers` of
+    these samplers;
+  - reconstruction is up to the driver.
+
+  The Vulkan sample's subsampled sampler uses nearest filtering and
+  clamp-to-edge, and says the settings must match exactly. Whether linear
+  filtering (which bloom downsampling relies on), mipmaps or chained
+  subsampled passes are allowed is unconfirmed; check the spec's sampler
+  valid-usage rules and the device's FDM2 properties.
+- **Mirrors are a weaker fit.** A center-sharp map follows the eye view, not
+  the mirror's capture camera, and mirror captures may need mipmaps.
+- **Composite.** Adding bloom back to the XR image needs either a pass that
+  loads it or a stored scene color, which defeats the in-subpass resolve.
+  Adding last frame's bloom in the main pass's final draw avoids the extra
+  pass but lags under head rotation.
+
+Keep the density map a per-pass choice and the subsampled flag a per-image
+option, so both can be measured directly. Probe the `fragment_density_map2`
+properties on the Focus 3 before relying on subsampled images. The 2026-11-02
+check recorded non-subsampled support and a 32×32 to 256×256 texel range, but
+not those properties. Default to subsampled only if a headset A/B shows a real
+saving over lower-resolution intermediates with an FDM on the
+full-resolution pass alone. The
+[mittens-benchmark Android app](mittens-benchmark-android.md) defines the
+suite, the FDM/no-FDM APKs and the adb harness for this comparison.
+
 ## Checked starting point
 
 Source audit at `731a54ac`; these are code observations, not measured timings:
