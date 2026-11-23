@@ -72,7 +72,7 @@ export fn ship_input_controller(patrol_enabled, weapon_grips, weapon_assemblies)
             let axis=on(world,"XrAxisChanged",fn(event) {forward_vehicle("XrAxisChanged",event)})
             state.input_bindings=[down,up,axis]
         }
-        if truck["needs_heading_refresh"]!=false || patrol_enabled==true {enable_frames()}
+        if truck.needs_heading_refresh!=false || patrol_enabled==true {enable_frames()}
         else if state.frame_binding {state.frame_binding.bypass(true)}
     }
     root.clear_driver=fn(truck) {

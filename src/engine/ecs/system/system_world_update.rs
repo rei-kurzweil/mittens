@@ -270,9 +270,24 @@ impl SystemWorld {
         #[cfg(test)]
         cpu_profile.mark(Phase::VelocityContact);
         // Publish post-physics owned poses; apply received ones before cameras.
+        let packets_before = self
+            .vr_perf_enabled
+            .then(|| self.udp_channels.received_datagrams());
+        let phase_started = (profile_systems || self.vr_perf_enabled).then(Instant::now);
         self.multiplayer.tick(world, queue, dt_sec);
         self.udp_channels.tick_with_udp(world, queue, &self.udp);
         queue.flush(world, self, visuals, render_assets);
+        if let Some(started) = phase_started {
+            let elapsed = started.elapsed();
+            if profile_systems {
+                self.phase_profile.network += elapsed;
+            }
+            if let Some(before) = packets_before {
+                self.vr_perf_pre_xr.network = elapsed;
+                self.vr_perf_pre_xr.typed_datagrams =
+                    self.udp_channels.received_datagrams().saturating_sub(before);
+            }
+        }
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // Locate one presentation sample before head/hand poses and avatar solving.
@@ -290,9 +305,13 @@ impl SystemWorld {
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+        let xr_locomotion_started = self.vr_perf_enabled.then(Instant::now);
         self.input_xr_gamepad
             .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
+        if let Some(started) = xr_locomotion_started {
+            self.vr_perf_pre_xr.xr_locomotion = started.elapsed();
+        }
         self.tick_transition_runtime(world, visuals);
         self.prepare_avatar_capsule_contact(world, visuals);
         for target in self.static_contact.tick_excluding(world, &self.attachment) {

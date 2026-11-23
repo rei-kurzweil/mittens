@@ -40,3 +40,62 @@ Tests cover tap edges/window, opt-in/defaults, jump, double-speed movement,
 vertical controls, gravity restoration, wall collision, MMS round-trip, sideways
 leg trailing, direction reversal, flight over a floor and landing. These are
 host regressions; headset appearance and controller feel still need device QA.
+
+## Diagnosing a peer that keeps crawling in flight
+
+Sakura Twilight sends root and head poses on separate channels. Before flight
+replication, the remote PoseInput supplied neither flight state nor ground
+support. The local leg solver could see the XR gamepad's flight flag and
+select airborne goals. The torso's auto mode still used head height relative
+to its last floor. In kneeling mode a
+leg can report no support collider while returning a goal height carried
+forward from the last floor. Near or below that old floor, losing contact
+can leave the observer solving hands-and-knees against it in midair. Rising
+far enough above the old floor should still release horizontal mode.
+
+An offline Twilight Rooftop replay drove the remote Lumae through standing
+and crawling, then moved its received root 15 m sideways and 2 m below the
+roof with a standing-height head target. After one second it was still
+horizontal, with `NoSupport`, both feet targeting the old 16 m floor, and
+both knees 37 cm above the hips. Moving the root to 2 m above the roof
+returned it to vertical. This reproduces the reported shape with synthetic
+poses and gives a check for the next live recording.
+
+Mitten folding when the wearer deliberately lies on their stomach is a
+separate test. Horizontal mode currently produces hands-and-knees, with
+knee and shin goals under the torso. It has no prone pose to transition to.
+
+### Opt-in capture
+
+Run each peer with `CAT_DEBUG_BODY_SOLVER=1` and keep the labeled local and
+remote `[body]` lines from the same time window. This already samples every
+half second. Record a low stance, flight toggle, hover, climb, and descent.
+If the existing log is insufficient, extend this same opt-in path to record
+flight edges at the source, root/head packet age and Y at the observer,
+standing head height, and each foot's collider and goal height. Record
+posture transitions with their reason through the existing PostureChanged
+event. Read retained state only, with no extra raycasts or telemetry packets.
+
+Compare the near-floor and descent cases with a climb that crosses the
+normal exit threshold. If the observer follows the climb yet stays horizontal,
+check packet age, received flight state, and floor updates. Confirm landing
+reacquires support and a stationary crawl keeps its posture.
+
+If the scene test module grows, move replay and network-pose diagnostics into
+a separate fixture. Keep the normal body/leg path free of capture allocation
+and limit support and transport diagnostics to opt-in capture.
+
+## Replicating flight mode
+
+Sakura Twilight publishes the current 0/1 flight state on join, after a
+transition, and once per second for recovery after packet loss. The peer
+feeds it to its existing PoseInput so avatar replacement
+preserves it. Flight forces automatic torso posture vertical and selects the
+existing airborne leg goals. Landing lets support reacquire normally. Validate
+with the same below-roof replay and then with two live clients.
+
+When maintaining the larger MMS registry and rooftop player, move pose-source
+methods into the input binding family and separate player construction from
+avatar switching. Preserve direct host dispatch and keep the solver's
+per-avatar path allocation-free. Exercise MMS method dispatch and the replay
+before and after either move.

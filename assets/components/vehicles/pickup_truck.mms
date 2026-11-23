@@ -23,6 +23,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let vehicle_id="pickup"
     if options && options["vehicle_id"] {vehicle_id=options.vehicle_id}
     let doors=pickup_doors(vehicle_id)
+    let network={link=null group=null address=null}
     let bindings=pickup_model_suspension_bindings()
     let drive=null
     if options && options["acceleration_drive"] {
@@ -32,7 +33,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         name="pickup_painted_body"
         // Untextured body: the baked atlas replaces uv0 and paint colour stays
         // an instance multiplier, so every truck shares one bake.
-        AmbientOcclusion.texcoord0().proximity_radius(0.60).cavity_radius(0.28).strength(0.85 * 2.0 / 3.0)
+        AmbientOcclusion.texcoord0().proximity_radius(1.20).cavity_radius(0.56).strength(0.34)
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
@@ -62,6 +63,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
             // The doors hang on hinges outside the static batch.
             doors.install(event.gltf,chassis,color)
+            if network.group {doors.connect(options.socket,network.group,network.address)}
             for name in ["car_seat","car_seat.passenger_seat","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")
                 if part { batch.attach(part) }
@@ -137,7 +139,6 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         }
     }
     let ride=pickup_ride_height(bindings,pose,fn(corner,ratio) {apply_compression(corner,ratio,false)})
-    let network={link=null}
     fn can_control() {
         if !network.link {return true}
         return network.link.claim()
@@ -187,13 +188,24 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         })
         network.link=link
         motion.connect=fn(group,address) {
+            network.group=group
+            network.address=address
             link.connect(group,address)
             doors.connect(options.socket,group,address)
         }
         motion.disconnect=fn() {
+            network.group=null
+            network.address=null
             link.disconnect()
             doors.disconnect()
         }
+        motion.dispose_replication=fn() {
+            network.group=null
+            network.address=null
+            link.dispose()
+            doors.disconnect()
+        }
+        motion.owns_motion=link.owns_motion
     }
     return motion
 }

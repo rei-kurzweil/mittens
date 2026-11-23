@@ -71,6 +71,7 @@ struct SystemPhaseProfile {
     skinning: Duration,
     xr: Duration,
     avatar_ik: Duration,
+    network: Duration,
 }
 
 #[path = "system_world_state.rs"]
@@ -1324,9 +1325,11 @@ impl SystemWorld {
     pub fn set_vr_perf_update_timings(
         &mut self,
         update_total: Duration,
+        runtime_callbacks: Duration,
         final_command_processing: Duration,
     ) {
         self.vr_perf_pre_xr.update_total = update_total;
+        self.vr_perf_pre_xr.runtime_callbacks = runtime_callbacks;
         self.vr_perf_pre_xr.final_command_processing = final_command_processing;
     }
 
@@ -1356,13 +1359,14 @@ impl SystemWorld {
         let frames = self.phase_profile.frames as f64;
         let avg_ms = |duration: Duration| duration.as_secs_f64() * 1000.0 / frames;
         let line = format!(
-            "[system-profile] frames={} avg_ms animation={:.3} transform={:.3} skinning={:.3} xr={:.3} avatar_ik={:.3}",
+            "[system-profile] frames={} avg_ms animation={:.3} transform={:.3} skinning={:.3} xr={:.3} avatar_ik={:.3} network={:.3}",
             self.phase_profile.frames,
             avg_ms(self.phase_profile.animation),
             avg_ms(self.phase_profile.transform),
             avg_ms(self.phase_profile.skinning),
             avg_ms(self.phase_profile.xr),
             avg_ms(self.phase_profile.avatar_ik),
+            avg_ms(self.phase_profile.network),
         );
         eprintln!("{line}");
         crate::utils::profile_log::append("system-profile", &line);

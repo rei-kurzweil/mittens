@@ -55,6 +55,13 @@ impl std::fmt::Debug for UdpChannelSystem {
     }
 }
 impl UdpChannelSystem {
+    pub(super) fn received_datagrams(&self) -> u64 {
+        self.sockets
+            .values()
+            .map(|socket| socket.stats.received_packets)
+            .sum()
+    }
+
     pub fn register(&mut self, id: ComponentId) {
         self.registered.insert(id);
     }

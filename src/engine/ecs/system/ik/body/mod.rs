@@ -6,6 +6,7 @@ use super::lower_body::{LowerBodyIkSystem, LowerBodyStatus};
 use super::upper_body::{SpineRig, UpperBodyIkSystem};
 use crate::engine::ecs::component::{AvatarControlComponent, BodyPosture, TransformComponent};
 use crate::engine::ecs::system::AttachmentSystem;
+use crate::engine::ecs::system::input_xr_flying::is_flying;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
@@ -174,12 +175,15 @@ impl BodySolverSystem {
                 continue;
             };
             let mounted = attachments.is_avatar_mounted(id);
+            let flying = !mounted && avatar.posture == BodyPosture::Auto && is_flying(world, id);
             if mounted && !instance.mounted {
                 // Feet stop reporting support while riding. The seat may carry
                 // the rider to an entirely different floor before dismount.
                 instance.support = None;
                 instance.held_pitch = 0.0;
                 instance.weight = 0.0;
+            } else if flying {
+                instance.support = None;
             } else if !mounted
                 && let Some(height) = lower.feet(id).and_then(|feet| {
                     feet.iter()
@@ -198,6 +202,7 @@ impl BodySolverSystem {
                 BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
                 BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
                 BodyPosture::Auto if mounted => (BodyMode::Vertical, "mounted"),
+                BodyPosture::Auto if flying => (BodyMode::Vertical, "flight"),
                 // Pitching relies on the head/neck constraint to place the
                 // root under the head. Legacy body-follow keeps the root a
                 // fixed height below the head, so a pitched torso would sink

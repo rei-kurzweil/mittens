@@ -7,15 +7,19 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::ik::BodyMode;
+use crate::engine::ecs::system::ik::lower_body::FootPhase;
 use crate::engine::ecs::system::ik::upper_body::UpperBodyStatus;
-use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 
 const ROOF: f32 = 16.0;
 
 fn twilight_rooftop_with_lumae() -> String {
     std::fs::read_to_string("examples/twilight_rooftop.mms")
         .unwrap()
-        .replace("let client_avatar = \"mitten\"", "let client_avatar = \"lumae\"")
+        .replace(
+            "let client_avatar = \"mitten\"",
+            "let client_avatar = \"lumae\"",
+        )
 }
 
 fn named(scene: &Universe, name: &str) -> ComponentId {
@@ -67,7 +71,14 @@ fn hold_head(scene: &mut Universe, head: ComponentId, height: f32, frames: usize
 
 #[test]
 fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
-    let source = twilight_rooftop_with_lumae();
+    let mut source = twilight_rooftop_with_lumae();
+    source.push_str(
+        r#"
+        let flight_test = T { name = "flight_test" }
+        on(flight_test, "DataEvent", fn(event) { remote.set_remote_flying(event == "Fly") })
+        flight_test
+        "#,
+    );
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
@@ -133,10 +144,48 @@ fn twilight_remote_avatar_goes_to_hands_and_knees_and_stands_back_up() {
         "body yaw deadband tightens on hands and knees"
     );
 
+    // Leave the head still at crawling height. The peer's flight state has
+    // to override the local collision support even that close to the roof.
+    let flight_test = named(&scene, "flight_test");
+    scene.command_queue.push_event(
+        flight_test,
+        EventSignal::DataEvent {
+            name: "Fly".into(),
+            payload: None,
+        },
+    );
+    hold_head(&mut scene, head, 0.7, 40);
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
+    assert!(
+        scene
+            .systems
+            .lower_body_ik
+            .feet(avatar)
+            .unwrap()
+            .iter()
+            .all(|foot| foot.phase == FootPhase::Airborne)
+    );
+
     // Stand back up: blends out to vertical and the torso returns to rest.
+    scene.command_queue.push_event(
+        flight_test,
+        EventSignal::DataEvent {
+            name: "Land".into(),
+            payload: None,
+        },
+    );
     hold_head(&mut scene, head, 1.644, 90);
     assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
     assert_eq!(scene.systems.body_solver.torso_pitch(avatar), 0.0);
+    assert!(
+        scene
+            .systems
+            .lower_body_ik
+            .feet(avatar)
+            .unwrap()
+            .iter()
+            .all(|foot| foot.phase != FootPhase::Airborne)
+    );
     let chest = position(&scene, bone(&scene, avatar, HumanoidSlot::UpperChest));
     let hips = position(&scene, bone(&scene, avatar, HumanoidSlot::Hips));
     assert!(

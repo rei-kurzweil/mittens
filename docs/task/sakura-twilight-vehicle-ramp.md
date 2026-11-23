@@ -66,3 +66,23 @@ the ramp. A second pickup is parked on the grass shoulder by the main road.
 Keep both vehicles on the shared prefab with separate network and cargo-bed
 IDs. Check the dock clearance, initial parking position and full roof-to-road
 drive in the scene fixture.
+
+The pickups now start at two ground spots. Catch bounds watch each truck at
+50 m below or 100 m above grade. The owner retires the old truck, returns its
+riders and cargo to a ground spawn, and builds a fresh powered-off pickup.
+A per-slot reset generation keeps delayed samples for an old truck from
+reapplying its damage-era pose, power or doors. Validate both thresholds,
+rider retention, and the full ramp route from a test-only roof placement.
+
+Keep the fleet lifecycle in a scene-specific component. In a subsequent
+split, move the avatar channel wiring out of the scene entry point and group
+scene tests by city layout, vehicle lifecycle, and network behavior. Preserve
+bounded channel traffic and test both online ownership and offline respawn.
+
+The simpler scene should keep the same street and ground footprint and
+reuse the ramp with its lower roof height. Keep one floor in each of the
+five buildings, three pistols per rack, one pickup slot, and the first
+radio tower. In a subsequent split, move the common rooftop furnishings
+and peer wiring into scene factories so both entry points can vary their
+authored placement without building the omitted entities. Verify the
+original counts, the simpler counts, and matching ground and road geometry.

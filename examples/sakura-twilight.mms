@@ -28,7 +28,7 @@ import { ship_washroom_suite } from "../assets/components/rooms/ship_washroom_su
 import { sakura_twilight_street } from "../assets/components/buildings/sakura_twilight_street.mms"
 import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
-import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+import { sakura_pickup_fleet } from "../assets/components/vehicles/sakura_pickup_fleet.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
@@ -189,23 +189,8 @@ let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
-fn arena_pickup(color, id) {
-    return pickup_truck(color, null, true, {
-        socket = socket vehicle_id = "arena.pickup." + id rank = grab_rank mounts = mounts bed_mount = id acceleration_drive = true
-    })
-}
-let pickup = arena_pickup([1.0, 0.606, 0.047], 1)
-let ground_pickup = arena_pickup([0.38, 0.61, 0.87], 2)
-let pickups = [pickup, ground_pickup]
-T.position(roof_x + 3.0, roof_height, ramp_entry_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
-    name = "sakura_twilight_pickup"
-    pickup
-}
-// Park on the grass shoulder between the road and the ramp.
-T.position(5.0, -0.23, -6.0).rotation(0.0, -Math.pi / 2.0, 0.0) {
-    name = "sakura_twilight_ground_pickup"
-    ground_pickup
-}
+let pickups = sakura_pickup_fleet(socket, grab_rank, mounts, -0.23)
+pickups.root
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
@@ -394,8 +379,9 @@ if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
-let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 }
+let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null flight = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0
+    sent_flight = null flight_repeats = 0 flight_elapsed = 0.0 }
 let connection = { root = null avatar_group = null address = null peer_avatar = null
     avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
 let hand_curls = controller_hand_curls({
@@ -452,7 +438,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     remote.label.set_text(event.name)
     let ip = net.peer_ip(event.peer_id)
     if !ip { return }
-    if connection.root { connection.root.remove_subtree() }
+    if connection.root { pickups.disconnect() connection.root.remove_subtree() }
     let group = T { name = "peer_channels" }
     channel_groups.attach(group)
     connection.root = group
@@ -463,10 +449,11 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.avatar_retry = null
     connection.avatar_retries = 0
     channel_state.sent_avatar = null
+    channel_state.sent_flight = null
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
     pistol_impacts.connect(group, address)
-    for vehicle in pickups { vehicle.connect(group, address) }
+    pickups.connect(group, address)
     hand_curls.connect(group, address)
     lighting.connect(socket, group, address)
     links.root = publish("root", address, pose_type)
@@ -478,6 +465,10 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     links.left_valid = publish("left-hand.valid", address, f32)
     links.right_valid = publish("right-hand.valid", address, f32)
     links.avatar = publish("avatar", address, str)
+    links.flight = publish("avatar.flight", address, f32)
+    let flight_channel = socket.subscribe("avatar.flight").from(address).type(f32)
+    group.attach(flight_channel)
+    on(flight_channel, "UdpSample", fn(sample) { remote.set_remote_flying(sample.value > 0.5) })
     let avatar_channel = socket.subscribe("avatar").from(address).type(str)
     group.attach(avatar_channel)
     on(avatar_channel, "UdpSample", fn(sample) {
@@ -505,7 +496,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
     for item in pistols { item.disconnect() }
     pistol_impacts.disconnect()
-    for vehicle in pickups { vehicle.disconnect() }
+    pickups.disconnect()
     hand_curls.disconnect()
     lighting.disconnect()
     remote.cancel_avatar_load()
@@ -513,6 +504,8 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     links.avatar = null
+    links.flight = null
+    remote.set_remote_flying(false)
     roster.count = 0
     show_status(event.name + " left; holding last received pose")
 })
@@ -539,6 +532,8 @@ on_global("FrameTick", fn(event) {
     channel_state.send_elapsed = channel_state.send_elapsed + event.dt_sec
     if channel_state.send_elapsed < 0.05 { return }
     hand_curls.tick(channel_state.send_elapsed)
+    pickups.tick(channel_state.send_elapsed)
+    channel_state.flight_elapsed = channel_state.flight_elapsed + channel_state.send_elapsed
     lighting.send()
     channel_state.send_elapsed = 0.0
     // A switch (or a join, which clears sent_avatar) starts a short burst so
@@ -551,6 +546,22 @@ on_global("FrameTick", fn(event) {
     if channel_state.avatar_repeats > 0 && links.avatar && links.avatar.ready() {
         links.avatar.write(choice)
         channel_state.avatar_repeats = channel_state.avatar_repeats - 1
+    }
+    if links.flight {
+        let flying = local.flying()
+        if flying != channel_state.sent_flight {
+            channel_state.sent_flight = flying
+            channel_state.flight_repeats = 4
+        }
+        if links.flight.ready() && (channel_state.flight_repeats > 0 || channel_state.flight_elapsed >= 1.0) {
+            let sample = 0.0
+            if flying { sample = 1.0 }
+            links.flight.write(sample)
+            channel_state.flight_elapsed = 0.0
+            if channel_state.flight_repeats > 0 {
+                channel_state.flight_repeats = channel_state.flight_repeats - 1
+            }
+        }
     }
     if links.root && links.root.ready() {
         links.root.write(local.root.world_trs())

@@ -225,13 +225,14 @@ export fn make_rooftop_player(options) {
             Rider.anchor("#local_xr_camera_anchor").movement_root("#local_root").input("#local_xr_locomotion") {}
         }
         if local_player && use_desktop {
-            Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("#local_desktop_locomotion") {}
+            Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("/#local_desktop_locomotion") {}
         }
         T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label }
     }
     let driver = PoseInput {}
+    let gamepad = null
     if local_player && use_xr {
-        let gamepad = InputXRGamepad {
+        gamepad = InputXRGamepad {
             name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(true)
             stick_mode(InputSettings.xr.stick_mode())
         }
@@ -393,6 +394,11 @@ export fn make_rooftop_player(options) {
     }
     fn toggle_camera_view() { set_third_person(!view.third_person) }
     fn avatar_id() { return state.choice }
+    fn flying() {
+        if gamepad { return gamepad.flying() }
+        return false
+    }
+    fn set_remote_flying(enabled) { if !local_player { driver.set_flying(enabled) } }
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
@@ -400,6 +406,7 @@ export fn make_rooftop_player(options) {
         left_driver = left_driver right_driver = right_driver label = label
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
+        flying = flying set_remote_flying = set_remote_flying
         camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load
     }

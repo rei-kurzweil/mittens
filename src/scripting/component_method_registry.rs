@@ -3,7 +3,7 @@ use crate::engine::ecs::component::{
     AnimationStepDirection, AudioBandPassFilterComponent, AudioInputComponent,
     AvatarControlComponent, BoneRestPoseComponent, ColorComponent, DirectionalLightComponent,
     EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, RayCastComponent, SliderComponent,
+    InputXRGamepadComponent, PoseInputComponent, RayCastComponent, SliderComponent,
     TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
     TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
@@ -111,7 +111,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "InputVRGamepad"
                 | "InputVrGamepad"
                 | "input_vr_gamepad"
-        ) && matches!(method, "enable" | "disable" | "set_stick_mode"))
+        ) && matches!(method, "enable" | "disable" | "set_stick_mode" | "flying"))
+        || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
                 method,
@@ -569,6 +570,29 @@ pub(crate) fn invoke_component_method(
                 .get_component_by_id_as_mut::<InputXRGamepadComponent>(id)
                 .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?
                 .stick_mode = mode;
+            Ok(Value::Null)
+        }
+        (
+            "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad"
+            | "input_vr_gamepad",
+            "flying",
+        ) => {
+            if !args.is_empty() {
+                return Err(format!("flying(): expected no arguments, got {args:?}"));
+            }
+            let input = world
+                .get_component_by_id_as::<InputXRGamepadComponent>(id)
+                .ok_or_else(|| "flying(): not an InputXRGamepadComponent".to_string())?;
+            Ok(Value::Bool(input.enabled && input.enable_flying && input.flying))
+        }
+        ("PoseInput" | "pose_input", "set_flying") => {
+            let [Value::Bool(flying)] = args else {
+                return Err(format!("set_flying(): expected one bool, got {args:?}"));
+            };
+            world
+                .get_component_by_id_as_mut::<PoseInputComponent>(id)
+                .ok_or_else(|| "set_flying(): not a PoseInputComponent".to_string())?
+                .flying = *flying;
             Ok(Value::Null)
         }
         ("Text" | "TXT" | "text", "set_text") => {

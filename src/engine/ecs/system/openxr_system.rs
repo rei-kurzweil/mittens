@@ -1667,6 +1667,11 @@ impl OpenXRSystem {
         self.vr_perf_exit_requested = false;
     }
 
+    pub fn cancel_vr_perf(&mut self) {
+        self.vr_perf = None;
+        self.vr_perf_exit_requested = false;
+    }
+
     pub fn vr_perf_exit_requested(&self) -> bool {
         self.vr_perf_exit_requested
     }
@@ -4676,13 +4681,17 @@ impl OpenXRSystem {
                 .views(&projection_views);
 
             let submit_started = (profile || perf_enabled).then(Instant::now);
-            if let Err(e) = sess.frame_stream.end(
+            let projection_submitted = match sess.frame_stream.end(
                 frame_state.predicted_display_time,
                 state.blend_mode,
                 &[&layer],
             ) {
-                eprintln!("[OpenXR] end_frame failed: {e:?}");
-            }
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("[OpenXR] end_frame failed: {e:?}");
+                    false
+                }
+            };
             drop(projection_swapchain);
             let submit_elapsed = submit_started.map_or(Duration::ZERO, |started| started.elapsed());
             if profile {
@@ -4710,6 +4719,7 @@ impl OpenXRSystem {
                 [extent.width as u32, extent.height as u32],
                 Duration::from_nanos(frame_state.predicted_display_period.as_nanos().max(0) as u64),
                 VrPerfFrameCpu {
+                    projection_submitted,
                     pre_xr: perf_pre_xr,
                     total: perf_frame_started.elapsed(),
                     wait_frame: perf_wait_frame,
@@ -4761,6 +4771,7 @@ impl OpenXRSystem {
             [extent.width as u32, extent.height as u32],
             Duration::from_nanos(frame_state.predicted_display_period.as_nanos().max(0) as u64),
             VrPerfFrameCpu {
+                projection_submitted: false,
                 pre_xr: perf_pre_xr,
                 total: perf_frame_started.elapsed(),
                 wait_frame: perf_wait_frame,

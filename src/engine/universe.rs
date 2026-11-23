@@ -183,6 +183,11 @@ impl Universe {
         self.systems.xr.configure_vr_perf(config);
     }
 
+    pub fn cancel_vr_perf(&mut self) {
+        self.systems.set_vr_perf_enabled(false);
+        self.systems.xr.cancel_vr_perf();
+    }
+
     pub fn exit_requested(&self) -> bool {
         self.systems.xr.vr_perf_exit_requested()
     }
@@ -588,6 +593,7 @@ impl Universe {
 
         // Systems dispatch Rx events during tick. Run queued MMS callbacks
         // before the command drain so their intents take effect this frame.
+        let vr_callbacks_started = vr_update_started.map(|_| Instant::now());
         self.service_runtime_spec_callbacks();
 
         #[cfg(test)]
@@ -605,6 +611,10 @@ impl Universe {
         if let Some(update_started) = vr_update_started {
             self.systems.set_vr_perf_update_timings(
                 update_started.elapsed(),
+                vr_callbacks_started
+                    .zip(vr_commands_started)
+                    .map(|(start, end)| end.duration_since(start))
+                    .unwrap_or_default(),
                 vr_commands_started
                     .map(|started| started.elapsed())
                     .unwrap_or_default(),

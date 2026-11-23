@@ -1807,7 +1807,9 @@ fn create_component(
             }
             add!(c)
         }
-        "PoseInput" => Ok(world.add_component(crate::engine::ecs::component::PoseInputComponent)),
+        "PoseInput" => {
+            Ok(world.add_component(crate::engine::ecs::component::PoseInputComponent::default()))
+        }
         "UdpSocket" => {
             if ctor != Some("bind") || args.len() != 1 { return Err("UdpSocket.bind expects a numeric IP:port".into()); }
             let address = arg_str(args, 0)?.to_string();

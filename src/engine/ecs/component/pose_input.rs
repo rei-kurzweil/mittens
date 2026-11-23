@@ -2,7 +2,9 @@
 use super::Component;
 use crate::engine::ecs::{ComponentId, SignalEmitter};
 #[derive(Debug, Clone, Default)]
-pub struct PoseInputComponent;
+pub struct PoseInputComponent {
+    pub(crate) flying: bool,
+}
 impl Component for PoseInputComponent {
     fn name(&self) -> &'static str {
         "pose_input"

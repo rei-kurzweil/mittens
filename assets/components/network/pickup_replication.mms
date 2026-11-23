@@ -51,6 +51,7 @@ export fn pickup_replication(options) {
         group.attach(incoming)
         state.outgoing = outgoing
         if options.mounted() { mount_changed(true) }
+        if !owns() { options.follow_peer(true, state.occupied) }
         on(incoming, "UdpSample", fn(event) {
             if generation != state.generation { return }
             let value = event.value
@@ -69,9 +70,12 @@ export fn pickup_replication(options) {
             options.apply_controls(value.powered > 0.5, value.hydraulics)
         })
     }
-    fn disconnect() {
+    fn retire_channels() {
         state.generation = state.generation + 1
         state.outgoing = null
+    }
+    fn disconnect() {
+        retire_channels()
         if !owns() {
             state.revision = state.revision + 1
             state.owner = options.rank
@@ -79,10 +83,15 @@ export fn pickup_replication(options) {
             options.follow_peer(false, false)
         }
     }
-    on_global("FrameTick", fn(event) {
+    let pump = on_global("FrameTick", fn(event) {
         if !state.outgoing { return }
         state.elapsed = state.elapsed + event.dt_sec
         if state.elapsed >= 0.05 { state.elapsed = 0.0 send() }
     })
-    return { claim = claim mount_changed = mount_changed connect = connect disconnect = disconnect }
+    fn dispose() {
+        retire_channels()
+        pump.remove()
+    }
+    return { claim = claim mount_changed = mount_changed connect = connect disconnect = disconnect
+        owns_motion = fn() { return !state.outgoing || owns() } dispose = dispose }
 }

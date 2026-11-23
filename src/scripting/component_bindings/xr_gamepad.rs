@@ -32,4 +32,10 @@ pub(super) fn register(
         "set_stick_mode",
         mms::ValueSignature::new(vec![mms::ValueType::String], mms::ValueType::Null),
     );
+    host_method(
+        component,
+        canonical,
+        "flying",
+        mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+    );
 }

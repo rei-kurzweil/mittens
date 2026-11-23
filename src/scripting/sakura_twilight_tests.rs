@@ -2,8 +2,8 @@
 use crate::engine::Universe;
 use crate::engine::ecs::component::{
     AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerHand,
-    DestroyableComponent, MirrorComponent, TextComponent, ToggleComponent, TransformComponent,
-    VelocityComponent, XrButtonControl,
+    DestroyableComponent, InputXRGamepadComponent, MirrorComponent, PoseInputComponent,
+    TextComponent, ToggleComponent, TransformComponent, VelocityComponent, XrButtonControl,
 };
 use crate::engine::ecs::system::{TransformSystem, grabbable_system::grabbable_owner_for_hit};
 use crate::engine::ecs::{
@@ -47,6 +47,176 @@ fn has_label(scene: &Universe, label: &str) -> bool {
 }
 
 #[test]
+fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
+    let load = |path: &str| {
+        let source = std::fs::read_to_string(path)
+            .unwrap()
+            .replace("let use_xr = true", "let use_xr = false")
+            .replace("let use_desktop = false", "let use_desktop = true")
+            .replace("AudioInput {}", "AudioInput { enabled(false) }");
+        let mut scene = Universe::new(World::default());
+        scene.load_mms_source_at_path(&source, path).unwrap();
+        for _ in 0..3 {
+            scene.update(1.0 / 60.0, &Default::default());
+        }
+        scene
+    };
+    let layout = |scene: &Universe| {
+        ["sakura_twilight_ground", "sakura_twilight_road"].map(|label| {
+            scene
+                .world
+                .find_all_components(named(scene, label), "transform")
+                .into_iter()
+                .map(|id| TransformSystem::world_model(&scene.world, id).unwrap())
+                .collect::<Vec<_>>()
+        })
+    };
+    let full_layout = layout(&load("examples/sakura-twilight.mms"));
+    let scene = load("examples/sakura-twilight-simpler.mms");
+    assert_eq!(layout(&scene), full_layout);
+    let labels: Vec<_> = scene
+        .world
+        .all_components()
+        .filter_map(|id| scene.world.component_label(id))
+        .collect();
+    let count =
+        |predicate: &dyn Fn(&str) -> bool| labels.iter().filter(|label| predicate(label)).count();
+    assert_eq!(count(&|name| name == "pickup_truck"), 1);
+    assert_eq!(
+        count(&|name| name.starts_with("sakura_twilight_radio_tower_")),
+        1
+    );
+    assert_eq!(
+        count(&|name| name.starts_with("rooftop_machine_pistol") && name.ends_with("_ammo_count")),
+        6
+    );
+    for label in ["main", "row_0", "row_1", "row_2", "row_3"] {
+        let building = format!("sakura_twilight_{label}");
+        let floor_prefix = format!("{building}_floor_");
+        assert!(has_label(&scene, &format!("{floor_prefix}0")));
+        assert!(has_label(&scene, &format!("{building}_roof")));
+        assert_eq!(
+            count(&|name| name
+                .strip_prefix(&floor_prefix)
+                .is_some_and(|floor| floor.parse::<u32>().is_ok())),
+            1
+        );
+    }
+    let roof = named(&scene, "sakura_twilight_main_roof");
+    assert!((TransformSystem::world_position(&scene.world, roof).unwrap()[1] - 3.2).abs() < 1e-4);
+}
+
+#[test]
+fn sakura_twilight_replicates_flight_and_truck_respawn() {
+    use std::net::UdpSocket;
+
+    let addresses = [(); 3].map(|_| UdpSocket::bind("127.0.0.1:0").unwrap());
+    let [session, host_port, client_port] = addresses
+        .each_ref()
+        .map(|socket| socket.local_addr().unwrap().port());
+    drop(addresses);
+    let path = "examples/sakura-twilight.mms";
+    let source = std::fs::read_to_string(path)
+        .unwrap()
+        .replace("7011", &host_port.to_string())
+        .replace("7012", &client_port.to_string());
+    let mut host = Universe::new(World::default());
+    host.systems.xr.set_external_frame(Some(Default::default()));
+    host.load_mms_source_at_path(
+        &source.replace(
+            "MultiplayerSession.from_env()",
+            &format!("MultiplayerSession.host(\"127.0.0.1:{session}\")"),
+        ),
+        path,
+    )
+    .unwrap();
+    for _ in 0..240 {
+        host.update(1.0 / 60.0, &Default::default());
+    }
+    let mut client = Universe::new(World::default());
+    client
+        .load_mms_source_at_path(
+            &source
+                .replace(
+                    "MultiplayerSession.from_env()",
+                    &format!("MultiplayerSession.join(\"127.0.0.1:{session}\")"),
+                )
+                .replace("let use_xr = true", "let use_xr = false")
+                .replace("let use_desktop = false", "let use_desktop = true"),
+            path,
+        )
+        .unwrap();
+    let step = |host: &mut Universe, client: &mut Universe, frames| {
+        for _ in 0..frames {
+            host.update(1.0 / 60.0, &Default::default());
+            client.update(1.0 / 60.0, &Default::default());
+        }
+    };
+    let truck = |scene: &Universe| {
+        scene
+            .world
+            .find_component(named(scene, "sakura_twilight_pickup"), "#pickup_truck")
+            .unwrap()
+    };
+    let driver = named(&host, "local_xr_locomotion");
+    // Start in flight before joining, then leave flight in the same session.
+    host.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(driver)
+        .unwrap()
+        .flying = true;
+    step(&mut host, &mut client, 240);
+    let remote_driver = client
+        .world
+        .parent_of(named(&client, "remote_head_target"))
+        .unwrap();
+    let remote_flying = |scene: &Universe| {
+        scene
+            .world
+            .get_component_by_id_as::<PoseInputComponent>(remote_driver)
+            .unwrap()
+            .flying
+    };
+    assert!(remote_flying(&client));
+    host.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(driver)
+        .unwrap()
+        .flying = false;
+    let old_host = truck(&host);
+    let old_client = truck(&client);
+    let old_channel = host
+        .world
+        .all_components()
+        .find(|&id| {
+            host.world
+                .get_component_by_id_as::<crate::engine::ecs::component::UdpChannelComponent>(id)
+                .is_some_and(|component| component.channel_name == "arena.pickup.1")
+        })
+        .unwrap();
+    host.command_queue.push_intent_now(
+        old_host,
+        IntentValue::PatchTransformTrs {
+            component_id: old_host,
+            translation: Some([-5.0, 103.0, 4.5]),
+            rotation: None,
+            space: crate::engine::transform::TransformSpace::World,
+        },
+    );
+    step(&mut host, &mut client, 120);
+    assert!(!remote_flying(&client));
+    assert_ne!(truck(&host), old_host);
+    assert_ne!(truck(&client), old_client);
+    assert!(host.world.get_component_record(old_channel).is_none());
+    for (role, scene) in [("host", &host), ("client", &client)] {
+        let [x, y, z] = TransformSystem::world_position(&scene.world, truck(scene)).unwrap();
+        assert!(
+            (x + 5.0).abs() < 0.1 && (y + 0.23).abs() < 0.2 && (z - 4.5).abs() < 0.1,
+            "{role} parking position: {:?}",
+            [x, y, z]
+        );
+    }
+}
+
+#[test]
 fn sakura_twilight_loads_its_city_without_the_train() {
     let path = "examples/sakura-twilight.mms";
     let original = std::fs::read_to_string(path).unwrap();
@@ -56,9 +226,24 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     source.push_str(
         r##"
         let ramp_test = T { name = "ramp_test_driver" }
+        let test_cargo = T { name = "pickup_respawn_test_cargo" }
+        test_cargo
         on(ramp_test, "DataEvent", fn(event) {
-            let truck = pickup.query("#pickup_truck")
+            let truck = pickups.root.query("#sakura_twilight_pickup").query("#pickup_truck")
+            if event == "LaunchHigh" {
+                let bed = truck.query("#pickup_bed_cargo_zone")
+                bed.attach(test_cargo)
+                test_cargo.update_transform([0,0,0])
+                truck.set_powered(true)
+                truck.set_translation([-5, 100, 4.5], "world")
+            }
+            if event == "LaunchLow" {
+                let blue = pickups.root.query("#sakura_twilight_ground_pickup").query("#pickup_truck")
+                blue.set_powered(true)
+                blue.set_translation([5, -51, -6], "world")
+            }
             if event == "DriveRamp" {
+                truck.set_translation([roof_x + 3.0, roof_height, ramp_entry_z], "world")
                 truck.set_powered(true)
                 truck.drive_command(1,0,false)
             }
@@ -185,6 +370,92 @@ fn sakura_twilight_loads_its_city_without_the_train() {
         }
     }
     let driver = named(&scene, "ramp_test_driver");
+    for (slot, launch, x, z) in [
+        ("sakura_twilight_pickup", "LaunchHigh", -5.0, 4.5),
+        ("sakura_twilight_ground_pickup", "LaunchLow", 5.0, -6.0),
+    ] {
+        let slot = named(&scene, slot);
+        let pickup = |scene: &Universe| scene.world.find_component(slot, "#pickup_truck").unwrap();
+        let check_parked = |scene: &Universe, truck| {
+            let [px, py, pz] = TransformSystem::world_position(&scene.world, truck).unwrap();
+            assert!((px - x).abs() < 0.1 && (py + 0.23).abs() < 0.2 && (pz - z).abs() < 0.1);
+            let power = scene
+                .world
+                .find_component(truck, "#pickup_power_readout")
+                .unwrap();
+            assert_eq!(
+                scene
+                    .world
+                    .get_component_by_id_as::<TextComponent>(power)
+                    .unwrap()
+                    .text,
+                "POWER OFF"
+            );
+        };
+        let old = pickup(&scene);
+        check_parked(&scene, old);
+        let cargo = named(&scene, "pickup_respawn_test_cargo");
+        let player = named(&scene, "local_root");
+        let rider = scene.world.find_component(player, "rider").unwrap();
+        if launch == "LaunchHigh" {
+            let entry = scene
+                .world
+                .find_component(old, "#pickup_entry_frame")
+                .unwrap();
+            let anchor = named(&scene, "local_desktop_camera_anchor");
+            let position = |id| TransformSystem::world_position(&scene.world, id).unwrap();
+            let (entry, eye, root) = (position(entry), position(anchor), position(player));
+            let translation = std::array::from_fn(|i| entry[i] - eye[i] + root[i]);
+            scene
+                .systems
+                .static_contact
+                .forget_target(&scene.world, player);
+            scene.command_queue.push_intent_now(
+                player,
+                IntentValue::PatchTransformTrs {
+                    component_id: player,
+                    translation: Some(translation),
+                    rotation: None,
+                    space: crate::engine::transform::TransformSpace::World,
+                },
+            );
+            scene.update(1.0 / 60.0, &Default::default());
+            assert!(scene.systems.attachment.try_mount_from_hit(
+                &mut scene.world,
+                rider,
+                old,
+                &mut scene.systems.rx,
+            ));
+        }
+        scene.command_queue.push_event(
+            driver,
+            EventSignal::DataEvent {
+                name: launch.into(),
+                payload: None,
+            },
+        );
+        for _ in 0..16 {
+            scene.update(1.0 / 60.0, &Default::default());
+        }
+        let fresh = pickup(&scene);
+        assert_ne!(old, fresh, "{launch} should build a fresh truck");
+        assert!(scene.world.get_component_record(old).is_none());
+        assert_eq!(named(&scene, "pickup_respawn_test_cargo"), cargo);
+        assert_eq!(named(&scene, "local_root"), player);
+        assert!(
+            scene
+                .systems
+                .attachment
+                .mounted_relationship(&scene.world, rider)
+                .is_none()
+        );
+        let player_y = TransformSystem::world_position(&scene.world, player).unwrap()[1];
+        assert!(
+            (-1.0..2.0).contains(&player_y),
+            "dismount height: {player_y}"
+        );
+        check_parked(&scene, fresh);
+    }
     scene.command_queue.push_event(
         driver,
         EventSignal::DataEvent {
@@ -213,7 +484,7 @@ fn sakura_twilight_loads_its_city_without_the_train() {
     }
     assert!(
         position[0] >= 33.5 && (position[1] + 0.23).abs() < 0.2 && (position[2] + 0.4).abs() < 1.27,
-        "pickup should reach the level landing from its authored roof spawn: {position:?}"
+        "pickup should reach the level landing from the test's roof placement: {position:?}"
     );
     scene.command_queue.push_event(
         driver,
@@ -264,9 +535,10 @@ fn check_dock(scene: &mut Universe) {
         TransformSystem::world_position(&scene.world, named(scene, &format!("dock_{item}")))
             .unwrap()[1]
     };
-    let [avatar, mirror, input, humanoid, graphics, editor] =
-        ["avatar", "mirror", "input", "humanoid", "graphics", "editor"]
-            .map(|item| height(scene, item));
+    let [avatar, mirror, input, humanoid, graphics, editor] = [
+        "avatar", "mirror", "input", "humanoid", "graphics", "editor",
+    ]
+    .map(|item| height(scene, item));
     assert!(
         avatar > mirror
             && mirror > input
@@ -299,7 +571,10 @@ fn check_dock(scene: &mut Universe) {
     assert_eq!(grabbable_owner_for_hit(&scene.world, title), Some(dock));
 
     // Collapsing removes the buttons; restoring rebuilds them.
-    let toggle = scene.world.find_component(dock, "#accordion_toggle").unwrap();
+    let toggle = scene
+        .world
+        .find_component(dock, "#accordion_toggle")
+        .unwrap();
     click(scene, toggle);
     assert!(!has_label(scene, "dock_avatar"));
     click(scene, toggle);
@@ -416,7 +691,10 @@ fn check_input_settings(scene: &mut Universe) {
     assert_eq!(label(scene, "strafe"), "(o) Left stick only");
     assert_eq!(label(scene, "turn"), "( ) Right stick turns");
     click(scene, named(scene, "input_stick_mode_turn"));
-    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Turn);
+    assert_eq!(
+        scene.systems.input_settings.xr_stick_mode(),
+        XrStickMode::Turn
+    );
     assert_eq!(stick_mode(scene), XrStickMode::Turn);
     assert_eq!(label(scene, "strafe"), "( ) Left stick only");
     assert_eq!(label(scene, "turn"), "(o) Right stick turns");

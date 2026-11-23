@@ -56,6 +56,7 @@ pub struct VrPerfConfig {
     pub warmup: Duration,
     pub sample: Duration,
     pub report_dir: PathBuf,
+    pub authored_scene: Option<&'static str>,
 }
 
 impl VrPerfConfig {
@@ -65,7 +66,12 @@ impl VrPerfConfig {
             warmup,
             sample,
             report_dir: PathBuf::from("docs/.debug/vr_perf"),
+            authored_scene: None,
         }
+    }
+
+    fn label(&self) -> &'static str {
+        self.authored_scene.unwrap_or_else(|| self.case.as_str())
     }
 }
 
@@ -81,6 +87,10 @@ pub struct VrPerfMetadata {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VrPerfPreXrCpu {
     pub update_total: Duration,
+    pub network: Duration,
+    pub typed_datagrams: u64,
+    pub runtime_callbacks: Duration,
+    pub xr_locomotion: Duration,
     pub final_command_processing: Duration,
     pub secondary_motion: Duration,
     pub spring_transform_propagation: Duration,
@@ -92,6 +102,7 @@ pub struct VrPerfPreXrCpu {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VrPerfFrameCpu {
+    pub projection_submitted: bool,
     pub pre_xr: VrPerfPreXrCpu,
     pub total: Duration,
     pub wait_frame: Duration,
@@ -139,7 +150,7 @@ impl VrPerfCollector {
         matches!(self.phase, Phase::Complete)
     }
 
-    /// Records one successfully submitted headset frame.
+    /// Records a finished runtime frame, including frames with no projection layer.
     ///
     /// `resources_ready` deliberately gates the warm-up clock. This prevents model upload,
     /// deformation-cache creation, and the first visualization spawn from entering warm-up.
@@ -152,10 +163,10 @@ impl VrPerfCollector {
         metadata: &VrPerfMetadata,
     ) -> Option<Result<PathBuf, String>> {
         match self.phase {
-            Phase::WaitingForResources if resources_ready => {
+            Phase::WaitingForResources if resources_ready && cpu.projection_submitted => {
                 println!(
                     "[vr-perf] preset={} resources ready; warming up for {:.3}s",
-                    self.config.case.as_str(),
+                    self.config.label(),
                     self.config.warmup.as_secs_f64()
                 );
                 self.phase = Phase::Warmup { started: now };
@@ -165,7 +176,7 @@ impl VrPerfCollector {
             Phase::Warmup { started } if now.duration_since(started) >= self.config.warmup => {
                 println!(
                     "[vr-perf] preset={} sampling for {:.3}s",
-                    self.config.case.as_str(),
+                    self.config.label(),
                     self.config.sample.as_secs_f64()
                 );
                 self.phase = Phase::Sampling { started: now };
@@ -205,7 +216,7 @@ impl VrPerfCollector {
         let filename = format!(
             "{}__{}.md",
             utc_timestamp(SystemTime::now()),
-            self.config.case.as_str()
+            self.config.label()
         );
         let path = non_overwriting_path(&self.config.report_dir, &filename);
         fs::write(&path, self.report_markdown(elapsed, metadata))?;
@@ -232,25 +243,39 @@ impl VrPerfCollector {
         } else {
             frame_count as f64 / elapsed.as_secs_f64()
         };
+        let projected_frames = self
+            .cpu_frames
+            .iter()
+            .filter(|frame| frame.projection_submitted)
+            .count();
+        let projection_fps = if elapsed.is_zero() {
+            0.0
+        } else {
+            projected_frames as f64 / elapsed.as_secs_f64()
+        };
         let refresh_hz = target
             .filter(|interval| !interval.is_zero())
             .map(|interval| 1.0 / interval.as_secs_f64());
 
         let mut out = String::new();
         let _ = writeln!(out, "# XR performance report\n");
-        let _ = writeln!(out, "- Preset: `{}`", self.config.case.as_str());
-        let _ = writeln!(out, "- Avatar / XR control: on");
-        let _ = writeln!(out, "- Mirror: {}", on_off(self.config.case.mirror()));
-        let _ = writeln!(
-            out,
-            "- Secondary motion: {}",
-            on_off(self.config.case.secondary_motion())
-        );
-        let _ = writeln!(
-            out,
-            "- Spring-bone visualization: {}",
-            on_off(self.config.case.visualization())
-        );
+        if let Some(scene) = self.config.authored_scene {
+            let _ = writeln!(out, "- Scene: `{scene}` (authored settings)");
+        } else {
+            let _ = writeln!(out, "- Preset: `{}`", self.config.case.as_str());
+            let _ = writeln!(out, "- Avatar / XR control: on");
+            let _ = writeln!(out, "- Mirror: {}", on_off(self.config.case.mirror()));
+            let _ = writeln!(
+                out,
+                "- Secondary motion: {}",
+                on_off(self.config.case.secondary_motion())
+            );
+            let _ = writeln!(
+                out,
+                "- Spring-bone visualization: {}",
+                on_off(self.config.case.visualization())
+            );
+        }
         let _ = writeln!(
             out,
             "- Warm-up requested: {:.3} s",
@@ -266,6 +291,10 @@ impl VrPerfCollector {
         let _ = writeln!(out, "- Sampled headset frames: {frame_count}");
         let _ = writeln!(out, "- Elapsed: {:.3} s", elapsed.as_secs_f64());
         let _ = writeln!(out, "- Arithmetic average FPS: {average_fps:.3}");
+        let _ = writeln!(
+            out,
+            "- Submitted projection frames: {projected_frames} ({projection_fps:.3} per second)"
+        );
         write_duration_stat(&mut out, "Mean", stats.map(|s| s.mean));
         write_duration_stat(&mut out, "Median", stats.map(|s| s.median));
         write_duration_stat(&mut out, "p95", stats.map(|s| s.p95));
@@ -311,9 +340,30 @@ impl VrPerfCollector {
         let _ = writeln!(out, "- MSAA: {}\n", metadata.msaa);
 
         let _ = writeln!(out, "## CPU timing\n");
-        write_cpu_mean(&mut out, "Update before XR", &self.cpu_frames, |frame| {
+        write_cpu_spread(&mut out, "Update before XR", &self.cpu_frames, |frame| {
             frame.pre_xr.update_total
         });
+        write_cpu_spread(&mut out, "Native networking", &self.cpu_frames, |frame| {
+            frame.pre_xr.network
+        });
+        write_cpu_spread(
+            &mut out,
+            "MMS callback service",
+            &self.cpu_frames,
+            |frame| frame.pre_xr.runtime_callbacks,
+        );
+        write_cpu_spread(&mut out, "XR locomotion", &self.cpu_frames, |frame| {
+            frame.pre_xr.xr_locomotion
+        });
+        let typed_datagrams: u64 = self
+            .cpu_frames
+            .iter()
+            .map(|frame| frame.pre_xr.typed_datagrams)
+            .sum();
+        let _ = writeln!(
+            out,
+            "- Typed UDP datagrams received: {typed_datagrams} across {frame_count} sampled frames"
+        );
         write_cpu_mean(
             &mut out,
             "Final command processing",
@@ -356,13 +406,13 @@ impl VrPerfCollector {
         write_cpu_mean(&mut out, "Total XR frame", &self.cpu_frames, |frame| {
             frame.total
         });
-        write_cpu_mean(&mut out, "wait_frame", &self.cpu_frames, |frame| {
+        write_cpu_spread(&mut out, "wait_frame", &self.cpu_frames, |frame| {
             frame.wait_frame
         });
         write_cpu_mean(&mut out, "Eye render", &self.cpu_frames, |frame| {
             frame.eye_render
         });
-        write_cpu_mean(&mut out, "GPU completion wait", &self.cpu_frames, |frame| {
+        write_cpu_spread(&mut out, "GPU completion wait", &self.cpu_frames, |frame| {
             frame.completion_wait
         });
         write_cpu_mean(&mut out, "Frame submit", &self.cpu_frames, |frame| {
@@ -532,6 +582,25 @@ fn write_cpu_mean(
     }
 }
 
+fn write_cpu_spread(
+    out: &mut String,
+    label: &str,
+    frames: &[VrPerfFrameCpu],
+    get: impl Fn(&VrPerfFrameCpu) -> Duration,
+) {
+    let samples: Vec<_> = frames.iter().map(get).collect();
+    if let Some(stats) = DurationStats::from_samples(&samples) {
+        let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
+        let _ = writeln!(
+            out,
+            "- {label}: mean {:.3} ms, p95 {:.3} ms, maximum {:.3} ms",
+            ms(stats.mean),
+            ms(stats.p95),
+            ms(stats.max)
+        );
+    }
+}
+
 fn write_counter(
     out: &mut String,
     label: &str,
@@ -630,6 +699,44 @@ mod tests {
         assert_eq!(stats.p99, Duration::from_millis(100));
         assert_eq!(stats.min, Duration::from_millis(1));
         assert_eq!(stats.max, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn authored_scene_report_counts_projections_and_udp_separately() {
+        let mut config = VrPerfConfig::new(
+            VrPerfCase::AvatarNoSpringNoMirror,
+            Duration::ZERO,
+            Duration::from_secs(1),
+        );
+        config.authored_scene = Some("sakura-twilight");
+        let mut capture = VrPerfCollector::new(config);
+        capture.frame_times = vec![Duration::from_millis(11); 2];
+        capture.cpu_frames = vec![
+            VrPerfFrameCpu {
+                projection_submitted: true,
+                pre_xr: VrPerfPreXrCpu {
+                    network: Duration::from_micros(400),
+                    typed_datagrams: 8,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            VrPerfFrameCpu::default(),
+        ];
+        let report = capture.report_markdown(
+            Duration::from_secs(1),
+            &VrPerfMetadata {
+                build_profile: "test",
+                gpu_device: String::new(),
+                openxr_runtime: String::new(),
+                render_extent: [0; 2],
+                msaa: String::new(),
+            },
+        );
+        assert!(report.contains("Scene: `sakura-twilight` (authored settings)"));
+        assert!(report.contains("Submitted projection frames: 1 (1.000 per second)"));
+        assert!(report.contains("Typed UDP datagrams received: 8 across 2 sampled frames"));
+        assert!(report.contains("Native networking: mean 0.200 ms, p95 0.400 ms"));
     }
 
     #[test]

@@ -557,6 +557,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "XR" => no_arg_constructors(component, &["on", "off", "auto", "openxr"]),
                 "InputXRGamepad" => xr_gamepad_binding::register(component, canonical),
+                "PoseInput" => host_method(
+                    component,
+                    canonical,
+                    "set_flying",
+                    method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                ),
                 "InputTransformMode" => {
                     no_arg_constructors(component, &["forward_y", "forward_z"]);
                     no_arg_builders(

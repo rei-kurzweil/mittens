@@ -1,7 +1,8 @@
 //! Opt-in XR flight mode. Physics remains responsible for solid contacts.
 use super::{VelocitySystem, XrGamepadState};
 use crate::engine::ecs::component::{
-    GravityComponent, GravityMode, InputXRGamepadComponent, SerializeComponent, VelocityComponent,
+    GravityComponent, GravityMode, InputXRGamepadComponent, PoseInputComponent, SerializeComponent,
+    VelocityComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use std::collections::HashMap;
@@ -203,6 +204,9 @@ fn release_override(world: &mut World, state: &FlightState) {
 pub(crate) fn is_flying(world: &World, start: ComponentId) -> bool {
     let mut node = Some(start);
     while let Some(id) = node {
+        if let Some(input) = world.get_component_by_id_as::<PoseInputComponent>(id) {
+            return input.flying;
+        }
         if world.children_of(id).iter().any(|&child| {
             world
                 .get_component_by_id_as::<InputXRGamepadComponent>(child)

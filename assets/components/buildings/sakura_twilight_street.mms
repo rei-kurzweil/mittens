@@ -91,7 +91,7 @@ fn corner_grass(label, outline, x, y, z) {
     }
 }
 
-export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, road_material, rail_material) {
+export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, road_material, rail_material, single_tower) {
     let road_z = -13.0
     let road_width = 9.0
     let road_x0 = -100.0
@@ -160,11 +160,13 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
         T.position(road_x1 - 36.0, ground_y, road_z - 10.0) {
             radio_tower("sakura_twilight_radio_tower_1", rail_material)
         }
-        T.position(road_x1 - 22.0, ground_y, road_z + 11.0) {
-            radio_tower("sakura_twilight_radio_tower_2", rail_material)
-        }
-        T.position(road_x1 - 10.0, ground_y, road_z - 12.0) {
-            radio_tower("sakura_twilight_radio_tower_3", rail_material)
+        if !single_tower {
+            T.position(road_x1 - 22.0, ground_y, road_z + 11.0) {
+                radio_tower("sakura_twilight_radio_tower_2", rail_material)
+            }
+            T.position(road_x1 - 10.0, ground_y, road_z - 12.0) {
+                radio_tower("sakura_twilight_radio_tower_3", rail_material)
+            }
         }
         T { name = "sakura_twilight_road"
             Raycastable.disabled()
