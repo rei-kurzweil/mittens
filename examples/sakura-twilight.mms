@@ -344,9 +344,10 @@ T.position(roof_x + spawn_x + 1.0, roof_height + 1.6, -1.6) {
     })
 }
 // Right of and in front of the player, turned to face them.
-local.root.attach(T.position(0.35, 1.25, -0.45).rotation(0.0, -0.66, 0.0) {
+let dock_slot = T.position(0.35, 1.25, -0.45).rotation(0.0, -0.66, 0.0) {
     dock_dropzone({ name = "sakura_twilight_dock_slot" })
-})
+}
+local.root.attach(dock_slot)
 // Grab this cyan cube with the desktop pointer or either XR hand. The latest
 // grab/release transition wins; simultaneous claims favor the client in this demo.
 let shared_prop = T.position(roof_x, roof_height + 1.1, 0.0) {

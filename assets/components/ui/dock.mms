@@ -85,12 +85,14 @@ export fn dock(options) {
         content_factory = fn() { return dock_content(options.groups, options.mount) }
     })
     let root = panel.query("#" + options.root_name)
-    root.attach(Selectable.off())
+    let selection_guard = Selectable.off()
+    root.attach(selection_guard)
     // Drop zones test this probe against themselves, so the dock docks when
     // its title bar, not its corner, is released over a slot.
-    root.attach(T.position(WIDTH_GU * UNIT_SCALE / 2.0, -TITLE_HEIGHT_GU * UNIT_SCALE / 2.0, 0.0) {
+    let probe = T.position(WIDTH_GU * UNIT_SCALE / 2.0, -TITLE_HEIGHT_GU * UNIT_SCALE / 2.0, 0.0) {
         Zone.sphere(0.06) { name = options.root_name + "_dock_probe" }
-    })
+    }
+    root.attach(probe)
     root.dock_panel = true
     return panel
 }
