@@ -3,8 +3,8 @@
 import { info_panel } from "../ui/info_panel.mms"
 
 let STICK_MODES = [
-    { id = "strafe" label = "Move + strafe" },
-    { id = "turn" label = "Move + turn" },
+    { id = "strafe" label = "Left stick only" },
+    { id = "turn" label = "Right stick turns" },
 ]
 
 fn radio_text(mode, selected) {
@@ -58,13 +58,13 @@ fn input_settings_content() {
                     display("flex") width(8.0) height(3.2)
                     align_items("center") padding_xy(0.35, 0.0) font_size(0.62)
                 }
-                T.position(0.0, 0.0, 0.03) { Text { "Left stick" } }
+                T.position(0.0, 0.0, 0.03) { Text { "Sticks" } }
             }
             for mode in STICK_MODES { stick_mode_button(mode) }
         }
         T {
             Style { display("block") width(100%) font_size(0.55) }
-            Text { "Up and down always move forward and back." }
+            Text { "The left stick always moves and strafes." }
         }
     }
 }

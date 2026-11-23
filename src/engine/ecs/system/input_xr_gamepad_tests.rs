@@ -376,7 +376,7 @@ fn auto_override_does_not_clear_walking_momentum_when_xr_input_is_lost() {
 }
 
 #[test]
-fn turn_stick_mode_yaws_in_place_and_keeps_forward_motion() {
+fn turn_stick_mode_moves_on_the_left_stick_and_turns_on_the_right() {
     let mut f = Fixture::new(false);
     f.world
         .get_component_by_id_as_mut::<InputXRGamepadComponent>(f.input)
@@ -389,7 +389,10 @@ fn turn_stick_mode_yaws_in_place_and_keeps_forward_motion() {
             .transform
             .rotation
     };
-    f.xr.hands[0].thumbstick = Some([1., 0.]);
+    // Both controllers report a stick; a missing left stick would hand
+    // locomotion to the right.
+    f.xr.hands[0].thumbstick = Some([0., 0.]);
+    f.xr.hands[1].thumbstick = Some([1., 0.]);
     f.tick(0.5, false);
     let (axis, angle) = math::quat_to_axis_angle(rotation(&f));
     assert!(
@@ -401,9 +404,11 @@ fn turn_stick_mode_yaws_in_place_and_keeps_forward_motion() {
         "turning about the rig itself does not translate it"
     );
 
-    // A slightly sideways push forward stays inside the turn deadzone.
+    // The left stick strafes without turning; right stick Y does nothing, and
+    // a slightly diagonal right push stays inside the turn deadzone.
     let before = rotation(&f);
-    f.xr.hands[0].thumbstick = Some([0.15, 1.]);
+    f.xr.hands[0].thumbstick = Some([1., 0.]);
+    f.xr.hands[1].thumbstick = Some([0.15, 1.]);
     f.tick(0.1, false);
     assert_eq!(rotation(&f), before);
     assert!(f.position()[1].abs() < 1e-5 && math::vec3_len(f.position()) > 0.1);
