@@ -398,20 +398,20 @@ fn check_input_settings(scene: &mut Universe) {
     }
     assert_eq!(stick_mode(scene), XrStickMode::Strafe);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "strafe"), "(o) Move + strafe");
-    assert_eq!(label(scene, "turn"), "( ) Move + turn");
+    assert_eq!(label(scene, "strafe"), "(o) Left stick only");
+    assert_eq!(label(scene, "turn"), "( ) Right stick turns");
     click(scene, named(scene, "input_stick_mode_turn"));
     assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Turn);
     assert_eq!(stick_mode(scene), XrStickMode::Turn);
-    assert_eq!(label(scene, "strafe"), "( ) Move + strafe");
-    assert_eq!(label(scene, "turn"), "(o) Move + turn");
+    assert_eq!(label(scene, "strafe"), "( ) Left stick only");
+    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
 
     // Clicking the dock item again closes the panel; reopening reflects the setting.
     open_dock_items(scene, &["input"]);
     assert!(!has_label(scene, "sakura_twilight_input_settings"));
     assert_eq!(stick_mode(scene), XrStickMode::Turn);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "turn"), "(o) Move + turn");
+    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
 }
 
 fn check_mirror_controls(scene: &mut Universe) {

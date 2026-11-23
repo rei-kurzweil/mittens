@@ -339,24 +339,26 @@ fn apply_locomotion(
     if !dt_sec.is_finite() || dt_sec <= 0. {
         return false;
     }
-    let stick = resolve_locomotion_stick(cfg.hand, xr)
-        .map(|(_, stick)| stick)
-        .unwrap_or([0.; 2]);
+    let (move_hand, stick) =
+        resolve_locomotion_stick(cfg.hand, xr).unwrap_or((ControllerHand::Left, [0.; 2]));
     if !stick[0].is_finite() || !stick[1].is_finite() {
         return false;
     }
-    let (dx, dz, turn) = match cfg.stick_mode {
-        XrStickMode::Strafe => {
-            let [dx, dz] = radial_deadzone([stick[0], -stick[1]], cfg.deadzone);
-            (dx, dz, 0.)
+    let [dx, dz] = radial_deadzone([stick[0], -stick[1]], cfg.deadzone);
+    let turn = match cfg.stick_mode {
+        XrStickMode::Strafe => 0.,
+        // The opposite hand's stick turns; only its X axis is read, with its
+        // own deadzone so a slightly diagonal push does not creep the view.
+        XrStickMode::Turn => {
+            let turn_hand = match move_hand {
+                ControllerHand::Left => 1,
+                ControllerHand::Right => 0,
+            };
+            xr.hands[turn_hand]
+                .thumbstick
+                .filter(|v| v[0].is_finite())
+                .map_or(0., |v| axis_deadzone(v[0], cfg.deadzone))
         }
-        // Each axis gets its own deadzone so a slightly diagonal push forward
-        // does not also creep the view sideways.
-        XrStickMode::Turn => (
-            0.,
-            axis_deadzone(-stick[1], cfg.deadzone),
-            axis_deadzone(stick[0], cfg.deadzone),
-        ),
     };
     let vertical = if cfg.flying {
         (xr.hands[1].button_b.is_some_and(|b| b.0) as u8 as f32)
