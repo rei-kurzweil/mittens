@@ -179,8 +179,8 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
                     matches!(
                         renderable.authored_shape,
                         Some(AuthoredRenderableShape::CapsuleY {
-                            radius: 0.375,
-                            half_segment: 1.125
+                            radius: 0.75,
+                            half_segment: 0.75
                         })
                     )
                 })
@@ -221,6 +221,14 @@ fn rocket_native_flight_hits_thin_wall_and_spawns_an_aligned_explosion() {
         .expect("rocket exhaust material");
     assert_eq!(trail_base, scene.visuals.materials.surface_base);
     for disc in nozzle_glow {
+        let cone_transform = scene.world.parent_of(disc.component).unwrap();
+        let cone =
+            crate::engine::ecs::system::TransformSystem::world_trs(&scene.world, cone_transform)
+                .unwrap();
+        for (scale, expected) in cone.scale.into_iter().zip([0.114, 0.114, 0.48]) {
+            assert!((scale - expected).abs() < 1e-5);
+        }
+        assert!((cone.translation[2] - cone.scale[2] * 0.5 - 0.18).abs() < 1e-5);
         let material = scene
             .visuals
             .materials

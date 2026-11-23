@@ -19,7 +19,7 @@ layout(set = 1, binding = 0, std140) uniform RocketExhaustInputs {
     float trail_radius;
 } exhaust;
 
-// Evaluate the original ribbon profile on its old 0.9 m wide projection.
+// Scale the original ribbon profile with the capsule's radius.
 vec4 ribbon_smoke(vec3 projected, vec3 center, vec3 axis, vec3 side) {
     float t = 0.5 - dot(projected - center, axis) / exhaust.trail_length;
     float along = dot(projected - exhaust.launch_origin, axis);
@@ -32,7 +32,8 @@ vec4 ribbon_smoke(vec3 projected, vec3 center, vec3 axis, vec3 side) {
     float sway = expansion * exhaust.wave_amplitude * (primary + 0.4 * secondary);
     float half_width = mix(0.021, 0.22, expansion);
     half_width *= 1.0 + expansion * (0.13 * primary - 0.09 * secondary);
-    float across = (dot(projected - center, side) / 0.9 - sway) / half_width;
+    float ribbon_width = 2.4 * exhaust.trail_radius;
+    float across = (dot(projected - center, side) / ribbon_width - sway) / half_width;
     float outer = 1.0 - smoothstep(0.86, 1.0, abs(across));
     float middle = 1.0 - smoothstep(0.63, 0.73, abs(across + 0.12 * expansion * secondary));
     float core = 1.0 - smoothstep(0.27, 0.37, abs(across - 0.10 * expansion * primary));
