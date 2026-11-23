@@ -15,6 +15,23 @@ fn named(scene: &Universe, name: &str) -> ComponentId {
         .unwrap_or_else(|| panic!("missing {name}"))
 }
 
+/// Opens a dock panel in the rooftop scene; panels start closed.
+fn open_dock(scene: &mut Universe, uploader: &mut Uploader, item: &str) {
+    let button = named(scene, &format!("dock_{item}"));
+    scene.command_queue.push_event(
+        button,
+        EventSignal::Click {
+            raycaster: button,
+            renderable: button,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..2 {
+        prepare(scene, uploader);
+    }
+}
+
 fn prepare(scene: &mut Universe, uploader: &mut Uploader) {
     scene.systems.prepare_render(
         &mut scene.world,
@@ -177,6 +194,7 @@ fn rooftop_avatar_picker_accepts_standing_rays_through_its_labels() {
     for _ in 0..4 {
         prepare(&mut scene, &mut uploader);
     }
+    open_dock(&mut scene, &mut uploader, "avatar");
     let camera = named(&scene, "local_desktop_camera_anchor");
     let eye = TransformSystem::world_position(&scene.world, camera).unwrap();
     let hand = [eye[0] + 0.22, eye[1] - 0.40, eye[2] - 0.25];
@@ -258,6 +276,8 @@ fn rooftop_avatar_settings_apply_height_to_mitten_and_miku() {
         prepare(&mut scene, &mut uploader);
     }
     let original = named(&scene, "local_model");
+    open_dock(&mut scene, &mut uploader, "humanoid");
+    open_dock(&mut scene, &mut uploader, "avatar");
     let slider = named(&scene, "avatar_height_slider");
     scene
         .command_queue

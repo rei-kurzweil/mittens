@@ -226,9 +226,14 @@ export fn make_rooftop_player(options) {
     }
     let driver = PoseInput {}
     if local_player && use_xr {
-        driver = InputXR.on() {
-            InputXRGamepad { name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(true) }
+        let gamepad = InputXRGamepad {
+            name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(true)
+            stick_mode(InputSettings.xr.stick_mode())
         }
+        driver = InputXR.on() { gamepad }
+        on_global("DataEvent", fn(event) {
+            if event == "InputSettingsChanged" { gamepad.set_stick_mode(InputSettings.xr.stick_mode()) }
+        })
     }
     driver.attach(head)
     root.attach(driver)

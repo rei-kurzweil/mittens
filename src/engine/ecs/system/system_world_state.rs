@@ -106,6 +106,7 @@ pub struct SystemWorld {
     pub graphics_settings: crate::engine::ecs::system::GraphicsSettingsSystem,
     pub xr_settings: crate::engine::ecs::system::XrSettingsSystem,
     pub avatar_settings: crate::engine::ecs::system::AvatarSettingsSystem,
+    pub input_settings: crate::engine::ecs::system::InputSettingsSystem,
 
     pub text: TextSystem,
     pub text_input: TextInputSystem,

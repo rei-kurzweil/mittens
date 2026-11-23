@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     ControllerHand, InputXRComponent, InputXRGamepadComponent, TransformComponent, XrAxisControl,
-    XrButtonControl, XrHandPreference,
+    XrButtonControl, XrHandPreference, XrStickMode,
 };
 use crate::engine::ecs::system::{System, TransformSystem, XrGamepadState, XrSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
@@ -342,27 +342,29 @@ fn apply_locomotion(
     let stick = resolve_locomotion_stick(cfg.hand, xr)
         .map(|(_, stick)| stick)
         .unwrap_or([0.; 2]);
-    let mut dx = stick[0];
-    let mut dz = -stick[1];
-    let len = (dx * dx + dz * dz).sqrt();
-    if !len.is_finite() {
+    if !stick[0].is_finite() || !stick[1].is_finite() {
         return false;
     }
-    if len <= cfg.deadzone || len <= f32::EPSILON {
-        dx = 0.;
-        dz = 0.;
-    } else {
-        let scaled = ((len - cfg.deadzone) / (1.0 - cfg.deadzone)).clamp(0.0, 1.0);
-        dx = dx / len * scaled;
-        dz = dz / len * scaled;
-    }
+    let (dx, dz, turn) = match cfg.stick_mode {
+        XrStickMode::Strafe => {
+            let [dx, dz] = radial_deadzone([stick[0], -stick[1]], cfg.deadzone);
+            (dx, dz, 0.)
+        }
+        // Each axis gets its own deadzone so a slightly diagonal push forward
+        // does not also creep the view sideways.
+        XrStickMode::Turn => (
+            0.,
+            axis_deadzone(-stick[1], cfg.deadzone),
+            axis_deadzone(stick[0], cfg.deadzone),
+        ),
+    };
     let vertical = if cfg.flying {
         (xr.hands[1].button_b.is_some_and(|b| b.0) as u8 as f32)
             - (xr.hands[1].button_a.is_some_and(|b| b.0) as u8 as f32)
     } else {
         0.
     };
-    if dx == 0. && dz == 0. && vertical == 0. {
+    if dx == 0. && dz == 0. && vertical == 0. && turn == 0. {
         return false;
     }
 
@@ -398,24 +400,49 @@ fn apply_locomotion(
         move_world = move_world.map(|v| v / length);
     }
 
+    let speed = cfg.speed * if cfg.flying { 2.0 } else { 1.0 };
+    let delta_world = move_world.map(|v| v * speed * dt_sec);
+
     // The locomotion target stores a local translation. Convert the world-space
     // direction back through its parent so rotated parent rigs don't skew it.
-    let move_local = world
+    let parent_world = world
         .parent_of(target_tcid)
-        .and_then(|parent| TransformSystem::world_model(world, parent))
+        .and_then(|parent| TransformSystem::world_model(world, parent));
+    let delta_local = parent_world
         .map(|parent_world| {
             math::quat_rotate_vec3(
                 math::quat_conjugate(math::mat_to_quat(parent_world)),
-                move_world,
+                delta_world,
             )
         })
-        .unwrap_or(move_world);
+        .unwrap_or(delta_world);
+    // Turn about the headset rather than the rig origin, so a player standing
+    // away from the play-space center spins in place instead of orbiting.
+    let turn_frame = (turn != 0.).then(|| {
+        let pivot = camera_world.map(|m| math::vec3_add([m[3][0], m[3][1], m[3][2]], delta_world));
+        let Some(inverse) = parent_world.and_then(math::mat4_inverse) else {
+            return (pivot, [0., 1., 0.]);
+        };
+        let to_local = |v: [f32; 3], w: f32| {
+            let local = math::mat4_mul_vec4(inverse, [v[0], v[1], v[2], w]);
+            [local[0], local[1], local[2]]
+        };
+        (pivot.map(|p| to_local(p, 1.)), to_local([0., 1., 0.], 0.))
+    });
     let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid) else {
         return false;
     };
-    let speed = cfg.speed * if cfg.flying { 2.0 } else { 1.0 };
     for axis in 0..3 {
-        t.transform.translation[axis] += move_local[axis] * speed * dt_sec;
+        t.transform.translation[axis] += delta_local[axis];
+    }
+    if let Some((pivot, up)) = turn_frame {
+        // Pushing right turns clockwise seen from above: negative yaw.
+        let yaw = math::quat_from_axis_angle(up, -turn * cfg.turn_speed * dt_sec);
+        if let Some(pivot) = pivot {
+            let offset = math::vec3_sub(t.transform.translation, pivot);
+            t.transform.translation = math::vec3_add(pivot, math::quat_rotate_vec3(yaw, offset));
+        }
+        t.transform.rotation = math::quat_normalize(math::quat_mul(yaw, t.transform.rotation));
     }
     t.transform.recompute_model();
 
@@ -430,6 +457,22 @@ fn apply_locomotion(
         },
     );
     true
+}
+
+fn radial_deadzone(v: [f32; 2], deadzone: f32) -> [f32; 2] {
+    let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    if len <= deadzone || len <= f32::EPSILON {
+        return [0.; 2];
+    }
+    let scaled = ((len - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0);
+    [v[0] / len * scaled, v[1] / len * scaled]
+}
+
+fn axis_deadzone(v: f32, deadzone: f32) -> f32 {
+    if v.abs() <= deadzone {
+        return 0.;
+    }
+    v.signum() * ((v.abs() - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0)
 }
 
 fn hand_matches(pref: XrHandPreference, hand: ControllerHand) -> bool {

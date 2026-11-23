@@ -301,7 +301,7 @@ pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
 pub use input_xr::InputXRComponent;
 pub use input_xr_gamepad::{
-    InputXRGamepadComponent, XrAxisControl, XrButtonControl, XrHandPreference,
+    InputXRGamepadComponent, XrAxisControl, XrButtonControl, XrHandPreference, XrStickMode,
 };
 pub use inspect_layout::InspectLayoutComponent;
 pub use joint_retarget_basis::JointRetargetBasisComponent;

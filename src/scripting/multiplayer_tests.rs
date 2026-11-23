@@ -610,8 +610,10 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
         "twilight_rooftop_east",
         "twilight_rooftop_train",
         "twilight_rooftop_train_motion",
-        "twilight_rooftop_graphics_settings",
-        "twilight_rooftop_mirror",
+        // Settings panels and the mirror open on demand from the dock.
+        "twilight_rooftop_dock",
+        "dock_graphics",
+        "dock_mirror",
     ] {
         assert!(named(&scene, label).is_some(), "missing {label}");
     }
@@ -916,7 +918,18 @@ fn twilight_rooftop_avatar_choice_reaches_the_peer() {
     run_pair(&mut host, &mut client, 120);
     assert_eq!(model_uri(&client, "remote_model"), MITTEN);
 
-    // The host clicks Lumae on its own avatar picker.
+    // The host opens its avatar picker from the dock and clicks Lumae.
+    let dock_avatar = named(&host, "dock_avatar").unwrap();
+    host.command_queue.push_event(
+        dock_avatar,
+        EventSignal::Click {
+            raycaster: dock_avatar,
+            renderable: dock_avatar,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    run_pair(&mut host, &mut client, 2);
     let button = named(&host, "avatar_picker_lumae").unwrap();
     let background = host.world.find_component(button, "#__bg").unwrap();
     let face = host.world.find_component(background, "renderable").unwrap();

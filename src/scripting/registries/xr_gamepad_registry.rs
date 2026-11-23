@@ -1,6 +1,6 @@
 //! MMS XR locomotion configuration, separate from the runtime controller.
 use super::{Value, arg_bool, arg_f32, arg_str};
-use crate::engine::ecs::component::{InputXRGamepadComponent, XrHandPreference};
+use crate::engine::ecs::component::{InputXRGamepadComponent, XrHandPreference, XrStickMode};
 pub(super) fn apply(
     input: &mut InputXRGamepadComponent,
     method: &str,
@@ -25,6 +25,12 @@ pub(super) fn apply(
                 arg_bool(args, 0)?
             }
         }
+        "stick_mode" => {
+            let mode = arg_str(args, 0)?;
+            input.stick_mode = XrStickMode::parse(mode)
+                .ok_or_else(|| format!("unknown XrStickMode: {mode} (expected strafe or turn)"))?;
+        }
+        "turn_speed" => input.turn_speed = arg_f32(args, 0)?,
         "speed" => input.speed = arg_f32(args, 0)?,
         "deadzone" => input.deadzone = arg_f32(args, 0)?,
         _ => return Err(format!("InputXRGamepad: unknown builder '{method}'")),

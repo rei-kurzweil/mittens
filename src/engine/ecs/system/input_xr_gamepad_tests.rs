@@ -374,3 +374,43 @@ fn auto_override_does_not_clear_walking_momentum_when_xr_input_is_lost() {
         [0., 2., 0.]
     );
 }
+
+#[test]
+fn turn_stick_mode_yaws_in_place_and_keeps_forward_motion() {
+    let mut f = Fixture::new(false);
+    f.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(f.input)
+        .unwrap()
+        .stick_mode = XrStickMode::Turn;
+    let rotation = |f: &Fixture| {
+        f.world
+            .get_component_by_id_as::<TransformComponent>(f.target)
+            .unwrap()
+            .transform
+            .rotation
+    };
+    f.xr.hands[0].thumbstick = Some([1., 0.]);
+    f.tick(0.5, false);
+    let (axis, angle) = math::quat_to_axis_angle(rotation(&f));
+    assert!(
+        (axis[1] * angle + 2.0 * 0.5).abs() < 1e-4,
+        "full right stick turns clockwise at turn_speed: {axis:?} {angle}"
+    );
+    assert!(
+        math::vec3_len(f.position()) < 1e-5,
+        "turning about the rig itself does not translate it"
+    );
+
+    // A slightly sideways push forward stays inside the turn deadzone.
+    let before = rotation(&f);
+    f.xr.hands[0].thumbstick = Some([0.15, 1.]);
+    f.tick(0.1, false);
+    assert_eq!(rotation(&f), before);
+    assert!(f.position()[1].abs() < 1e-5 && math::vec3_len(f.position()) > 0.1);
+
+    let mut strafe = Fixture::new(false);
+    strafe.xr.hands[0].thumbstick = Some([1., 0.]);
+    strafe.tick(0.1, false);
+    assert_eq!(rotation(&strafe), [0., 0., 0., 1.]);
+    assert!((strafe.position()[0] - 0.14).abs() < 1e-5);
+}
