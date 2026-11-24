@@ -1,6 +1,8 @@
 import { make_rooftop_player } from "./characters/rooftop_player.mms"
 import { energy_shield } from "./energy_sheild.mms"
 import { player_death } from "./player_death.mms"
+import { ship_machine_pistol } from "./weapons/ship_machine_pistol.mms"
+import { pose as bisket_relaxed_pose } from "./poses/bisket/000-relaxed.pose.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -12,6 +14,12 @@ let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
 let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
 // The death burst (player_death at 2 beats per second) lasts six seconds.
 let RESPAWN_SECONDS = 6.0
+// The NPC turns to the player every AIM_PERIOD_SECONDS, taking
+// AIM_TURN_SECONDS, then fires; it hits if the player is still within
+// SHOT_HALF_WIDTH of the aimed line.
+let AIM_PERIOD_SECONDS = 5.0
+let AIM_TURN_SECONDS = 0.6
+let SHOT_HALF_WIDTH = 0.35
 
 // bar: a health_bar. center: the transform splash distance is measured from.
 // on_damage(cue), on_death() and on_respawn() are optional.
@@ -61,21 +69,36 @@ export fn practice_health(bar, center, options) {
 // A rooftop player that strafes left and right, wears an energy shield and
 // takes pistol and rocket damage. It drops the shield when it goes down and
 // comes back with a fresh one.
-// Required: prefix, avatar, use_xr, use_desktop, position, yaw.
-// Optional: strafe (metres either side, default 2.5), speed (radians per
-// second, default 0.8), health_view (the bar faces it), on_damage(cue).
+// Required: prefix, avatar, use_xr, use_desktop, position, yaw (the head's
+// starting yaw; 0 faces -Z).
+// Optional:
+//   strafe       metres either side of position (default 2.5)
+//   speed        strafing speed in m/s with physics, radians per second of
+//                its sine sweep without (default 1.2)
+//   physics      walk under gravity with a sliding capsule (default false)
+//   player       a transform to aim at: every 5 s the NPC turns to face it
+//                and fires a machine pistol held in its right hand
+//   on_player_hit()  called when a shot lands within 0.35 m of the player
+//   health_view (the bar faces it), on_damage(cue)
 export fn practice_target(options) {
+    let physics = options["physics"] == true
     let npc = make_rooftop_player({
         prefix = options.prefix local_player = false avatar = options.avatar
         use_xr = options.use_xr use_desktop = options.use_desktop opaque_bucket = "near"
         show_health = true health_view = options["health_view"] shield_mount = true
+        physics = physics
     })
+    if options.avatar == "mitten" {
+        // A relaxed rest pose; the untracked left arm stays in it.
+        npc.model.attach(bisket_relaxed_pose())
+    }
     let strafe = 2.5
     if options["strafe"] != null { strafe = options.strafe }
-    let speed = 0.8
+    let speed = 1.2
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
-    let state = { shield = null time = 0.0 }
+    let player = options["player"]
+    let state = { shield = null time = 0.0 direction = 1.0 yaw = options.yaw cycle = 0.0 firing = false }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -117,16 +140,95 @@ export fn practice_target(options) {
         }
     }
 
-    let p = options.position
-    let frame = T.position(p[0], p[1], p[2]).rotation(0.0, options.yaw, 0.0) {
-        name = options.prefix + "_frame"
-        npc.root
+    // Turning: the head target carries the whole rig (body, both arms and
+    // the pistol). One update_transform per aim; the Transition tweens it.
+    npc.head.attach(Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() })
+    fn face(yaw) {
+        // Take the short way round from the current heading.
+        if yaw - state.yaw > Math.pi { yaw = yaw - 2.0 * Math.pi }
+        if state.yaw - yaw > Math.pi { yaw = yaw + 2.0 * Math.pi }
+        state.yaw = yaw
+        npc.head.update_transform(npc.head.trs().translation, [0.0, yaw, 0.0], [1.0, 1.0, 1.0])
     }
-    // Strafe along the frame's X; hold still while down.
+    face(options.yaw)
+
+    // The right arm is held out with the pistol; the left arm relaxes.
+    let gun = null
+    if player {
+        npc.left_driver.set_pose_valid(false)
+        npc.right_driver.set_pose_valid(true)
+        npc.right.update_transform([0.2, -0.25, -0.45], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        gun = ship_machine_pistol(options.prefix + "_pistol", {
+            opaque_bucket = "near" ammunition = 1000000 can_fire = fn(user) { return health.alive() }
+        })
+        // The player can't take it out of the NPC's hand.
+        for grab in gun.grip.query_all("grabbable") { grab.remove_subtree() }
+        npc.right.attach(T.position(0.0, 0.0, -0.105) { gun })
+    }
+    fn heading_to_player() {
+        let h = npc.head.world_trs().translation
+        let p = player.world_trs().translation
+        return Math.atan2(-(p[0] - h[0]), -(p[2] - h[2]))
+    }
+    // A shot along the aimed heading lands if the player is still near it.
+    fn shot_lands() {
+        let h = npc.head.world_trs().translation
+        let p = player.world_trs().translation
+        let dx = p[0] - h[0]
+        let dz = p[2] - h[2]
+        let fx = -Math.sin(state.yaw)
+        let fz = -Math.cos(state.yaw)
+        let along = dx * fx + dz * fz
+        let lateral = Math.abs(dx * fz - dz * fx)
+        return along > 0.0 && lateral < SHOT_HALF_WIDTH
+    }
+
+    let p = options.position
+    let frame = T.position(p[0], p[1], p[2]) {
+        name = options.prefix + "_frame"
+        npc.locomotion
+    }
     on_global("FrameTick", fn(event) {
-        if !health.alive() { return }
-        state.time = state.time + event.dt_sec
-        npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])
+        let dt = event.dt_sec
+        let alive = health.alive()
+        // Strafe back and forth along X; hold still while down.
+        if physics {
+            let x = npc.root.trs().translation[0]
+            if x > strafe { state.direction = -1.0 }
+            if x < -strafe { state.direction = 1.0 }
+            let vx = 0.0
+            if alive { vx = state.direction * speed }
+            // translate adds velocity: steer toward vx, leave Y to gravity.
+            let linear = npc.velocity.linear()
+            npc.velocity.translate([vx - linear[0], 0.0, -linear[2]])
+        } else if alive {
+            state.time = state.time + dt
+            npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])
+        }
+        // Every five seconds: turn to the player, then fire once.
+        if !gun { return }
+        if !alive {
+            state.cycle = 0.0
+            if state.firing { gun.fire_end() state.firing = false }
+            return
+        }
+        let previous = state.cycle
+        state.cycle = state.cycle + dt
+        if previous < AIM_PERIOD_SECONDS && state.cycle >= AIM_PERIOD_SECONDS {
+            state.cycle = 0.0
+            face(heading_to_player())
+            return
+        }
+        let fire_at = AIM_TURN_SECONDS + 0.1
+        if previous < fire_at && state.cycle >= fire_at {
+            gun.fire_start()
+            state.firing = true
+            if shot_lands() && options["on_player_hit"] { options.on_player_hit() }
+        }
+        if state.firing && state.cycle >= fire_at + 0.3 {
+            gun.fire_end()
+            state.firing = false
+        }
     })
     return {
         root = frame npc = npc pistol_hit = pistol_hit rocket_splash = rocket_splash alive = health.alive

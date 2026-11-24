@@ -18,10 +18,15 @@ import { ship_input_controller } from "../assets/components/ship_input_controlle
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
+import { ship_environment_material } from "../assets/components/materials/ship_anime_materials.mms"
+import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
+import { destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 
 // Target practice: Sakura Twilight Simpler's weapons and combat rules
 // against a Mitten NPC, with no multiplayer. The NPC strafes left and right
-// in front of the spawn, wearing an energy shield. Pistol hits break the
+// in front of the spawn under gravity, wearing an energy shield. Every five
+// seconds it turns to you and fires its machine pistol (10% if it lands;
+// sidestep while it turns). The grass floor and back wall are destroyable. Pistol hits break the
 // shield first (10 per hit), then take 10% health. Rocket splash within 2 m
 // takes 49% health and 50 shield; out to 6 m it takes 25 shield only. At
 // zero the NPC bursts, drops its shield and comes back full after six
@@ -54,7 +59,6 @@ let hardware = Material(anime).inputs({
 let lighting = sakura_twilight_lighting(1, hardware)
 lighting.world
 let pink = [0.88, 0.65, 0.73]
-let blue = [0.64, 0.78, 0.86]
 
 fn box(position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
@@ -63,9 +67,25 @@ fn box(position, size, color) {
     }
 }
 
-// A 30 m range with a low wall behind the target lane.
-box([0.0, -0.05, -6.0], [30.0, 0.1, 30.0], [0.24, 0.32, 0.27])
-box([0.0, 1.0, -12.0], [14.0, 2.0, 0.4], blue)
+// A 32 m grass range of destroyable 4 m tiles (so each repeats the grass
+// texture), with a destroyable pool-tile wall behind the target lane.
+let grass = ship_environment_material("far")
+fn grass_tile(x, z) {
+    return T.position(x, -0.15, z).scale(4.0, 0.3, 4.0) {
+        Destroyable.threshold(3.0)
+        R.cube() {
+            Raycastable.enabled()
+            grass C.rgba(1.0, 1.0, 1.0, 1.0)
+            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            TextureFiltering.linear()
+        }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+    }
+}
+for ix in range(8) {
+    for iz in range(8) { grass_tile(-14.0 + ix * 4.0, -22.0 + iz * 4.0) }
+}
+destroyable_ceramic_box([0.0, 1.0, -12.0], [14.0, 2.0, 0.4], [0.94, 0.96, 0.97], pool_tile_material("middle"))
 for x in [-4.5, 4.5] { box([x, 0.4, -5.0], [1.2, 0.8, 0.6], pink) }
 
 let sounds = arena_audio()
@@ -87,7 +107,10 @@ fn can_fire(user) { return player.alive() }
 let target = practice_target({
     prefix = "npc" avatar = "mitten" use_xr = use_xr use_desktop = use_desktop
     position = [0.0, 0.0, -8.0] yaw = Math.pi health_view = local.health_view
-    on_damage = sounds.damage
+    on_damage = sounds.damage physics = true
+    // It turns to you every five seconds and fires; step aside to dodge.
+    player = local.shield_mount
+    on_player_hit = fn() { player.damage(1.0, 1.0) }
 })
 target.root
 

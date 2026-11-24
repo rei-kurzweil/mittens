@@ -197,3 +197,46 @@ fn target_practice_scene_loads_and_the_npc_strafes() {
     step(&mut scene, &clock, 120);
     assert!((x(&scene) - before).abs() > 0.1, "{before} -> {}", x(&scene));
 }
+
+#[test]
+fn practice_target_turns_to_the_player_every_five_seconds_and_fires() {
+    let source = r#"
+        import { practice_target } from "../assets/components/target_practice.mms"
+        let me = T.position(0.0, 1.0, 0.0) { name = "practice_player" }
+        me
+        let report = Text { name = "practice_report" "0" }
+        report
+        let hits = { count = 0 }
+        // Starts facing away (-Z) from the player at +Z.
+        let target = practice_target({ prefix = "npc" avatar = "mitten" use_xr = false use_desktop = false
+            position = [0.0, 0.0, -3.0] yaw = 0.0 strafe = 0.0 player = me
+            on_player_hit = fn() {
+                hits.count = hits.count + 1
+                report.set_text("" + hits.count)
+            } })
+        target.root
+    "#;
+    let (mut scene, clock) = load(source, "examples/_target_practice_aim_test.mms");
+    let head_yaw = |scene: &Universe| {
+        let q = scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(named(scene, "npc_head_target"))
+            .unwrap()
+            .transform
+            .rotation;
+        2.0 * q[1].atan2(q[3])
+    };
+    assert!(head_yaw(&scene).abs() < 1e-3);
+    assert!(has_label(&scene, "npc_pistol_grip"));
+
+    // Before the first five seconds it holds its heading and has not fired.
+    step(&mut scene, &clock, 4 * 120);
+    assert!(head_yaw(&scene).abs() < 1e-3);
+    assert_eq!(report(&scene), "0");
+
+    // Then it turns half a revolution to face the player and fires once.
+    step(&mut scene, &clock, 2 * 120);
+    let yaw = head_yaw(&scene).abs();
+    assert!((yaw - std::f32::consts::PI).abs() < 0.05, "{yaw}");
+    assert_eq!(report(&scene), "1");
+}

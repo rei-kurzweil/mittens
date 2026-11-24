@@ -100,6 +100,9 @@ export fn make_rooftop_player(options) {
     let voice_level = options["voice_level"]
     let mouth_tuning = options["mouth_tuning"]
     let track_hands = local_player && use_xr
+    // A non-local player that walks under its own gravity and slides against
+    // the world (an NPC), instead of following a peer's replicated root.
+    let physical = !local_player && options["physics"] == true
     let view = { third_person = local_player && options["third_person"] == true }
     let initial_factory = factories[options.avatar]
     // Optional opaque depth bucket for every body this player wears.
@@ -156,7 +159,7 @@ export fn make_rooftop_player(options) {
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
             }
             WalkingIK { step_scale(1.3) }
-            if !local_player { collision_response("read_only") }
+            if !local_player && !physical { collision_response("read_only") }
             if local_player && choice != "miku" {
                 mouth_open_from_amplitude(voice_level)
                 mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
@@ -294,9 +297,10 @@ export fn make_rooftop_player(options) {
     root.attach(driver)
     let locomotion = root
     let gravity = null
-    if track_hands {
-        let motion = Velocity { name = "local_velocity" root }
-        gravity = Gravity.enabled(false) { name = "local_gravity" motion }
+    let velocity = null
+    if track_hands || physical {
+        velocity = Velocity { name = prefix + "_velocity" root }
+        gravity = Gravity.enabled(false) { name = prefix + "_gravity" velocity }
         locomotion = gravity
     }
     fn enable_gravity_when_ready(body) {
@@ -476,7 +480,7 @@ export fn make_rooftop_player(options) {
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
-        root = root locomotion = locomotion head = head left = left right = right model = initial.model
+        root = root locomotion = locomotion velocity = velocity head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label health = health health_view = health_view hit_zone = hit_zone
         shield_mount = shield_mount
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
