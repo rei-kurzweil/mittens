@@ -129,6 +129,21 @@ let carry = Mountable.carry().entry_zone(deck_entry).context(deck) {}
 - Identical vehicles could later share one set (copy-on-write once
   destruction diverges them); not needed yet.
 
+## Movement basis and collision context
+
+Two separate questions, kept apart in this design:
+
+- **Movement basis**: whose motion a rider inherits (Unreal calls the same
+  thing a "movement base" / based movement). Carry gives a rider the deck's
+  frame as its movement basis. Today boarding and staying aboard are zones;
+  a later refinement can take the basis from the support surface under the
+  feet, with the zone as the "still aboard while airborne" grace, once
+  support queries report which context they touched.
+- **Collision context**: what a rider collides with. It cannot come from
+  contact (a context-only floor can't be touched before the rider points at
+  it), so it switches on a zone or bounds overlap, before contact; and an
+  enclosed interior must switch it so the surrounding hull is excluded.
+
 ## Carry connection
 
 `Mountable.carry()` is a mount that:
