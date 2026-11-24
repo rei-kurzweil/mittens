@@ -1,5 +1,6 @@
 import { sta_rocket_launcher } from "../sta-rocket-launcher.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
+import { weapon_restock } from "./weapon_restock.mms"
 import { vec3, vec4 } from "types"
 
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
@@ -7,9 +8,18 @@ let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 // The grip and impacts share the scene's peer lifecycle. Only the holder
 // creates a rocket; its final contact is replicated by the launcher device.
 export fn shared_sta_launcher(label, options) {
+    let restock_rate = options["restock_beats_per_second"]
+    let restock = { timer = null grab = null }
+    fn on_ammo(amount) {
+        if !restock.timer { return }
+        restock.grab.set_ammo(amount)
+        if amount == 0 { restock.timer.start() }
+    }
+    fn can_reload() { return !restock.timer || restock.grab.state.owner == options.rank }
     let tool = sta_rocket_launcher({
         name = label socket = options["socket"] weapon_id = options.weapon_id
-        can_fire = options["can_fire"] on_hit = options["on_hit"]
+        can_fire = options["can_fire"] on_hit = options["on_hit"] on_explosion = options["on_explosion"]
+        on_ammo = on_ammo can_reload = can_reload
     })
     let grip = T.rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = label + "_grip"
@@ -22,11 +32,34 @@ export fn shared_sta_launcher(label, options) {
         tool.root
         tool.model
     }
+    let held = { pointer = null hand = "" }
+    let breech = { pointer = null target = null outgoing = null incoming = null }
+    fn update_hinge_bindings() {
+        let local = breech.pointer != null
+        if breech.outgoing { breech.outgoing.set_binding_enabled(local) }
+        if breech.incoming { breech.incoming.set_binding_enabled(!local) }
+    }
+    fn apply_ammo(amount, returned) {
+        if returned {
+            restock.timer.cancel()
+            held.pointer = null
+            breech.pointer = null
+            breech.target = null
+            update_hinge_bindings()
+        }
+        tool.apply_ammo(amount, returned)
+    }
     let grab = null
     if options["socket"] {
-        grab = shared_grabbable({ socket = options.socket name = options.weapon_id + ".grip" target = grip rank = options.rank mounts = options["mounts"] })
+        let stock = null
+        if restock_rate != null { stock = { capacity = 1 apply = apply_ammo } }
+        grab = shared_grabbable({ socket = options.socket name = options.weapon_id + ".grip" target = grip rank = options.rank mounts = options["mounts"] stock = stock })
+        if stock {
+            restock.grab = grab
+            restock.timer = weapon_restock(label, restock_rate, grab.restock)
+            grab.root.attach(restock.timer.root)
+        }
     }
-    let held = { pointer = null hand = "" }
     on(grip, "GrabStart", fn(event) {
         if event.target != grip { return }
         held.pointer = event.pointer
@@ -47,12 +80,6 @@ export fn shared_sta_launcher(label, options) {
         }
     }
     if !grab { return { root = grip grip = grip } }
-    let breech = { pointer = null target = null outgoing = null incoming = null }
-    fn update_hinge_bindings() {
-        let local = breech.pointer != null
-        if breech.outgoing { breech.outgoing.set_binding_enabled(local) }
-        if breech.incoming { breech.incoming.set_binding_enabled(!local) }
-    }
     fn bind_pointer(pointer) {
         grab.bind_pointer(pointer)
         on(pointer, "PointerGrabbed", fn(event) {
@@ -84,6 +111,7 @@ export fn shared_sta_launcher(label, options) {
         tool.network.disconnect()
         breech.outgoing = null
         breech.incoming = null
+        if restock.timer && !tool.has_ammo() { restock.timer.start() }
     }
     return { root = grab.root grip = grip bind_pointer = bind_pointer connect = connect disconnect = disconnect }
 }

@@ -4,6 +4,7 @@ import { mini_explosion } from "../mini-explosion.mms"
 import { emissive_surface } from "../materials/emissive_surface.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
 import { shared_impact } from "../network/shared_impact.mms"
+import { weapon_restock } from "./weapon_restock.mms"
 
 export fn apply_machine_pistol_impact(point, amount) {
     Damage.at(point[0], point[1], point[2], 0.28, amount)
@@ -70,6 +71,12 @@ export fn ship_machine_pistol(label, options) {
         EM.on().intensity(3.0)
     }
     let ammo_display = { pending = false shown = ammunition }
+    let restock = { timer = null }
+    fn show_ammo(amount) {
+        if amount == ammo_display.shown { return }
+        ammo_count.set_text("" + amount)
+        ammo_display.shown = amount
+    }
     // Start once per dirty interval, without restarting on subsequent shots.
     // This trailing throttle updates during continuous fire and after release.
     let ammo_refresh = Animation.paused().length(2.0) {
@@ -80,12 +87,13 @@ export fn ship_machine_pistol(label, options) {
     }
     on(tool.completion,"DataEvent",fn(event) {
         if event == "AmmoRefreshDue" {
-            let remaining = tool.device_state.ammunition
-            if remaining != ammo_display.shown {
-                ammo_count.set_text("" + remaining)
-                ammo_display.shown = remaining
-            }
+            show_ammo(tool.device_state.ammunition)
             ammo_display.pending = false
+        }
+        if event == "ShotFired" && restock.timer {
+            let amount = tool.device_state.ammunition
+            sharing.grab.set_ammo(amount)
+            if amount == 0 { restock.timer.start() }
         }
         if event == "ShotFired" && !ammo_display.pending {
             ammo_display.pending = true
@@ -93,6 +101,18 @@ export fn ship_machine_pistol(label, options) {
         }
     })
     let held = { active = false hand = "" pointer = null }
+    fn apply_ammo(amount, returned) {
+        if returned {
+            held.active = false
+            held.pointer = null
+            tool.use_end()
+            ammo_refresh.pause()
+            ammo_display.pending = false
+            restock.timer.cancel()
+        }
+        tool.device_state.ammunition = amount
+        show_ammo(amount)
+    }
     let grip = T.rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = label + "_grip"
         Selectable.off()
@@ -141,13 +161,18 @@ export fn ship_machine_pistol(label, options) {
     }
     let grip_mount = grip
     if sharing.socket {
-        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank mounts = options["mounts"] })
+        let stock = null
+        let restock_rate = options["restock_beats_per_second"]
+        if restock_rate != null { stock = { capacity = ammunition apply = apply_ammo } }
+        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank mounts = options["mounts"] stock = stock })
         sharing.grab = grab
         grip_mount = grab.root
+        if stock { restock.timer = weapon_restock(label, restock_rate, grab.restock) }
     }
     let assembly = T {
         name = label + "_assembly"
         grip_mount
+        if restock.timer { restock.timer.root }
         for projectile in tool.projectiles { projectile }
     }
     assembly.grip = grip
@@ -163,6 +188,7 @@ export fn ship_machine_pistol(label, options) {
             sharing.grab.disconnect()
             tool.network.disconnect()
             if own_impacts { impacts.disconnect() }
+            if restock.timer && tool.device_state.ammunition == 0 { restock.timer.start() }
         }
     }
     return assembly

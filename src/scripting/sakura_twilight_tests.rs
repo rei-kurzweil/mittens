@@ -81,7 +81,7 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
         })
     };
     let full_layout = layout(&load("examples/sakura-twilight.mms"));
-    let scene = load("examples/sakura-twilight-simpler.mms");
+    let mut scene = load("examples/sakura-twilight-simpler.mms");
     assert_eq!(layout(&scene), full_layout);
     for (head, display) in [
         ("local_head_target", "local_health_hud"),
@@ -147,6 +147,18 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
     }
     let roof = named(&scene, "sakura_twilight_main_roof");
     assert!((TransformSystem::world_position(&scene.world, roof).unwrap()[1] - 3.2).abs() < 1e-4);
+    let pedestal = named(&scene, "vehicle_respawn_pedestal");
+    let button = scene
+        .world
+        .find_component(pedestal, "#button_root")
+        .unwrap();
+    let old_pickup = named(&scene, "pickup_truck");
+    click(&mut scene, button);
+    for _ in 0..12 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    assert!(scene.world.get_component_record(old_pickup).is_none());
+    assert_ne!(named(&scene, "pickup_truck"), old_pickup);
 }
 
 #[test]

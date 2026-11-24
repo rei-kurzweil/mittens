@@ -13,16 +13,23 @@ export fn sta_rocket_launcher(options) {
     if options["name"] != null { label = options.name }
     let can_fire = options["can_fire"]
     let on_hit = options["on_hit"]
+    let on_explosion = options["on_explosion"]
+    let on_ammo = options["on_ammo"]
+    let can_reload = options["can_reload"]
     // A socket-enabled caller connects network to its peer channel group.
     let network = null
+    fn apply_impact(point, amount, rotation) {
+        apply_rocket_impact(point, amount, rotation)
+        if on_explosion { on_explosion(point) }
+    }
     if options["socket"] {
         let weapon_id = label
         if options["weapon_id"] { weapon_id = options.weapon_id }
-        network = shared_impact({ socket = options.socket name = weapon_id apply = apply_rocket_impact oriented = true })
+        network = shared_impact({ socket = options.socket name = weapon_id apply = apply_impact oriented = true })
     }
     fn impact(point, amount, rotation) {
         if network { network.hit(point, amount, rotation) }
-        else { apply_rocket_impact(point, amount, rotation) }
+        else { apply_impact(point, amount, rotation) }
     }
     let initial_round = sta_rocket_body(label + "_initial_round")
     let state = { trigger_held = false pending = false user = null round = initial_round }
@@ -59,11 +66,13 @@ export fn sta_rocket_launcher(options) {
     let reload_zone = Zone.cube([0.055, 0.055, 0.09]).enable_events() { name = label + "_reload_zone" }
     on(reload_zone, "ZoneEntered", fn(event) {
         if state.round || hinge.axis_angle().angle < Math.pi / 4.0 { return }
+        if can_reload && !can_reload() { return }
         let round = claim_sta_rocket_ammo(event)
         if !round { return }
         state.round = round
         chamber.attach(round)
         round.trs({ translation = [0, 0, 0] rotation_quat_xyzw = [0, 0, 0, 1] scale = [1, 1, 1] })
+        if on_ammo { on_ammo(1) }
     })
     fn closed() {
         return hinge.axis_angle().angle <= Math.pi / 90.0
@@ -92,6 +101,7 @@ export fn sta_rocket_launcher(options) {
             let round = state.round
             state.round = null
             launch_rocket(round, { pose = muzzle.world_trs() source_tool = root source_user = state.user impact = impact on_hit = on_hit })
+            if on_ammo { on_ammo(0) }
             if options["on_launch"] != null {
                 options.on_launch({ pose = muzzle.world_trs() source_tool = root source_user = state.user })
             }
@@ -108,6 +118,24 @@ export fn sta_rocket_launcher(options) {
         return true
     }
     fn use_end() { state.trigger_held = false }
+    fn apply_ammo(amount, returned) {
+        if returned {
+            state.pending = false
+            use_end()
+            launch_sequence.pause()
+            hinge.set_angle(0.0)
+        }
+        if amount > 0 && !state.round {
+            let round = sta_rocket_body(label + "_initial_round")
+            chamber.attach(round)
+            state.round = round
+        }
+        if amount == 0 && state.round {
+            state.round.remove_subtree()
+            state.round = null
+        }
+    }
     return { root = root model = model muzzle = muzzle hinge = hinge reload_zone = reload_zone
-        has_ammo = fn() { return state.round != null } animation = launch_sequence use_start = use_start use_end = use_end network = network }
+        has_ammo = fn() { return state.round != null } apply_ammo = apply_ammo
+        animation = launch_sequence use_start = use_start use_end = use_end network = network }
 }

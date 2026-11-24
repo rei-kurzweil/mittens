@@ -14,6 +14,9 @@ import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
 import { shared_impact } from "../assets/components/network/shared_impact.mms"
 import { shared_player_health } from "../assets/components/network/shared_player_health.mms"
+import { arena_shields } from "../assets/components/network/arena_shields.mms"
+import { arena_audio } from "../assets/components/arena_audio.mms"
+import { player_death } from "../assets/components/player_death.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
@@ -31,6 +34,7 @@ import { sakura_twilight_street } from "../assets/components/buildings/sakura_tw
 import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { sakura_pickup_fleet } from "../assets/components/vehicles/sakura_pickup_fleet.mms"
+import { vehicle_respawn_pedestal } from "../assets/components/vehicles/vehicle_respawn_pedestal.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
@@ -53,8 +57,9 @@ import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/comp
 // Equip one STA rocket on each thigh to unlock flight. Double-tap B to
 // toggle it, then hold B/A to rise/descend. Removing either rocket ends flight.
 // Use Third person camera in Humanoid, V on desktop, or Y on the left XR controller.
-// Pistol hits take 10% health and direct rocket hits take 50%. At zero health,
+// Pistol hits take 10% health and rocket splash takes 50%. At zero health,
 // choose an avatar from the main rooftop's Panels dock to heal and fire again.
+// Grab and release a cyan shield pickup to wear it. It drops at zero health.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
 // left stick between strafing and turning. Collapse it from its title bar,
@@ -186,16 +191,22 @@ let socket = UdpSocket.bind("0.0.0.0:" + channel_port) {}
 socket
 let combat_health = shared_player_health(socket)
 combat_health.root
+let arena_sounds = arena_audio()
+arena_sounds.root
+combat_health.bind_damage(arena_sounds.damage)
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
 let pickups = sakura_pickup_fleet(socket, grab_rank, mounts, -0.23, true)
 pickups.root
+T.position(roof_x + 2.55, roof_height, -1.35) {
+    vehicle_respawn_pedestal(hardware, pickups.respawn)
+}
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
-        can_fire = combat_health.can_fire }
+        can_fire = combat_health.can_fire restock_beats_per_second = 2.0 }
 }
 let pistol_impacts = shared_impact({ socket = socket name = "arena.pistols" apply = apply_machine_pistol_impact })
 fn make_pistol(index) {
@@ -223,7 +234,7 @@ pistol_rack("sakura_twilight_main_pistol_rack", 0, roof_x - 2.25, roof_height, -
 pistol_rack("sakura_twilight_row_pistol_rack", 3, row[1].x - 1.9, storey_height, row_z + 3.8)
 fn make_launcher(label, id) {
     let options = weapon_options(id)
-    options.on_hit = combat_health.rocket_hit
+    options.on_explosion = combat_health.rocket_splash
     return shared_sta_launcher(label, options)
 }
 let launcher = make_launcher("rooftop_sta_launcher", "arena.sta.1")
@@ -251,13 +262,23 @@ if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
 let local = make_rooftop_player({
     prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop
     camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
-    opaque_bucket = "near" show_health = true
+    opaque_bucket = "near" show_health = true shield_mount = true
 })
 let remote = make_rooftop_player({
     prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop
-    opaque_bucket = "near" show_health = true health_view = local.health_view
+    opaque_bucket = "near" show_health = true health_view = local.health_view shield_mount = true
 })
 combat_health.bind(local.health, remote.health, remote.hit_zone)
+combat_health.bind_death(fn(is_local) {
+    let center = remote.shield_mount
+    if is_local { center = local.shield_mount }
+    player_death(center.world_trs().translation, 2.0)
+})
+let shields = arena_shields(socket, grab_rank, mounts, local, remote,
+    [[roof_x - 0.85, roof_height + 0.24, -1.35], [roof_x + 0.85, roof_height + 0.24, -1.35]],
+    combat_health.can_fire)
+shields.root
+combat_health.bind_shields(shields)
 if use_desktop {
     on_global("KeyUp", fn(event) { if event.code == "KeyV" { local.toggle_camera_view() } })
 }
@@ -392,6 +413,7 @@ fn bind_local_item(item) {
 }
 for item in shared_objects { bind_local_item(item) }
 for item in pistols { bind_local_item(item) }
+bind_local_item(shields)
 if use_desktop { local.watch_pointer(query("[name='local_desktop_pointer']"), "desktop") }
 if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
@@ -471,6 +493,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     channel_state.sent_avatar = null
     channel_state.sent_flight = null
     combat_health.connect(group, address)
+    shields.connect(group, address)
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
     pistol_impacts.connect(group, address)
@@ -515,6 +538,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     combat_health.disconnect()
+    shields.disconnect()
     for item in shared_objects { item.disconnect() }
     for item in pistols { item.disconnect() }
     pistol_impacts.disconnect()

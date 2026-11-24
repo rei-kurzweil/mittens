@@ -219,6 +219,13 @@ export fn make_rooftop_player(options) {
     mount_body(avatar, initial, options.avatar)
     on(initial.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, avatar) })
     let head = T.position(0.0, initial.eye_height, 0.0) { name = prefix + "_head_target" avatar }
+    let shield_mount = null
+    let shield_frame = null
+    if options["shield_mount"] == true {
+        shield_mount = T.position(0.0, -0.62, 0.0) { name = prefix + "_shield_mount" }
+        shield_frame = TOP.fork_trs().drop("rotation").drop("scale") { shield_mount }
+        head.attach(shield_frame)
+    }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
     let health = null
     let health_view = null
@@ -383,6 +390,7 @@ export fn make_rooftop_player(options) {
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
+            if shield_frame { next_head.attach(shield_frame) }
             if head_display { next_head.attach(head_display) }
             if hitbox { next_head.attach(hitbox.root) }
             detach_avatar_equipment(state.head)
@@ -444,6 +452,7 @@ export fn make_rooftop_player(options) {
     return {
         root = root locomotion = locomotion head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label health = health health_view = health_view hit_zone = hit_zone
+        shield_mount = shield_mount
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
         flying = flying set_remote_flying = set_remote_flying
