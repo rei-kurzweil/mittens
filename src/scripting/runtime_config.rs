@@ -959,6 +959,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         method(vec![], mms::ValueType::Bool),
                     );
                 }
+                "CollisionContext" => {
+                    component
+                        .constructor("passthrough", booleans(1))
+                        .builder_call("passthrough", booleans(1))
+                        .builder_call("enabled", booleans(1));
+                }
                 "Mountable" => {
                     component
                         .constructor("entry_zone", any(1))

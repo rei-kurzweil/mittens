@@ -3,12 +3,67 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::engine::ecs::component::{
-    CollidableComponent, CollisionResponse, QueryRootMode, TransformComponent, VelocityComponent,
-    ZoneComponent, resolve_component_ref,
+    CollidableComponent, CollisionContextComponent, CollisionResponse, QueryRootMode,
+    TransformComponent, VelocityComponent, ZoneComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::{TransformSystem, VelocitySystem, collision_geometry, zone_query};
 use crate::engine::ecs::{ComponentId, World};
 use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
+
+type Frame = [[f32; 4]; 4];
+
+/// A collision space one mover queries: the world, or a collision context in
+/// its frame's local coordinates. Positions convert with `to_space`, local
+/// displacements back with `to_world`; `exclude` skips zones under a root
+/// (a passthrough world query skips the vehicle's own exterior).
+#[derive(Debug, Clone, Copy)]
+struct Space {
+    context: Option<ComponentId>,
+    to_space: Frame,
+    to_world: Frame,
+    exclude: Option<ComponentId>,
+}
+
+impl Space {
+    fn world(exclude: Option<ComponentId>) -> Self {
+        let identity = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        Self {
+            context: None,
+            to_space: identity,
+            to_world: identity,
+            exclude,
+        }
+    }
+
+    fn point(&self, p: [f32; 3]) -> [f32; 3] {
+        if self.context.is_none() {
+            return p;
+        }
+        let v = mat4_mul_vec4(self.to_space, [p[0], p[1], p[2], 1.0]);
+        [v[0], v[1], v[2]]
+    }
+
+    fn point_to_world(&self, p: [f32; 3]) -> [f32; 3] {
+        if self.context.is_none() {
+            return p;
+        }
+        let v = mat4_mul_vec4(self.to_world, [p[0], p[1], p[2], 1.0]);
+        [v[0], v[1], v[2]]
+    }
+
+    fn vector_to_world(&self, d: [f32; 3]) -> [f32; 3] {
+        if self.context.is_none() {
+            return d;
+        }
+        let v = mat4_mul_vec4(self.to_world, [d[0], d[1], d[2], 0.0]);
+        [v[0], v[1], v[2]]
+    }
+}
 
 /// A read-only blocking overlap/sweep observed during this contact update. Observation
 /// does not imply that a correction was applied; resting ground uses support queries.
@@ -24,12 +79,17 @@ pub struct ContactObservation {
 #[derive(Debug, Default)]
 pub struct StaticContactSystem {
     contacts: Vec<ContactObservation>,
-    previous_centers: HashMap<ComponentId, [f32; 3]>,
+    /// Each mover's last center, in the coordinates of the outbound context
+    /// it was recorded in (None: world), so a moving context never drags it.
+    previous_centers: HashMap<ComponentId, (Option<ComponentId>, [f32; 3])>,
     body_offsets: HashMap<ComponentId, [f32; 3]>,
     broad_phase: CollidableBvh,
+    /// Outbound collision context per movement target (a rider's root).
+    outbound: HashMap<ComponentId, ComponentId>,
     traversal: Vec<usize>,
-    candidates: Vec<usize>,
-    additional: Vec<usize>,
+    found: Vec<usize>,
+    candidates: Vec<(usize, usize)>,
+    additional: Vec<(usize, usize)>,
     pub bvh_node_visits: u64,
     pub index_update_time: Duration,
     pub query_time: Duration,
@@ -55,6 +115,54 @@ impl StaticContactSystem {
     pub(crate) fn support_index(&mut self, world: &World) -> &CollidableBvh {
         self.broad_phase.sync(world);
         &self.broad_phase
+    }
+
+    /// Point a movement target's movers at a collision context's surfaces
+    /// (and, with passthrough, the world minus the context's own frame), or
+    /// back at the world with `None`. A pointer swap: no tree changes.
+    pub fn set_outbound_context(&mut self, target: ComponentId, context: Option<ComponentId>) {
+        match context {
+            Some(context) => self.outbound.insert(target, context),
+            None => self.outbound.remove(&target),
+        };
+    }
+
+    pub fn outbound_context(&self, target: ComponentId) -> Option<ComponentId> {
+        self.outbound.get(&target).copied()
+    }
+
+    /// The spaces a mover driving `target` queries, outbound first.
+    fn spaces(&self, world: &World, target: ComponentId) -> [Option<Space>; 2] {
+        let Some(context) = self.outbound.get(&target).copied() else {
+            return [Some(Space::world(None)), None];
+        };
+        let settings = world
+            .get_component_by_id_as::<CollisionContextComponent>(context)
+            .filter(|c| c.enabled);
+        let frame = self.broad_phase.context_frame(context).or_else(|| {
+            settings.and_then(|_| {
+                super::pointer_system::nearest_ancestor_transform(world, context)
+            })
+        });
+        let (Some(settings), Some(frame)) = (settings, frame) else {
+            return [Some(Space::world(None)), None];
+        };
+        let Some(to_world) = TransformSystem::world_model(world, frame) else {
+            return [Some(Space::world(None)), None];
+        };
+        let Some(to_space) = mat4_inverse(to_world) else {
+            return [Some(Space::world(None)), None];
+        };
+        let inside = Space {
+            context: Some(context),
+            to_space,
+            to_world,
+            exclude: None,
+        };
+        [
+            Some(inside),
+            settings.passthrough.then(|| Space::world(Some(frame))),
+        ]
     }
 
     pub(crate) fn forget_zone(&mut self, zone: ComponentId) {
@@ -121,6 +229,13 @@ impl StaticContactSystem {
         let live_movers: HashSet<_> = movers.iter().map(|&(_, zone)| zone).collect();
         self.previous_centers
             .retain(|zone, _| live_movers.contains(zone));
+        // Contexts are built only when a mover points at them.
+        self.outbound
+            .retain(|&target, _| world.get_component_record(target).is_some());
+        let outbound: Vec<_> = self.outbound.values().copied().collect();
+        for context in outbound {
+            self.broad_phase.prepare_context(context);
+        }
         let mut candidates = std::mem::take(&mut self.candidates);
         let mut additional = std::mem::take(&mut self.additional);
         let mut changed = Vec::new();
@@ -162,10 +277,17 @@ impl StaticContactSystem {
                 self.body_offsets.get(&target).copied().unwrap_or([0.0; 3])
             };
             let center = std::array::from_fn(|i| cached_center[i] + offset[i]);
-            let previous = self
+            let spaces = self.spaces(world, target);
+            let home = spaces[0].expect("outbound space");
+            // The previous center was stored relative to the outbound space, so
+            // a vehicle's own motion this frame is not part of the sweep.
+            let previous = match self
                 .previous_centers
-                .insert(moving, center)
-                .unwrap_or(center);
+                .insert(moving, (home.context, home.point(center)))
+            {
+                Some((space, point)) if space == home.context => home.point_to_world(point),
+                _ => center,
+            };
             if !read_only && mounts.is_movement_root_mounted(world, target) {
                 self.previous_centers.remove(&moving);
                 continue;
@@ -174,6 +296,7 @@ impl StaticContactSystem {
             for iteration in 0..6 {
                 let mut corrected = false;
                 self.query_candidates(
+                    &spaces,
                     previous,
                     desired_center,
                     shape,
@@ -182,31 +305,40 @@ impl StaticContactSystem {
                 );
                 let mut cursor = 0;
                 while cursor < candidates.len() {
-                    let index = candidates[cursor];
+                    let (slot, index) = candidates[cursor];
                     cursor += 1;
-                    let surface = self.broad_phase.surface(index);
-                    if surface.zone == moving || own_zone(world, surface.zone, owner, target) {
+                    let space = spaces[slot].expect("queried space");
+                    let surface = surface_in(&self.broad_phase, &space, index);
+                    if surface.zone == moving
+                        || own_zone(world, surface.zone, owner, target)
+                        || space
+                            .exclude
+                            .is_some_and(|root| is_body_part(world, surface.zone, root))
+                    {
                         continue;
                     }
                     self.candidate_pairs += 1;
                     self.narrow_phase_tests += 1;
                     let exact = profiling.then(Instant::now);
+                    let local_desired = space.point(desired_center);
+                    let local_previous = space.point(previous);
                     let sweep = if iteration == 0 {
-                        surface.floor_sweep(moving, desired_center, shape, previous)
+                        surface.floor_sweep(moving, local_desired, shape, local_previous)
                     } else {
                         None
                     };
-                    let mut displacement = if let Some(hit) = sweep {
+                    let local_displacement = if let Some(hit) = sweep {
                         let motion: [f32; 3] =
-                            std::array::from_fn(|i| desired_center[i] - previous[i]);
+                            std::array::from_fn(|i| local_desired[i] - local_previous[i]);
                         let remaining: [f32; 3] = motion.map(|v| v * (1.0 - hit.fraction));
                         let inward: f32 = (0..3).map(|i| remaining[i] * hit.normal[i]).sum();
                         hit.normal.map(|v| v * (-inward).max(0.0))
                     } else {
                         surface
-                            .translation(desired_center, shape)
+                            .translation(local_desired, shape)
                             .unwrap_or([0.0; 3])
                     };
+                    let mut displacement = space.vector_to_world(local_displacement);
                     if horizontal_only {
                         displacement[1] = 0.0;
                     }
@@ -214,23 +346,29 @@ impl StaticContactSystem {
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;
                     }
+                    let (other, other_zone, friction, observes) = (
+                        surface.collidable,
+                        surface.zone,
+                        surface.friction,
+                        surface.observes_contacts(),
+                    );
                     if read_only {
                         self.contacts.push(ContactObservation {
                             collidable: collidable_id,
                             zone: moving,
-                            other: surface.collidable,
-                            other_zone: surface.zone,
+                            other,
+                            other_zone,
                             separation: displacement,
                         });
                         continue;
                     }
-                    if surface.observes_contacts() {
+                    if observes {
                         // A correcting mover can also encounter a read-only proxy.
                         // Report that contact to the observer without indexing all
                         // correcting movers or enabling slide/slide body response.
                         self.contacts.push(ContactObservation {
-                            collidable: surface.collidable,
-                            zone: surface.zone,
+                            collidable: other,
+                            zone: other_zone,
                             other: collidable_id,
                             other_zone: moving,
                             separation: displacement.map(|v| -v),
@@ -240,11 +378,7 @@ impl StaticContactSystem {
                         world,
                         target,
                         displacement,
-                        if apply_friction {
-                            surface.friction
-                        } else {
-                            0.0
-                        },
+                        if apply_friction { friction } else { 0.0 },
                     );
                     for axis in 0..3 {
                         desired_center[axis] += displacement[axis];
@@ -254,6 +388,7 @@ impl StaticContactSystem {
                     // A correction can expose a neighbor outside the original query.
                     // Discover it now; already-processed surfaces are revisited next pass.
                     self.query_candidates(
+                        &spaces,
                         previous,
                         desired_center,
                         shape,
@@ -265,8 +400,10 @@ impl StaticContactSystem {
                             candidates.push(new);
                         }
                     }
-                    candidates[cursor..]
-                        .sort_unstable_by_key(|&i| self.broad_phase.surface(i).collidable);
+                    candidates[cursor..].sort_unstable_by_key(|&(slot, i)| {
+                        let space = spaces[slot].expect("queried space");
+                        (slot, surface_in(&self.broad_phase, &space, i).collidable)
+                    });
                 }
                 if !corrected {
                     break;
@@ -275,18 +412,24 @@ impl StaticContactSystem {
             if read_only {
                 continue;
             }
-            self.query_candidates(previous, desired_center, shape, false, &mut candidates);
+            self.query_candidates(&spaces, previous, desired_center, shape, false, &mut candidates);
             let mut remaining = false;
-            for &index in &candidates {
-                let surface = self.broad_phase.surface(index);
-                if surface.zone == moving || own_zone(world, surface.zone, owner, target) {
+            for &(slot, index) in &candidates {
+                let space = spaces[slot].expect("queried space");
+                let surface = surface_in(&self.broad_phase, &space, index);
+                if surface.zone == moving
+                    || own_zone(world, surface.zone, owner, target)
+                    || space
+                        .exclude
+                        .is_some_and(|root| is_body_part(world, surface.zone, root))
+                {
                     continue;
                 }
                 self.candidate_pairs += 1;
                 self.narrow_phase_tests += 1;
                 let exact = profiling.then(Instant::now);
                 remaining = surface
-                    .translation(desired_center, shape)
+                    .translation(space.point(desired_center), shape)
                     .is_some_and(|delta| delta.iter().any(|v| v.abs() >= 1.0e-6));
                 self.exact_test_time += exact.map(|t| t.elapsed()).unwrap_or_default();
                 if remaining {
@@ -309,7 +452,8 @@ impl StaticContactSystem {
                 t.transform.translation = local;
                 t.transform.recompute_model();
                 changed.push(target);
-                self.previous_centers.insert(moving, desired_center);
+                self.previous_centers
+                    .insert(moving, (home.context, home.point(desired_center)));
                 self.body_offsets
                     .insert(target, std::array::from_fn(|i| offset[i] + displacement[i]));
             }
@@ -360,25 +504,57 @@ impl StaticContactSystem {
         changed
     }
 
+    /// Candidates from every space a mover queries, as (space slot, index),
+    /// each found with the mover's bounds in that space's coordinates.
     fn query_candidates(
         &mut self,
+        spaces: &[Option<Space>; 2],
         previous: [f32; 3],
         center: [f32; 3],
         shape: crate::engine::ecs::component::CollisionShape,
         swept: bool,
-        out: &mut Vec<usize>,
+        out: &mut Vec<(usize, usize)>,
     ) {
         let started = spatial_profiling().then(Instant::now);
-        let (mut min, mut max) = shape_aabb(center, shape);
-        if swept {
-            let (start_min, start_max) = shape_aabb(previous, shape);
-            for i in 0..3 {
-                min[i] = min[i].min(start_min[i]);
-                max[i] = max[i].max(start_max[i]);
+        out.clear();
+        for (slot, space) in spaces.iter().enumerate() {
+            let Some(space) = space else {
+                continue;
+            };
+            let (mut min, mut max) = shape_aabb(space.point(center), shape);
+            if swept {
+                let (start_min, start_max) = shape_aabb(space.point(previous), shape);
+                for i in 0..3 {
+                    min[i] = min[i].min(start_min[i]);
+                    max[i] = max[i].max(start_max[i]);
+                }
             }
+            self.bvh_node_visits += match space.context {
+                Some(context) => self.broad_phase.context_query(
+                    context,
+                    min,
+                    max,
+                    &mut self.traversal,
+                    &mut self.found,
+                ),
+                None => self
+                    .broad_phase
+                    .query(min, max, &mut self.traversal, &mut self.found),
+            };
+            out.extend(self.found.iter().map(|&index| (slot, index)));
         }
-        self.bvh_node_visits += self.broad_phase.query(min, max, &mut self.traversal, out);
         self.query_time += started.map(|t| t.elapsed()).unwrap_or_default();
+    }
+}
+
+fn surface_in<'a>(
+    bvh: &'a CollidableBvh,
+    space: &Space,
+    index: usize,
+) -> &'a super::collidable_bvh::Surface {
+    match space.context {
+        Some(context) => bvh.context_surface(context, index),
+        None => bvh.surface(index),
     }
 }
 

@@ -189,6 +189,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Mesh",
     "Mirror",
     "Mountable",
+    "CollisionContext",
     "MusicNote",
     "NormalVis",
     "ObserverRouter",
@@ -2254,6 +2255,13 @@ fn create_component(
             )?)),
             _ => add!(RiderComponent::new()),
         },
+        "CollisionContext" => match ctor {
+            Some("passthrough") => add!(
+                crate::engine::ecs::component::CollisionContextComponent::new()
+                    .passthrough(arg_bool(args, 0)?)
+            ),
+            _ => add!(crate::engine::ecs::component::CollisionContextComponent::new()),
+        },
         "Mountable" => match ctor {
             Some("entry_zone") => add!(MountableComponent::new().entry_zone(arg_component_ref(
                 world, args, 0
@@ -3580,6 +3588,16 @@ fn apply_call(
         *world
             .get_component_by_id_as_mut::<RiderComponent>(id)
             .expect("checked rider") = updated;
+        return Ok(());
+    }
+    if let Some(context) = world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::CollisionContextComponent>(id)
+    {
+        match method {
+            "passthrough" => context.passthrough = arg_bool(args, 0)?,
+            "enabled" => context.enabled = arg_bool(args, 0)?,
+            _ => return Err(format!("CollisionContext: unknown builder '{method}'")),
+        }
         return Ok(());
     }
     if world

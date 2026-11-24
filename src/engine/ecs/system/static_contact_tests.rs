@@ -1036,3 +1036,167 @@ fn horizontal_correction_never_moves_the_target_vertically() {
         }
     }
 }
+
+/// A vehicle-like frame at `origin` with a CollisionContext beneath it.
+fn context_frame(
+    world: &mut World,
+    origin: [f32; 3],
+    passthrough: bool,
+) -> (ComponentId, ComponentId) {
+    let vehicle = world
+        .add_component(TransformComponent::new().with_position(origin[0], origin[1], origin[2]));
+    let context =
+        world.add_component(CollisionContextComponent::new().passthrough(passthrough));
+    world.add_child(vehicle, context).unwrap();
+    (vehicle, context)
+}
+
+fn translation(world: &World, id: ComponentId) -> [f32; 3] {
+    world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .unwrap()
+        .translation()
+}
+
+fn move_to(world: &mut World, id: ComponentId, position: [f32; 3]) {
+    let transform = world
+        .get_component_by_id_as_mut::<TransformComponent>(id)
+        .unwrap();
+    transform.transform.translation = position;
+    transform.transform.recompute_model();
+    propagate(world, id);
+}
+
+#[test]
+fn context_zones_collide_only_with_movers_pointed_at_them() {
+    let mut world = World::default();
+    let (vehicle, context) = context_frame(&mut world, [10.0, 0.0, 0.0], false);
+    let (wall, _) = add_zone(
+        &mut world,
+        [0.0, 1.0, 0.0],
+        CollisionShape::cube_half_extents([0.5, 1.0, 0.5]),
+        CollidableMode::Static,
+    );
+    world.add_child(context, wall).unwrap();
+    propagate(&mut world, vehicle);
+    let start = [10.2, 1.0, 0.0];
+    let (mover, _) = add_zone(
+        &mut world,
+        start,
+        CollisionShape::Sphere { radius: 0.3 },
+        CollidableMode::Slide,
+    );
+    let mut system = StaticContactSystem::default();
+
+    // The interior wall is not in the world: a pedestrian overlapping it stays put.
+    system.tick(&mut world);
+    assert_eq!(translation(&world, mover), start);
+
+    // Pointing the mover at the context (an id change) makes the wall solid.
+    system.set_outbound_context(mover, Some(context));
+    assert!(!system.tick(&mut world).is_empty());
+    assert_ne!(translation(&world, mover), start);
+
+    // And pointing it back at the world makes it pass through again.
+    move_to(&mut world, mover, start);
+    system.set_outbound_context(mover, None);
+    system.tick(&mut world);
+    assert_eq!(translation(&world, mover), start);
+}
+
+#[test]
+fn passthrough_collides_with_the_world_but_not_the_vehicles_own_exterior() {
+    let mut world = World::default();
+    let (vehicle, context) = context_frame(&mut world, [30.0, 0.0, 0.0], true);
+    // The hull is part of the vehicle but outside its context.
+    let (hull, _) = add_zone(
+        &mut world,
+        [0.0, 1.0, 0.0],
+        CollisionShape::cube_half_extents([0.5, 1.0, 0.5]),
+        CollidableMode::Static,
+    );
+    world.add_child(vehicle, hull).unwrap();
+    propagate(&mut world, vehicle);
+    add_zone(
+        &mut world,
+        [20.0, 1.0, 0.0],
+        CollisionShape::cube_half_extents([0.5, 1.0, 0.5]),
+        CollidableMode::Static,
+    );
+    let add_mover = |world: &mut World, position: [f32; 3]| {
+        add_zone(
+            world,
+            position,
+            CollisionShape::Sphere { radius: 0.3 },
+            CollidableMode::Slide,
+        )
+        .0
+    };
+    let by_world_wall = add_mover(&mut world, [20.2, 1.0, 0.0]);
+    let by_own_hull = add_mover(&mut world, [30.2, 1.0, 0.0]);
+    let pedestrian_by_hull = add_mover(&mut world, [30.2, 1.0, 0.0]);
+    let mut system = StaticContactSystem::default();
+    system.set_outbound_context(by_world_wall, Some(context));
+    system.set_outbound_context(by_own_hull, Some(context));
+    system.tick(&mut world);
+    assert_ne!(
+        translation(&world, by_world_wall),
+        [20.2, 1.0, 0.0],
+        "passthrough still collides with the world"
+    );
+    assert_eq!(
+        translation(&world, by_own_hull),
+        [30.2, 1.0, 0.0],
+        "a rider ignores its own vehicle's exterior"
+    );
+    assert_ne!(
+        translation(&world, pedestrian_by_hull),
+        [30.2, 1.0, 0.0],
+        "everyone else still hits the hull"
+    );
+}
+
+#[test]
+fn a_mover_carried_with_its_context_is_not_corrected_by_the_vehicles_motion() {
+    let mut world = World::default();
+    let (vehicle, context) = context_frame(&mut world, [10.0, 0.0, 0.0], false);
+    let (floor, _) = add_zone(
+        &mut world,
+        [0.0, -0.1, 0.0],
+        CollisionShape::cube_half_extents([5.0, 0.1, 5.0]),
+        CollidableMode::Static,
+    );
+    world.add_child(context, floor).unwrap();
+    // A wall just ahead of the mover, across its world-space path below.
+    let (wall, _) = add_zone(
+        &mut world,
+        [1.5, 1.0, 0.0],
+        CollisionShape::cube_half_extents([0.5, 1.0, 2.0]),
+        CollidableMode::Static,
+    );
+    world.add_child(context, wall).unwrap();
+    propagate(&mut world, vehicle);
+    let (mover, _) = add_zone(
+        &mut world,
+        [10.5, 0.31, 0.0],
+        CollisionShape::Sphere { radius: 0.3 },
+        CollidableMode::Slide,
+    );
+    let mut system = StaticContactSystem::default();
+    system.set_outbound_context(mover, Some(context));
+    system.tick(&mut world);
+    assert_eq!(translation(&world, mover), [10.5, 0.31, 0.0]);
+
+    // The vehicle and its rider move 3 m back together. The wall (local x 1
+    // to 2) is now at world x 8 to 9, right across the rider's world-space
+    // path from 10.5 to 7.5; relative to the vehicle the rider did not move,
+    // so nothing corrects it.
+    move_to(&mut world, vehicle, [7.0, 0.0, 0.0]);
+    move_to(&mut world, mover, [7.5, 0.31, 0.0]);
+    system.tick(&mut world);
+    let position = translation(&world, mover);
+    assert!(
+        (0..3).all(|i| (position[i] - [7.5, 0.31, 0.0][i]).abs() < 1.0e-4),
+        "{position:?}"
+    );
+}

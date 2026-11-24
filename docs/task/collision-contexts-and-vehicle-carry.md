@@ -98,14 +98,36 @@ let carry = Mountable.carry().entry_zone(deck_entry).context(deck) {}
   to the carrier's context.
 - **Rays and projectiles** crossing a context's world bounds also query it in
   its coordinates (one box test in the common case).
-- **The vehicle's own hull vs its riders.** While carried, a rider's root is
-  under the vehicle, so the existing rule that a mover ignores zones under its
-  own movement root (`own_zone` in `static_contact_system.rs`) already skips
-  the rider's hitbox. Needs a test, not new code.
+- **The vehicle's own hull vs its riders.** Correction (2026-11-24): a mounted
+  rider's root is *not* under the vehicle. `AttachmentSystem::mount` parents
+  it to a helper beside its original parent that follows the seat, so the
+  own-movement-root rule does not cover it. A rider's read-only hitbox is
+  an obstacle in the world tree and could push the vehicle's hull spheres.
+  Phase 3 must check this (it may already matter for the pickup's driver) and
+  give the carry/seat connection an exclusion if so.
 - **Category bits** stay available as an optional filter *within* a context
   (sensors vs solids, projectile blockers); vehicles don't need them.
 - `carry.set_context(other)` swaps a vehicle's context (folding wings);
   current riders move in the same step.
+
+## Terminology and representation
+
+- This is **instancing** in a **two-level hierarchy** (ray-tracing terms: a
+  BLAS, bottom-level acceleration structure, built once in local space; a
+  TLAS of instances, each a transform plus a pointer to a BLAS). A
+  `CollisionContext` is the bottom level; the vehicle in the world is the
+  instance. Physics engines call the same idea shared or compound shapes;
+  Jolt's object layers and broad-phase layers are the filtering half.
+- At runtime a rider switches by **pointer swap**: one map entry from its
+  movement root to a context id (`StaticContactSystem::set_outbound_context`).
+  Nothing is copied or rebuilt.
+- Storage is a `ContextSet` per context (`collidable_bvh.rs`): its surfaces
+  in the context frame's local coordinates. Up to 32 surfaces are scanned as
+  a flat list; larger sets build a BVH lazily on their first query after a
+  change. Moving the vehicle changes no local geometry (poses compare within
+  float noise), so nothing is rebuilt or refit while driving.
+- Identical vehicles could later share one set (copy-on-write once
+  destruction diverges them); not needed yet.
 
 ## Carry connection
 
@@ -161,7 +183,15 @@ nesting; "whoever turned it off turns it back on" suffices for now.
 4. Tests: mounting with no input component; the attachment leaves input alone;
    the helper disables and restores walking, including after a forced unwind.
 
-**Phase 2: collision contexts** (`static_contact_system.rs`, `CollidableBvh`)
+**Phase 2: collision contexts** (`static_contact_system.rs`, `CollidableBvh`).
+First slice implemented 2026-11-24, pending a build: the `CollisionContext`
+component (MMS `CollisionContext {}` / `.passthrough(bool)` / `.enabled(bool)`),
+per-context `ContextSet`s kept out of the world tree, outbound contexts per
+movement target with sweeps in context coordinates, and passthrough to the
+world excluding the context frame's subtree; three contact tests. Not yet:
+rays/projectiles entering contexts (step 9), and lower-body floor support
+(`support_index` is still world-only, so a rider's feet won't find a deck
+until phase 3 adds contexts there).
 5. `CollisionContext` component; subtree membership; excluded from the world BVH.
 6. Local BVH per context, lazily built and dropped.
 7. Outbound context per mover; sweeps in context coordinates.
