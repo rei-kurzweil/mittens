@@ -1,6 +1,7 @@
 // accordion.mms — draggable/grabbable title, removable-body panel shell (=^･ω･^=)
 
 import { accordion_down_arrow_icon } from "../../icons.mms"
+import { shared_ui_unlit_material } from "../../materials/ui_unlit.mms"
 
 // Options:
 //   root_name        public name of the inner draggable panel transform
@@ -137,7 +138,9 @@ export fn accordion(options) {
     let panel_root = T {
         name = root_name
         if options["material"] != null { options.material }
-        if options["unlit"] { Unlit {} }
+        // A custom definition rather than the legacy Unlit marker, so the
+        // Android renderer (custom materials only) can draw editor panels.
+        if options["material"] == null && options["unlit"] { shared_ui_unlit_material() }
         Option {}
         Raycastable.enabled() { interaction_priority(100.0) }
 
