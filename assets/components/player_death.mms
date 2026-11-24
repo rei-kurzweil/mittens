@@ -1,4 +1,4 @@
-import { mini_explosion } from "./mini-explosion.mms"
+import { sized_mini_explosion } from "./mini-explosion.mms"
 
 fn noise(value) {
     let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
@@ -25,11 +25,14 @@ export fn player_death(position, beats_per_second) {
             let angle = 2.0 * Math.pi * noise(step)
             let radius = 0.24 + 0.72 * Math.sqrt(noise(step + 1.0))
             let height = (noise(step + 2.0) - 0.5) * 1.65
-            let explosion = mini_explosion([
+            // 1x to 15x the impact size, 5x on average: 1 + 14 * u^2.5.
+            let u = noise(step + 1.5)
+            let size = 1.0 + 14.0 * u * u * Math.sqrt(u)
+            let explosion = sized_mini_explosion([
                 position[0] + Math.cos(angle) * radius,
                 position[1] + height,
                 position[2] + Math.sin(angle) * radius
-            ], beats_per_second)
+            ], beats_per_second, size)
             explosion.root
             explosion.animation.play()
         }

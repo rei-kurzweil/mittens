@@ -523,6 +523,11 @@ fn energy_shield_hides_the_shell_and_reopens_a_broken_bullet_path() {
     event(&mut scene, "Break");
     tick(&mut scene, 3);
     assert!(!has(&scene, "test_shield_bullet_proxy"));
+    // The breaking hit removes the shell at once instead of after its flash.
+    assert!(!has(&scene, "test_shield_shell"));
+    event(&mut scene, "Hit");
+    tick(&mut scene, 3);
+    assert!(!has(&scene, "test_shield_shell"));
     tick(&mut scene, 310);
     assert!(!has(&scene, "test_shield_shell"));
     assert!(!has(&scene, "test_shield_bullet_proxy"));

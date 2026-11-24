@@ -53,6 +53,12 @@ export fn energy_shield(name, beats_per_second) {
         if !state.worn || amount <= 0.0 { return false }
         state.integrity = Math.clamp(state.integrity - amount, 0.0, 100.0)
         sync_collision()
+        recovery.play()
+        // A broken shield shows no shell, even mid-flash.
+        if state.integrity <= 0.0 {
+            hide_shell()
+            return true
+        }
         if !state.visual {
             let shell = R.capsule_y(0.48, 0.48) {
                 name = name + "_shell"
@@ -66,7 +72,6 @@ export fn energy_shield(name, beats_per_second) {
             state.visual = shell
         }
         visibility.play()
-        recovery.play()
         return true
     }
     fn loose_pickup() {
