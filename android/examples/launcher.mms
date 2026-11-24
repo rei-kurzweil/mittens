@@ -66,7 +66,6 @@ let refresh = button("Refresh", button_colors)
 fn show_selection() {
     let selected = FileBrowser.selection(state.browser)
     state.selected = selected.path
-    print("launcher: selected '" + selected.path + "'")
     if state.selection_view != null { state.selection_view.set_text(selected.path) }
 }
 fn build_browser() {
@@ -89,7 +88,6 @@ T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
 }
 
 fn launch_selection() {
-    print("launcher: launch requested for '" + state.selected + "'")
     if state.selected == "" {
         status.set_text("Select an .mms file first.")
         return
