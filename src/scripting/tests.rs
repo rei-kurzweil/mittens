@@ -5781,7 +5781,7 @@ fn mms_mount_lifecycle_handler_receives_component_payload() {
         .find(|&id| {
             world
                 .get_component_by_id_as::<crate::engine::ecs::component::MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
 
@@ -12077,7 +12077,7 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
         count(&|id| {
             world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         }),
         1
     );

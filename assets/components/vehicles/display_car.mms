@@ -4,6 +4,12 @@
 // entry zone overlaps the lower front of the imported car while extending
 // beyond local -Z for an approaching rider. Local -Z is this asset's semantic
 // front.
+//
+// The car is also a carry deck: its own meshes (floor, wings, roof) collide
+// only inside the car's CollisionContext, so outside it the rounded hull
+// spheres keep the car sliding as before, and a player whose feet get onto or
+// into the car (above the ground, within the board zone) rides it, walking
+// on the real surfaces while it drives, until they leave the stay zone.
 
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { display_car_sliding_colliders } from "./display_car_sliding_colliders.mms"
@@ -31,6 +37,13 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
         .on_grip() {}
     hold_rider_walking(mountable)
 
+    // Board above the ground (so standing beside a moving car never drags
+    // you along); stay aboard within a larger box around the whole car.
+    let board_frame = T.position(0.0, 3.1, -0.3) { name = "car_board_frame" }
+    let board = Zone.cube([5.0, 2.75, 3.6]).at(board_frame) { name = "car_board_zone" }
+    let stay_frame = T.position(0.0, 2.8, -0.3) { name = "car_stay_frame" }
+    let stay = Zone.cube([5.8, 3.6, 4.4]).at(stay_frame) { name = "car_stay_zone" }
+
     let model = GLTF.new("assets/models/car.glb") {
         display_car_anime_material("near")
     }
@@ -43,7 +56,22 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
                 part_mesh.attach(damage)
             }
         }
+        // Every part collides inside the deck context only (see above).
+        for part_mesh in event.gltf.query_all("renderable") {
+            let contact = Collidable.static().friction(0.85) {}
+            part_mesh.attach(contact)
+        }
     })
+    let deck = CollisionContext {
+        name = root_name + "_deck_context"
+        T {
+            name = "car_model"
+            model
+        }
+    }
+    let deck_mountable = Mountable.carry().entry_zone(stay).auto_mount_zone(board).context(deck) {
+        name = root_name + "_deck"
+    }
 
     let body = T.position(position[0], position[1], position[2]).rotation(0.0, yaw, 0.0) {
         name = root_name
@@ -52,15 +80,18 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
         entry_zone
         mount_anchor
         dismount_anchor
-
-        T {
-            name = "car_model"
-            model
-        }
+        board_frame
+        board
+        stay_frame
+        stay
+        deck_mountable
+        deck
 
         for child in extra_children { child }
     }
     body.attach(display_car_sliding_colliders(body))
+    // The driver's seat; its controls ignore riders boarding the deck.
+    body.seat = mountable
     let motion = ship_vehicle_motion(body, root_name + "_velocity")
     let gravity = Gravity { name = root_name + "_gravity" }
     motion.attach(gravity)

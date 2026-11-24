@@ -164,7 +164,7 @@ fn xr_vehicle_input_handlers_exist_only_while_powered_and_occupied() {
         .find(|&id| {
             f.world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
     f.click_power();
@@ -210,7 +210,7 @@ fn display_car_power_gates_controls_but_keeps_physics_and_momentum() {
         .find(|&id| {
             f.world
                 .get_component_by_id_as::<crate::engine::ecs::component::MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
     let key = || {
@@ -472,7 +472,7 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
         .find(|&id| {
             world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .expect("desktop scene should expose a mountable car");
     let motion = world.parent_of(car_root).unwrap();
@@ -628,7 +628,7 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             .find(|&id| {
                 world
                     .get_component_by_id_as::<MountableComponent>(id)
-                    .is_some()
+                    .is_some_and(|m| !m.carry)
                     && world
                         .parent_of(id)
                         .and_then(|parent| world.component_label(parent))
@@ -795,7 +795,7 @@ fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
         .find(|&id| {
             f.world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
     let walking = |f: &Fixture| {

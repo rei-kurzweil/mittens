@@ -111,7 +111,7 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
         .find(|&id| {
             world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .expect("the independent car should be Mountable");
     let mountable = world

@@ -13,6 +13,7 @@ import { ui_unlit_material } from "../materials/ui_unlit.mms"
 //   count             rockets per burst (3)
 //   interval_seconds  time between rockets (0.4)
 //   spread            largest pitch/yaw offset in radians for rockets 2+ (0.05)
+//   cooldown_seconds  after the last rocket, before the next burst (0)
 //   beats_per_second  the scene Clock's tempo (2.0 at 120 bpm)
 //   can_fire()        optional gate checked when a burst starts
 //   source_tool, user()  attribution passed to each rocket and its hits
@@ -76,15 +77,20 @@ export fn burst_rocket_weapon_controller(options) {
             on_hit = options["on_hit"] impact = options["impact"]
         })
         if options["on_launch"] != null { options.on_launch(index) }
-        if index == count - 1 { state.busy = false }
     }
 
+    let cooldown = 0.0
+    if options["cooldown_seconds"] != null { cooldown = options.cooldown_seconds }
     let step = interval * bps
-    let burst = Animation.paused().length(step * (count - 1)) {
+    let ready_at = step * (count - 1) + cooldown * bps
+    // The ready keyframe sits inside the clip, not on its end, so the burst
+    // always frees the trigger again.
+    let burst = Animation.paused().length(ready_at + 0.1) {
         name = name + "_burst"
         for index in range(count) {
             Keyframe.at(index * step) { launch_next() }
         }
+        Keyframe.at(ready_at) { state.busy = false }
     }
 
     fn fire_burst() {
