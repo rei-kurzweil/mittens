@@ -306,7 +306,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head avatar = avatar model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null }
+    let state = { head = head avatar = avatar model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null remote_height = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -327,7 +327,9 @@ export fn make_rooftop_player(options) {
         }
     }
     fn select_avatar(choice, report) {
-        let target_meters = null
+        // A remote body is built at the peer's height, so tiny peers get the
+        // same body and rig scale they see themselves.
+        let target_meters = state.remote_height
         if local_player { target_meters = AvatarSettings.height.meters() }
         if state.pending {
             if state.pending.choice == choice && state.pending.height == target_meters {
@@ -428,6 +430,13 @@ export fn make_rooftop_player(options) {
         if state.pending { choice = state.pending.choice }
         select_avatar(choice, report)
     }
+    fn desired_height() { return AvatarSettings.height.meters() }
+    // Remote players only: the peer's desired height, or null for the model default.
+    fn set_remote_height(height, report) {
+        if local_player || height == state.remote_height { return }
+        state.remote_height = height
+        apply_desired_height(report)
+    }
     if local_player {
         on_global("MountStarted", fn(event) { held.mounted = true })
         on_global("MountEnded", fn(event) { held.mounted = false })
@@ -471,6 +480,7 @@ export fn make_rooftop_player(options) {
         shield_mount = shield_mount
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
+        desired_height = desired_height set_remote_height = set_remote_height
         flying = flying set_remote_flying = set_remote_flying
         camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load

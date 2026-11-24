@@ -379,8 +379,8 @@ if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
-let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null flight = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0
+let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null height = null flight = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 sent_height = -1.0 height_repeats = 0
     sent_flight = null flight_repeats = 0 flight_elapsed = 0.0 }
 let connection = { root = null avatar_group = null address = null peer_avatar = null
     avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
@@ -449,6 +449,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.avatar_retry = null
     connection.avatar_retries = 0
     channel_state.sent_avatar = null
+    channel_state.sent_height = -1.0
     channel_state.sent_flight = null
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
@@ -465,6 +466,15 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     links.left_valid = publish("left-hand.valid", address, f32)
     links.right_valid = publish("right-hand.valid", address, f32)
     links.avatar = publish("avatar", address, str)
+    links.height = publish("avatar.height", address, f32)
+    let height_channel = socket.subscribe("avatar.height").from(address).type(f32)
+    group.attach(height_channel)
+    on(height_channel, "UdpSample", fn(sample) {
+        // Zero means the model's default height.
+        let height = null
+        if sample.value > 0.0 { height = sample.value }
+        remote.set_remote_height(height, receive_avatar_status)
+    })
     links.flight = publish("avatar.flight", address, f32)
     let flight_channel = socket.subscribe("avatar.flight").from(address).type(f32)
     group.attach(flight_channel)
@@ -504,6 +514,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     links.avatar = null
+    links.height = null
     links.flight = null
     remote.set_remote_flying(false)
     roster.count = 0
@@ -542,6 +553,18 @@ on_global("FrameTick", fn(event) {
     if choice != channel_state.sent_avatar {
         channel_state.sent_avatar = choice
         channel_state.avatar_repeats = 4
+    }
+    // Height changes go out in the same short bursts as avatar choices.
+    let height = local.desired_height()
+    if height != channel_state.sent_height {
+        channel_state.sent_height = height
+        channel_state.height_repeats = 4
+    }
+    if channel_state.height_repeats > 0 && links.height && links.height.ready() {
+        let sample = 0.0
+        if height != null { sample = height }
+        links.height.write(sample)
+        channel_state.height_repeats = channel_state.height_repeats - 1
     }
     if channel_state.avatar_repeats > 0 && links.avatar && links.avatar.ready() {
         links.avatar.write(choice)
