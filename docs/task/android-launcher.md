@@ -65,6 +65,12 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
 - [ ] Without a pushed project (`adb shell rm -r .../files/project`), the
       launcher still starts and shows the push hint.
 
+- [ ] First-person Mitten: launch `android/examples/mitten-first-person.mms`.
+  Looking down shows the skinned body; controllers drive the arms (arm IK) and
+  the left stick walks (walking IK). Eye/lash layers use alpha discard in
+  `anime-cutout.frag` (opaque base), so they draw in the same tiled pass. A
+  renderer rejection returns home with the reason in the status line.
+
 ## Next
 
 - The avatar picker in the dock (Mitten, and Miku when its model is in the

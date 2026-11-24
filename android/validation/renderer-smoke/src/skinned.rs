@@ -1,6 +1,6 @@
 //! `--skinned`: a compute-deformed avatar through the production renderer.
 //!
-//! Loads `assets/models/mitten.glb` with one custom surface material, then
+//! Loads Mitten through `mitten_model` (alpha-discard anime shading), then
 //! checks that the first drawn frames dispatch deformation jobs, and that
 //! turning a joint dispatches again and changes the image.
 use crate::{
@@ -64,16 +64,14 @@ pub fn run() {
     )
     .unwrap();
     let source = r#"
-import { anime_surface } from "../assets/components/materials/anime_surface.mms"
+import { mitten_model } from "../assets/components/characters/mitten.mms"
 AL.rgb(0.7, 0.7, 0.7)
 BGC.rgba(0.1, 0.1, 0.1, 1.0)
+T.position(0.0, 2.0, 2.0) { DL.color(1.0, 1.0, 1.0).intensity(1.0) }
+// The same model factory as android/examples/mitten-first-person.mms,
+// including the alpha-discard avatar shading used for the eye and lash layers.
 T.position(0.0, -0.85, -1.4).rotation(0.0, 3.14159265, 0.0) {
-    let avatar = GLTF.new("assets/models/mitten.glb") { name = "smoke_avatar" anime_surface() }
-    // The mobile slice has no emission pass; keep imported colors only.
-    on(avatar, "GLTFInitialized", fn(event) {
-        for emission in event.gltf.query_all("emissive") { emission.off() }
-    })
-    avatar
+    mitten_model("smoke_avatar", {}).model
 }
 "#;
     let mut universe = Universe::new(World::default());
