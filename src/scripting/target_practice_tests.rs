@@ -92,11 +92,11 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
             if event == "Splash" { target.rocket_splash(target.center()) }
             if event == "OuterSplash" {
                 let c = target.center()
-                target.rocket_splash([c[0] + 2.0, c[1], c[2]])
+                target.rocket_splash([c[0] + 4.0, c[1], c[2]])
             }
             if event == "FarSplash" {
                 let c = target.center()
-                target.rocket_splash([c[0] + 3.5, c[1], c[2]])
+                target.rocket_splash([c[0] + 6.5, c[1], c[2]])
             }
             if event == "Report" { report.set_text("" + target.shield_integrity()) }
         })
@@ -114,23 +114,30 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
     assert_eq!(report(&scene), "90");
     assert!((fill(&scene, "npc_health_overhead") - 1.0).abs() < 1e-5);
 
-    // Beyond 3 m nothing happens; the outer ring takes a third of the
-    // health damage and 33 shield.
+    // Beyond 6 m nothing happens; the outer ring takes 25 shield only.
     event(&mut scene, "FarSplash");
     event(&mut scene, "OuterSplash");
     event(&mut scene, "Report");
     step(&mut scene, &clock, 2);
-    assert!((fill(&scene, "npc_health_overhead") - 5.0 / 6.0).abs() < 1e-4);
-    assert_eq!(report(&scene), "57");
+    assert!((fill(&scene, "npc_health_overhead") - 1.0).abs() < 1e-5);
+    assert_eq!(report(&scene), "65");
 
-    // Up close, splash takes half the health and 50 shield.
+    // Within 2 m, splash takes 49% health and 50 shield.
     event(&mut scene, "Splash");
     event(&mut scene, "Report");
     step(&mut scene, &clock, 2);
-    assert!((fill(&scene, "npc_health_overhead") - 1.0 / 3.0).abs() < 1e-4);
-    assert_eq!(report(&scene), "7");
+    assert!((fill(&scene, "npc_health_overhead") - 0.51).abs() < 1e-4);
+    assert_eq!(report(&scene), "15");
 
-    // A second splash takes the rest; the NPC drops its shield.
+    // Two close hits leave a sliver; the shield is broken but still worn.
+    event(&mut scene, "Splash");
+    event(&mut scene, "Report");
+    step(&mut scene, &clock, 2);
+    assert!((fill(&scene, "npc_health_overhead") - 0.02).abs() < 1e-4);
+    assert_eq!(report(&scene), "0");
+    assert!(has_label(&scene, "npc_shield"));
+
+    // A third takes the rest; the NPC drops its shield.
     event(&mut scene, "Splash");
     step(&mut scene, &clock, 2);
     assert!(fill(&scene, "npc_health_overhead").abs() < 1e-5);

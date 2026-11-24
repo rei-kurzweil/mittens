@@ -3,13 +3,13 @@ import { energy_shield } from "./energy_sheild.mms"
 import { player_death } from "./player_death.mms"
 
 // Local, single-player versions of the arena's combat rules
-// (shared_player_health.mms): pistol hits take 1 of 10 points, rocket splash
-// takes 5 within 1.5 m (the inner fireball) and a third of that out to 3 m
-// (the outer flash). Damage cues: 1 health, 2 shield, 3 both.
+// (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
+// splash within 2 m takes 4.9 points (49%) and 50 shield, so two close hits
+// leave a sliver; out to 6 m it takes 25 shield only.
+// Damage cues: 1 health, 2 shield, 3 both.
 let FULL = 10.0
-let BLAST_RADIUS = 1.5
-let OUTER_BLAST_RADIUS = 3.0
-let OUTER_BLAST_SHARE = 1.0 / 3.0
+let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
+let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
 // The death burst (player_death at 2 beats per second) lasts six seconds.
 let RESPAWN_SECONDS = 6.0
 
@@ -22,7 +22,7 @@ export fn practice_health(bar, center, options) {
     fn damage(amount, cue) {
         if !alive() || amount <= 0.0 { return }
         state.points = Math.clamp(state.points - amount, 0.0, FULL)
-        // Thirds of a point can leave a rounding sliver; treat it as zero.
+        // Fractional damage can leave a rounding sliver; treat it as zero.
         if state.points < 0.001 { state.points = 0.0 }
         bar.set_health(state.points / FULL)
         let on_damage = callback("on_damage")
@@ -34,16 +34,17 @@ export fn practice_health(bar, center, options) {
             if on_death { on_death() }
         }
     }
-    // The share of full rocket damage at this distance: 1, a third, or 0.
-    fn blast_share(point) {
+    // The rocket blast ring (its shield and health damage) reaching center
+    // from an explosion at point, or null beyond the outer ring.
+    fn blast_at(point) {
         let c = center.world_trs().translation
         let x = point[0] - c[0]
         let y = point[1] - c[1]
         let z = point[2] - c[2]
         let d2 = x * x + y * y + z * z
-        if d2 <= BLAST_RADIUS * BLAST_RADIUS { return 1.0 }
-        if d2 <= OUTER_BLAST_RADIUS * OUTER_BLAST_RADIUS { return OUTER_BLAST_SHARE }
-        return 0.0
+        if d2 <= INNER_BLAST.radius * INNER_BLAST.radius { return INNER_BLAST }
+        if d2 <= OUTER_BLAST.radius * OUTER_BLAST.radius { return OUTER_BLAST }
+        return null
     }
     on_global("FrameTick", fn(event) {
         if state.down <= 0.0 { return }
@@ -54,7 +55,7 @@ export fn practice_health(bar, center, options) {
         let on_respawn = callback("on_respawn")
         if on_respawn { on_respawn() }
     })
-    return { alive = alive damage = damage blast_share = blast_share }
+    return { alive = alive damage = damage blast_at = blast_at }
 }
 
 // A rooftop player that strafes left and right, wears an energy shield and
@@ -102,16 +103,18 @@ export fn practice_target(options) {
         if hit.renderable.player_hit_zone == npc.hit_zone { health.damage(1.0, 1.0) }
     }
     fn rocket_splash(point) {
-        let share = health.blast_share(point)
-        if !health.alive() || share <= 0.0 { return }
+        let blast = health.blast_at(point)
+        if !health.alive() || !blast { return }
         let shield = state.shield
-        let cue = 1.0
-        if shield && shield.integrity() > 0.0 { cue = 3.0 }
-        // 50 shield up close, 33 in the outer ring.
-        let shield_damage = 50.0
-        if share < 1.0 { shield_damage = 33.0 }
-        if shield { shield.take_damage(shield_damage) }
-        health.damage(5.0 * share, cue)
+        let shield_hit = shield && shield.integrity() > 0.0
+        if shield { shield.take_damage(blast.shield) }
+        if blast.health > 0.0 {
+            let cue = 1.0
+            if shield_hit { cue = 3.0 }
+            health.damage(blast.health, cue)
+        } else if shield_hit && on_damage {
+            on_damage(2.0)
+        }
     }
 
     let p = options.position

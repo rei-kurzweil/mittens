@@ -22,9 +22,10 @@ import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_p
 // Target practice: Sakura Twilight Simpler's weapons and combat rules
 // against a Mitten NPC, with no multiplayer. The NPC strafes left and right
 // in front of the spawn, wearing an energy shield. Pistol hits break the
-// shield first (10 per hit), then take 10% health; rocket splash takes 50%
-// health and 50 shield within 1.5 m, and 17% health and 33 shield out to 3 m. At zero it bursts, drops its shield and comes back
-// full after six seconds. Your own rockets can splash you too.
+// shield first (10 per hit), then take 10% health. Rocket splash within 2 m
+// takes 49% health and 50 shield; out to 6 m it takes 25 shield only. At
+// zero the NPC bursts, drops its shield and comes back full after six
+// seconds. Your own rockets can splash you too.
 //
 //   cargo run --release -- load examples/target-practice.mms
 //
@@ -113,7 +114,8 @@ launcher_options.on_explosion = fn(point) {
     // Until rockets have their own explosion sound, use the damage cue.
     sounds.damage(1.0)
     target.rocket_splash(point)
-    player.damage(5.0 * player.blast_share(point), 1.0)
+    let blast = player.blast_at(point)
+    if blast { player.damage(blast.health, 1.0) }
 }
 let launcher = shared_sta_launcher("practice_sta_launcher", launcher_options)
 T.position(1.6, 0.0, -1.4) {
