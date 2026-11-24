@@ -108,13 +108,22 @@ pub(crate) const LAUNCHER_FILES: &[(&str, &[u8])] = bundle![
 /// paths: launcher scenes run with `root` as the working directory.
 #[cfg(feature = "launcher")]
 pub(crate) fn install_missing(root: &Path, files: &[(&str, &[u8])]) -> Result<()> {
+    install_files(root, files, false)
+}
+/// Writes every bundled file under `root`, replacing existing copies.
+#[cfg(feature = "launcher")]
+pub(crate) fn install_all(root: &Path, files: &[(&str, &[u8])]) -> Result<()> {
+    install_files(root, files, true)
+}
+#[cfg(feature = "launcher")]
+fn install_files(root: &Path, files: &[(&str, &[u8])], overwrite: bool) -> Result<()> {
     let font: (&str, &[u8]) = (
         "assets/textures/font_system.png",
         include_bytes!("../assets/font_system.png"),
     );
     for &(relative, bytes) in files.iter().chain(std::iter::once(&font)) {
         let target = root.join(relative);
-        if target.exists() {
+        if !overwrite && target.exists() {
             continue;
         }
         std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;

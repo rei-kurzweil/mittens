@@ -14,6 +14,9 @@ use std::{
 /// Seconds the left menu button must be held to return home.
 const HOME_HOLD_SECONDS: f32 = 0.6;
 const HOME: &str = "android/examples/launcher.mms";
+/// Where the APK's own launcher files are written when the pushed launcher
+/// fails to load, so a broken sync still leaves a working home screen.
+const BUNDLED: &str = ".bundled-launcher";
 
 static EXTERNAL_FILES: OnceLock<Option<PathBuf>> = OnceLock::new();
 
@@ -26,6 +29,7 @@ pub(crate) fn set_external_files_dir(directory: Option<PathBuf>) {
 pub(crate) struct Launcher {
     root: PathBuf,
     home: PathBuf,
+    bundled_home: PathBuf,
     current: PathBuf,
     menu_held: f32,
     menu_latched: bool,
@@ -50,6 +54,7 @@ impl Launcher {
         log::info!("launcher project_root={}", root.display());
         let home = root.join(HOME);
         Ok(Self {
+            bundled_home: root.join(BUNDLED).join(HOME),
             root,
             current: home.clone(),
             home,
@@ -63,7 +68,18 @@ impl Launcher {
     }
 
     pub fn at_home(&self) -> bool {
-        self.current == self.home
+        self.current == self.home || self.current == self.bundled_home
+    }
+
+    /// Rewrites the APK's launcher files under a private folder and returns
+    /// that copy's home scene. Its imports resolve inside that folder; asset
+    /// URIs still resolve from the project root.
+    pub fn bundled_home(&self) -> Result<PathBuf> {
+        crate::demo_assets::install_all(
+            &self.root.join(BUNDLED),
+            crate::demo_assets::LAUNCHER_FILES,
+        )?;
+        Ok(self.bundled_home.clone())
     }
 
     pub fn set_current(&mut self, path: &Path) {

@@ -67,6 +67,23 @@ fn new_universe(source: &str, path: &Path) -> Result<Universe> {
         .map_err(|e| format!("load mobile MMS scene: {e}"))?;
     Ok(universe)
 }
+/// The pushed launcher, or the APK's bundled copy when the pushed one fails
+/// to load (for example after syncing a broken edit). Returns the loaded path.
+#[cfg(feature = "launcher")]
+fn load_home(launcher: &crate::launcher::Launcher) -> Result<(Universe, std::path::PathBuf)> {
+    match load_universe(launcher.home()) {
+        Ok(universe) => Ok((universe, launcher.home().to_path_buf())),
+        Err(error) => {
+            log::warn!("LAUNCH pushed launcher failed: {error}");
+            mittens_engine::engine::app_launch::set_last_error(format!(
+                "pushed launcher.mms failed ({error}); showing the APK's bundled launcher"
+            ));
+            let bundled = launcher.bundled_home()?;
+            Ok((load_universe(&bundled)?, bundled))
+        }
+    }
+}
+
 #[cfg(feature = "launcher")]
 fn load_universe(path: &Path) -> Result<Universe> {
     let source =
@@ -78,8 +95,9 @@ impl PreparedScene {
         #[cfg(feature = "launcher")]
         if matches!(scene, DemoScene::Launcher) {
             let launcher = crate::launcher::Launcher::prepare(directory)?;
+            let (universe, _) = load_home(&launcher)?;
             return Ok(Self {
-                universe: load_universe(launcher.home())?,
+                universe,
                 label: "launcher",
                 terminal: None,
                 launcher: Some(launcher),
@@ -230,21 +248,25 @@ impl SceneRuntime {
         let Some(mut path) = next else {
             return Ok(());
         };
-        let universe = match load_universe(&path) {
-            Ok(universe) => {
-                if path != launcher.home() {
+        let universe = if path == launcher.home() {
+            let (universe, home) = load_home(launcher)?;
+            path = home;
+            universe
+        } else {
+            match load_universe(&path) {
+                Ok(universe) => {
                     app_launch::set_last_error("");
+                    universe
                 }
-                universe
+                Err(error) => {
+                    let shown = launcher.display(&path);
+                    report.line(format!("LAUNCH failed scene={shown} error={error}"));
+                    app_launch::set_last_error(format!("{shown}: {error}"));
+                    let (universe, home) = load_home(launcher)?;
+                    path = home;
+                    universe
+                }
             }
-            Err(error) if path != launcher.home() => {
-                let shown = launcher.display(&path);
-                report.line(format!("LAUNCH failed scene={shown} error={error}"));
-                app_launch::set_last_error(format!("{shown}: {error}"));
-                path = launcher.home().to_path_buf();
-                load_universe(&path)?
-            }
-            Err(error) => return Err(error),
         };
         // Engine mesh/texture handles belong to one renderer instance, so the
         // previous scene's GPU resources go with it.

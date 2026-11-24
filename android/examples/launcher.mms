@@ -58,12 +58,12 @@ if previous_error != "" { status.set_text("Returned home: " + previous_error) }
 // Explicitly sized blocks in a flex row: the shared inline-block action()
 // buttons laid out with no visible size on the headset, while the status text
 // in the same row rendered.
-fn launcher_button(label, id, width) {
+fn launcher_button(label, id, button_width) {
     return T {
         name = id
         Raycastable.enabled()
         Style {
-            width(width) height(3.2) padding_xy(0.9, 0.7)
+            width(button_width) height(3.2) padding_xy(0.9, 0.7)
             background_color([0.98, 0.75, 0.26, 1.0]) color([0.13, 0.085, 0.015, 1.0])
         }
         Text { label }
