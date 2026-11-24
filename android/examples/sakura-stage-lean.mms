@@ -90,7 +90,7 @@ T.position(18.0, -(roof_height + 1.6), -3.0) {
     }
     T.position(-18.0, roof_height + 0.15, -2.0).scale(0.36, 0.36, 0.36) {
         stage_material
-        studio_stage("sakura_rooftop_sound_stage")
+        studio_stage("sakura_rooftop_sound_stage", stage_material)
     }
     // Sakura conversion's rooftop pistol table, with static collision.
     T.position(-20.3, roof_height, 0.2) {

@@ -27,6 +27,7 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "android/examples/sakura-stage-collision.mms",
     "android/shaders/sakura-sky.frag",
     "assets/components/studio_stage.mms",
+    "assets/components/materials/studio_anime.mms",
     "assets/components/truss.mms",
     "assets/components/buildings/pool_building.mms",
     "assets/components/materials/pool_tiles.mms",
