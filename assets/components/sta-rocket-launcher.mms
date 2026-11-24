@@ -1,6 +1,7 @@
 // Triggering starts the launch sequence. The visual-time event at 100 ms is
 // where the rear flash will finish and the independent rocket will be launched.
 // on_launch receives the muzzle's world pose and the user captured at trigger.
+// Optional can_fire(user) gates trigger and launch. on_hit(hit) receives the contact.
 import { launch_rocket, apply_rocket_impact } from "./projectiles/rocket.mms"
 import { sta_rocket_body, claim_sta_rocket_ammo } from "./projectiles/sta_rocket_ammo.mms"
 import { shared_impact } from "./network/shared_impact.mms"
@@ -10,6 +11,8 @@ let chambered_rocket_material = MaterialDefinition.toon().opaque_bucket("far")
 export fn sta_rocket_launcher(options) {
     let label = "sta_rocket_launcher"
     if options["name"] != null { label = options.name }
+    let can_fire = options["can_fire"]
+    let on_hit = options["on_hit"]
     // A socket-enabled caller connects network to its peer channel group.
     let network = null
     if options["socket"] {
@@ -85,16 +88,17 @@ export fn sta_rocket_launcher(options) {
     on(events, "DataEvent", fn(event) {
         if event == "Launch" && state.pending {
             state.pending = false
-            if !state.round || !closed() { return }
+            if !state.round || !closed() || (can_fire && !can_fire(state.user)) { return }
             let round = state.round
             state.round = null
-            launch_rocket(round, { pose = muzzle.world_trs() source_tool = root source_user = state.user impact = impact })
+            launch_rocket(round, { pose = muzzle.world_trs() source_tool = root source_user = state.user impact = impact on_hit = on_hit })
             if options["on_launch"] != null {
                 options.on_launch({ pose = muzzle.world_trs() source_tool = root source_user = state.user })
             }
         }
     })
     fn use_start(context) {
+        if can_fire && !can_fire(context.user) { return false }
         if state.trigger_held { return false }
         state.trigger_held = true
         if state.pending || !state.round || !closed() { return false }

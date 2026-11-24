@@ -7,7 +7,10 @@ let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 // The grip and impacts share the scene's peer lifecycle. Only the holder
 // creates a rocket; its final contact is replicated by the launcher device.
 export fn shared_sta_launcher(label, options) {
-    let tool = sta_rocket_launcher({ name = label socket = options["socket"] weapon_id = options.weapon_id })
+    let tool = sta_rocket_launcher({
+        name = label socket = options["socket"] weapon_id = options.weapon_id
+        can_fire = options["can_fire"] on_hit = options["on_hit"]
+    })
     let grip = T.rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = label + "_grip"
         Selectable.off()

@@ -53,11 +53,21 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
             .unwrap()
             .replace("AudioInput {}", "AudioInput { enabled(false) }");
         let mut scene = Universe::new(World::default());
-        scene.systems.xr.set_external_frame(Some(Default::default()));
+        scene
+            .systems
+            .xr
+            .set_external_frame(Some(Default::default()));
         scene.load_mms_source_at_path(&source, path).unwrap();
         for _ in 0..3 {
             scene.update(1.0 / 60.0, &Default::default());
         }
+        let dock_slot = named(&scene, "sakura_twilight_dock_slot_frame");
+        assert!(
+            scene
+                .world
+                .find_component(dock_slot, "renderable")
+                .is_none()
+        );
         scene
     };
     let layout = |scene: &Universe| {
@@ -73,6 +83,32 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
     let full_layout = layout(&load("examples/sakura-twilight.mms"));
     let scene = load("examples/sakura-twilight-simpler.mms");
     assert_eq!(layout(&scene), full_layout);
+    for (head, display) in [
+        ("local_head_target", "local_health_hud"),
+        ("remote_head_target", "remote_health_overhead"),
+    ] {
+        let head = named(&scene, head);
+        let display = scene
+            .world
+            .find_component(head, &format!("#{display}"))
+            .unwrap();
+        assert!(scene.world.find_component(display, "#health_bar").is_some());
+        if scene.world.component_label(head) == Some("remote_head_target") {
+            let [head_x, head_y, head_z] =
+                TransformSystem::world_position(&scene.world, head).unwrap();
+            let [bar_x, bar_y, bar_z] =
+                TransformSystem::world_position(&scene.world, display).unwrap();
+            assert!((head_x - bar_x).abs() < 1e-4 && (head_z - bar_z).abs() < 1e-4);
+            assert!((bar_y - head_y - 0.37).abs() < 1e-4);
+        }
+    }
+    assert!(
+        scene
+            .systems
+            .secondary_motion
+            .chain_anchor(named(&scene, "local_health_hud_spring"))
+            .is_some()
+    );
     let gamepad = named(&scene, "local_xr_locomotion");
     assert!(
         !scene

@@ -16,3 +16,18 @@ candidates for a cohesive scene asset. Keep rack placement separate from the
 peer lifecycle, and retain event-driven retries and one impact stream for the
 roster. Validate both racks, the rooftop drive lane, the per-peer channel
 budget, and final grab and shot delivery after release.
+
+Keep player presentation separate from avatar construction and replacement in
+`assets/components/characters/rooftop_player.mms`. Presentation owns the
+overhead status display and local HUD, while the player factory owns the
+stable handles and reattachment during a swap. Preserve camera calibration and
+avoid scripted frame subscriptions for presentation. Validate placement and
+health changes in the simpler scene with both desktop and XR tracking, after
+avatar replacement, and on both sides of a peer session.
+
+Keep arena rules and player-health replication in their own component. The
+scene connects the weapon roster, player hit zones, peer channels, and picker
+callback. Reuse native ray and projectile collision, use one typed health
+channel per direction, and check firing eligibility at trigger and shot time.
+Validate pistol and rocket hits, packet repetition, zero-health weapon gates,
+and picker resets while old hit reports are in flight.

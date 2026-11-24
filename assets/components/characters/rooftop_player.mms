@@ -10,6 +10,9 @@ import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxe
 import { miku_twintails, miku_hand_colliders, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
 import { detach_avatar_equipment, install_vroid_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
+import { health_bar } from "../health_bar.mms"
+import { hud } from "../hud.mms"
+import { player_hitbox } from "./player_hitbox.mms"
 
 // The TDA export is in MMD units (~8 cm), about 20 m tall as meters. Its
 // GLTF bakes a uniform scale to this height on import, so the rig is meter
@@ -217,6 +220,38 @@ export fn make_rooftop_player(options) {
     on(initial.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, avatar) })
     let head = T.position(0.0, initial.eye_height, 0.0) { name = prefix + "_head_target" avatar }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
+    let health = null
+    let health_view = null
+    let head_display = null
+    let hit_zone = null
+    let hitbox = null
+    if options["show_health"] == true {
+        health = health_bar(Text { "HEALTH" font_size(0.65) C.rgba(1.0, 1.0, 1.0, 1.0) Unlit {} })
+        if local_player {
+            health_view = hud(prefix + "_health_hud", [0.0, 0.34, -1.10], T.scale(0.043, 0.043, 0.043) { health })
+            // XR renders the tracked target pose. Desktop uses the mapped camera.
+            if use_xr { head_display = health_view } else { camera.attach(health_view) }
+        } else {
+            let viewer = options["health_view"]
+            let yaw = Math.pi
+            if viewer { yaw = 0.0 }
+            // Take position from the peer's head and yaw from the local view.
+            let overhead = TOP.fork_trs().sample_ancestor("translation", 0).extract_yaw().drop("scale") {
+                T.position(0.0, 0.37, 0.0).rotation(0.0, yaw, 0.0).scale(0.055, 0.055, 0.055) {
+                    name = prefix + "_health_overhead"
+                    health
+                    T.position(-5.0, 3.0, 0.12).scale(1.5, 1.5, 1.5) { label }
+                }
+            }
+            head_display = overhead
+            if viewer { head_display = TOP.parent(viewer) { overhead } }
+            hitbox = player_hitbox(prefix + "_player_hit_zone")
+            hit_zone = hitbox.zone
+            on(initial.model, "GLTFInitialized", fn(event) { hitbox.tag_model(event.gltf) })
+        }
+    }
+    if head_display { head.attach(head_display) }
+    if hitbox { head.attach(hitbox.root) }
     let root = T {
         name = root_name
         // Voice capture belongs to the player across body replacements.
@@ -227,7 +262,9 @@ export fn make_rooftop_player(options) {
         if local_player && use_desktop {
             Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("/#local_desktop_locomotion") {}
         }
-        T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label }
+        if local_player || !health {
+            T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label }
+        }
     }
     let driver = PoseInput {}
     let gamepad = null
@@ -319,6 +356,7 @@ export fn make_rooftop_player(options) {
             if gravity { gravity.set_enabled(false) }
             if choice != "miku" { enable_gravity_when_ready(body) }
             if choice != "miku" { animate_face(spec.model, body) }
+            if hitbox { hitbox.tag_model(spec.model) }
             // Move the camera and hands before disposing of their old rig.
             mount_body(body, spec, choice)
             // AVC splices its head bone under the pose target, so that target
@@ -345,6 +383,8 @@ export fn make_rooftop_player(options) {
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
+            if head_display { next_head.attach(head_display) }
+            if hitbox { next_head.attach(hitbox.root) }
             detach_avatar_equipment(state.head)
             state.head.remove_subtree()
             state.head = next_head
@@ -403,7 +443,7 @@ export fn make_rooftop_player(options) {
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
         root = root locomotion = locomotion head = head left = left right = right model = initial.model
-        left_driver = left_driver right_driver = right_driver label = label
+        left_driver = left_driver right_driver = right_driver label = label health = health health_view = health_view hit_zone = hit_zone
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
         flying = flying set_remote_flying = set_remote_flying

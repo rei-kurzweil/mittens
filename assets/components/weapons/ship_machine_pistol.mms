@@ -16,6 +16,7 @@ export fn apply_machine_pistol_impact(point, amount) {
 // Unique labels keep rack instances' controls independent.
 // For a shared pistol pass { socket, weapon_id, rank, mounts? }, bind the local pointers
 // and connect/disconnect the assembly with the scene's peer lifecycle.
+// Optional can_fire(user) and on_hit(hit) supply the scene's gameplay rules.
 export fn ship_machine_pistol(label, options) {
     let scale = 0.085
     let hand_offset = 0.05
@@ -25,6 +26,8 @@ export fn ship_machine_pistol(label, options) {
     let material = ship_environment_material(bucket)
     let sharing = { grab = null socket = null id = label }
     let impacts = null
+    let fire_gate = null
+    let on_hit = null
     let ammunition = 75
     let left_pointer = "#ship_left_hand_pointer"
     let right_pointer = "#ship_right_hand_pointer"
@@ -32,6 +35,8 @@ export fn ship_machine_pistol(label, options) {
     if options {
         sharing.socket = options["socket"]
         impacts = options["shared_impacts"]
+        fire_gate = options["can_fire"]
+        on_hit = options["on_hit"]
         if options["ammunition"] != null {
             ammunition = Math.floor(options.ammunition)
             if ammunition < 0 { ammunition = 0 }
@@ -41,7 +46,8 @@ export fn ship_machine_pistol(label, options) {
         if options["right_pointer"] { right_pointer = options.right_pointer }
         if options["user"] { user = options.user }
     }
-    fn can_fire() { return !sharing.grab || sharing.grab.state.owner == options.rank }
+    fn locally_owned() { return !sharing.grab || sharing.grab.state.owner == options.rank }
+    fn can_fire(user) { return locally_owned() && (!fire_gate || fire_gate(user)) }
     let own_impacts = sharing.socket && !impacts
     if own_impacts {
         impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_machine_pistol_impact })
@@ -49,6 +55,7 @@ export fn ship_machine_pistol(label, options) {
     fn impact(hit) {
         if impacts { impacts.hit(hit.hit_point, hit.damage) }
         else { apply_machine_pistol_impact(hit.hit_point, hit.damage) }
+        if on_hit { on_hit(hit) }
     }
     let tool = laser_machine_pistol({
         name = label + "_laser" length = 60.0 flash_size = 0.22 beam_radius = 0.012
@@ -120,7 +127,7 @@ export fn ship_machine_pistol(label, options) {
     })
     // Input is forwarded by the ship controller, never globally subscribed here.
     grip.ship_input=fn(kind,event) {
-        if !held.active || !can_fire() {return}
+        if !held.active || !locally_owned() {return}
         if kind=="XrButtonDown" || kind=="XrButtonUp" {
             if event.hand==held.hand && (event.control=="LeftTrigger" || event.control=="RightTrigger") {
                 if kind=="XrButtonDown" {tool.use_start({user=query(user)})}
