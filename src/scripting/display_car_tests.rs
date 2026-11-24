@@ -830,3 +830,51 @@ fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
         },
     );
 }
+
+#[test]
+fn powered_mounted_car_starts_its_laser_pair_and_rocket_burst() {
+    use crate::engine::ecs::component::{AnimationComponent, AnimationState, MountableComponent};
+    let mut f = Fixture::new(
+        r#"
+        import {display_car_desktop} from "../assets/components/vehicles/display_car.mms"
+        display_car_desktop("test_car",[0,4,0],0,"test_mount")
+    "#,
+    );
+    let body = f.named("test_car");
+    let seat = f
+        .world
+        .children_of(body)
+        .iter()
+        .copied()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<MountableComponent>(id)
+                .is_some_and(|m| !m.carry)
+        })
+        .unwrap();
+    let playing = |f: &Fixture, label: &str| {
+        f.world
+            .get_component_by_id_as::<AnimationComponent>(f.named(label))
+            .unwrap()
+            .state
+            != AnimationState::Paused
+    };
+    let key = |code: &str| {
+        EventSignal::KeyDown(KeyboardEvent {
+            code: Some(code.into()),
+            key: code.into(),
+        })
+    };
+    f.event(
+        seat,
+        EventSignal::MountStarted {
+            rider: ComponentId::default(),
+            mountable: seat,
+        },
+    );
+    f.click_power();
+    f.event(ComponentId::default(), key("Space"));
+    assert!(playing(&f, "car_laser_pair"), "Space fires the laser pair");
+    f.event(ComponentId::default(), key("KeyR"));
+    assert!(playing(&f, "car_rockets_burst"), "R starts the rocket burst");
+}

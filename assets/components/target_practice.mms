@@ -155,11 +155,13 @@ export fn practice_health(bar, center, options) {
 //   seated       sit (Mitten's floor-seated pose, no leg IK) instead of
 //                standing, e.g. in a vehicle seat; position is then the root
 //                in the seat's parent space
-//   vehicle      { chassis, seat, door } with seated: the caller attaches
+//   vehicle      { chassis, seat, door, ground_y } with seated: the caller attaches
 //                root to chassis at seat (chassis space). Going down ejects
 //                the NPC beside the door (chassis space; on the ground);
 //                after respawning it walks back to the door, which may be
-//                moving, and gets back in, aiming and firing throughout
+//                moving, and gets back in, aiming and firing throughout.
+//                ground_y (default 0) is her root's height off the truck.
+//                set_vehicle_chassis(chassis) moves her to another vehicle
 // The NPC's root may ride a moving, turned parent (a truck's chassis): it
 // aims in world space and turns relative to that parent.
 export fn practice_target(options) {
@@ -194,7 +196,7 @@ export fn practice_target(options) {
         shield.set_worn(true, true)
         state.shield = shield
     }
-    let hooks = { death = null respawn = null }
+    let hooks = { death = null respawn = null set_chassis = null }
     let health = practice_health(npc.health, npc.shield_mount, {
         on_damage = on_damage
         on_death = fn() {
@@ -440,8 +442,10 @@ export fn practice_target(options) {
             if !state.seated { return }
             state.seated = false
             let door = chassis_point(ride.door)
+            let ground_y = 0.0
+            if ride["ground_y"] != null { ground_y = ride.ground_y }
             ground.attach(state.frame)
-            state.frame.update_transform([door[0], 0.0, door[2]], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            state.frame.update_transform([door[0], ground_y, door[2]], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             npc.root.update_transform([0.0, 0.0, 0.0])
             npc.set_legs_enabled(true)
         }
@@ -476,6 +480,10 @@ export fn practice_target(options) {
         ground.attach(walk_events)
         ground.attach(walking)
         on(walk_events, "DataEvent", fn(event) { if event == "Approach" { approach() } })
+        hooks.set_chassis = fn(chassis) {
+            ride.chassis = chassis
+            if state.seated { board() }
+        }
         let on_death = hooks.death
         hooks.death = fn() {
             if on_death { on_death() }
@@ -526,6 +534,7 @@ export fn practice_target(options) {
     })
     return {
         root = frame npc = npc pistol_hit = pistol_hit rocket_splash = rocket_splash alive = health.alive
+        set_vehicle_chassis = fn(chassis) { if hooks.set_chassis { hooks.set_chassis(chassis) } }
         center = fn() { return npc.shield_mount.world_trs().translation }
         shield_integrity = fn() {
             if state.shield { return state.shield.integrity() }

@@ -7,7 +7,7 @@ import { pickup_power_panel } from "./pickup_power_panel.mms"
 // Input and heading callbacks exist only while powered and occupied. Native
 // force/velocity/contact integration continues while off or dismounted.
 // Two weapons share one elevation slider on the dashboard: the nose laser on
-// the trigger (grip + trigger in XR, Space on desktop) fires two shots, and
+// the trigger (right trigger in XR, Space on desktop) fires two shots, and
 // the dashboard button (R on desktop) fires a five-rocket burst, 300 ms apart
 // with a 1.5 s cooldown, from two nose muzzles. A scene can route their hits
 // into its own rules by setting body.on_laser_hit(hit) and body.on_rocket_hit(hit).
@@ -76,7 +76,6 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let left_muzzle = T { name="car_rocket_muzzle_left" }
     let right_muzzle = T { name="car_rocket_muzzle_right" }
     let origin = T { name="car_rocket_origin" left_muzzle right_muzzle }
-    let model = body.query("#car_model")
     let placement={ready=false nose=[0,0,0] elevation=0.0}
     // Both guns pitch up or down together from the nose.
     fn aim_guns() {
@@ -86,11 +85,12 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     }
     // Just ahead of the nose at 56% of its height: the laser at the centre,
     // rockets a third of the width out to each side, clear of the hull.
+    // car.glb's bounds, measured from the file (x +-4.40, y 0.05 to 5.57,
+    // z -1.78 to 2.75), like the deck boxes: waiting on runtime bounds could
+    // leave both guns unable to fire.
     fn place_muzzle() {
         if placement.ready {return true}
-        let bounds = model.local_bounds()
-        if !bounds { return false }
-        let low = bounds["min"] let high = bounds["max"]
+        let low = [-4.40, 0.05, -1.78] let high = [4.40, 5.57, 2.75]
         let nose = [(low[0]+high[0])*0.5, low[1]+(high[1]-low[1])*0.56, low[2]-0.10]
         placement.nose=nose
         laser_origin.update_transform(nose, [placement.elevation,0,0], [1,1,1])
@@ -184,14 +184,13 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
                 if !state.powered || !state.mounted {return}
                 if event.control=="LeftStick" {state.axis=event.value publish()}
             })
+            // The trigger alone: grip is the seat's get-out button.
             let down=on(input_source,"XrButtonDown",fn(event) {
                 if !state.powered || !state.mounted {return}
-                if event.control=="RightGrip" {state.grip=true}
-                if event.control=="RightTrigger" && state.grip {fire()}
+                if event.control=="RightTrigger" {fire()}
             })
             let up=on(input_source,"XrButtonUp",fn(event) {
                 if !state.powered || !state.mounted {return}
-                if event.control=="RightGrip" {state.grip=false}
             })
             bindings.handlers=[axis,down,up]
         }
@@ -206,7 +205,7 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     })
     let panel_mount=T { name="car_power_panel_mount" panel }
     let fire_button=burst_rocket_fire_button("car_rockets", fn() { rockets.fire_burst() }, {
-        position=[-0.30,4.20,-1.90] scale=1.5
+        position=[-0.30,4.20,-1.90] scale=1.5 count=5
     })
     // Gun elevation.
     let elevation_track = T.scale(0.30, 0.02, 0.05) {

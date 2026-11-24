@@ -128,7 +128,9 @@ export fn burst_rocket_fire_button(name, fire, options) {
     let size = 1.0
     if options["position"] != null { position = options.position }
     if options["scale"] != null { size = options.scale }
-    let readout = Text { name = name + "_fire_label" "ROCKETS x3" }
+    let label = "ROCKETS"
+    if options["count"] != null { label = "ROCKETS x" + options.count }
+    let readout = Text { name = name + "_fire_label" label }
     let button = T.position(position[0], position[1], position[2]).scale(size, size, size) {
         name = name + "_fire_button"
         ui_unlit_material()

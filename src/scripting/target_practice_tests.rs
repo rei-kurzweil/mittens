@@ -285,4 +285,28 @@ fn truck_bed_demo_drives_the_pickup_with_seated_mitten_aboard() {
         (head[0] - truck[0]).abs() < 1.5 && (1.2..2.4).contains(&(head[1] - truck[1])),
         "head {head:?} in the truck at {truck:?}"
     );
+
+    // A rebuild replaces the truck with a new one; Mitten moves into it.
+    let old_truck = named(&scene, "pickup_truck");
+    scene.command_queue.push_event(
+        named(&scene, "demo_truck_wreck_events"),
+        crate::engine::ecs::EventSignal::DataEvent {
+            name: "TruckRebuilt".into(),
+            payload: None,
+        },
+    );
+    step(&mut scene, &clock, 4);
+    let trucks: Vec<_> = scene
+        .world
+        .all_components()
+        .filter(|&id| scene.world.component_label(id) == Some("pickup_truck"))
+        .collect();
+    assert_eq!(trucks.len(), 1, "the wreck is removed");
+    assert_ne!(trucks[0], old_truck, "a new truck");
+    let chassis = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("pickup_chassis_frame"))
+        .unwrap();
+    assert_eq!(scene.world.parent_of(named(&scene, "npc_frame")), Some(chassis));
 }

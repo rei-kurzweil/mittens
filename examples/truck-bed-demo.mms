@@ -127,23 +127,10 @@ T {
 }
 
 // The pickup, driven by a control script, with Mitten in the driver's seat.
-let truck_motion = pickup_truck([0.55, 0.78, 0.90], null, true, { acceleration_drive = true vehicle_id = "demo_pickup" })
-T.position(-12.0, 0.0, road_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
-    name = "demo_truck_place"
-    truck_motion
-}
-let truck = truck_motion.query("#pickup_truck")
-let chassis = truck_motion.query("#pickup_chassis_frame")
-// Every other run is slower, to make jumping in easier.
-let patrol = vehicle_patrol(truck_motion, truck, {
-    name = "demo_truck" axis = "x" center = 0.0 drive_seconds = 4.0 slow_throttle = 0.4
-})
-patrol
-
 // Shoot the engine block (front of the truck) enough and it smokes, then
 // burns, then the truck is wrecked: it explodes and stops. Shot-out wheels
-// cost it traction. Twelve seconds after a wreck a repaired truck goes back
-// to its start.
+// cost it traction. Twelve seconds after a wreck a new, undamaged truck
+// replaces it at the start of the road, and Mitten moves to the new one.
 let wreck_events = T { name = "demo_truck_wreck_events" }
 wreck_events
 let wreck_delay = Animation.paused().length(24.0) {
@@ -151,13 +138,29 @@ let wreck_delay = Animation.paused().length(24.0) {
     Keyframe.at(24.0) { emit_data(wreck_events, "TruckRebuilt") }
 }
 wreck_events.attach(wreck_delay)
-on(wreck_events, "DataEvent", fn(event) {
-    if event != "TruckRebuilt" { return }
-    truck.repair_damage()
-    truck_motion.reset()
-    truck.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-})
-truck.set_on_wrecked(fn() { wreck_delay.play() })
+// The current truck's parts; Mitten's ride (chassis space) follows it.
+let fleet = { place = null motion = null truck = null chassis = null patrol = null }
+let truck_ride = { chassis = null seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] ground_y = -0.15 }
+fn spawn_truck() {
+    let motion = pickup_truck([0.55, 0.78, 0.90], null, true, { acceleration_drive = true vehicle_id = "demo_pickup" })
+    let place = T.position(-12.0, 0.0, road_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
+        name = "demo_truck_place"
+        motion
+    }
+    place
+    let truck = motion.query("#pickup_truck")
+    // Every other run is slower, to make jumping in easier.
+    let patrol = vehicle_patrol(motion, truck, {
+        name = "demo_truck" axis = "x" center = 0.0 drive_seconds = 4.0 slow_throttle = 0.4
+    })
+    patrol
+    truck.set_on_wrecked(fn() { wreck_delay.play() })
+    fleet.place = place fleet.motion = motion fleet.truck = truck fleet.patrol = patrol
+    fleet.chassis = motion.query("#pickup_chassis_frame")
+    truck_ride.chassis = fleet.chassis
+}
+spawn_truck()
+let chassis = fleet.chassis
 
 let sounds = arena_audio()
 sounds.root
@@ -203,7 +206,7 @@ let target = practice_target({
     position = [-0.33, 0.20, 0.30] yaw = 0.0 strafe = 0.0 seated = true
     // Shot down, she's thrown out beside the driver's door; once back up she
     // walks to the door (chasing the truck if it's moving) and gets back in.
-    vehicle = { chassis = chassis seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] }
+    vehicle = truck_ride
     health_view = local.health_view on_damage = sounds.damage
     on_down = fn() {
         kills.player = kills.player + 1
@@ -213,6 +216,18 @@ let target = practice_target({
     on_player_hit = fn(points) { player.damage(points, 1.0) }
 })
 chassis.attach(target.root)
+
+// The new truck takes over: Mitten moves to it (into its seat if she's
+// seated), and the wreck's smoke stops with it.
+on(wreck_events, "DataEvent", fn(event) {
+    if event != "TruckRebuilt" { return }
+    let old = { place = fleet.place truck = fleet.truck patrol = fleet.patrol }
+    spawn_truck()
+    target.set_vehicle_chassis(fleet.chassis)
+    old.truck.repair_damage()
+    old.patrol.remove_subtree()
+    old.place.remove_subtree()
+})
 
 fn weapon_options(id) {
     return { weapon_id = id opaque_bucket = "near" can_fire = can_fire
