@@ -1,8 +1,3 @@
-// World-space impact effect. Attach root, then play animation.
-export fn mini_explosion(position, beats_per_second) {
-    return sized_mini_explosion(position, beats_per_second, 1.0)
-}
-
 // The same effect uniformly scaled by `size` (1.0 is the impact size).
 export fn sized_mini_explosion(position, beats_per_second, size) {
     let emission = Emissive.on().intensity(18.0)
@@ -34,4 +29,10 @@ export fn sized_mini_explosion(position, beats_per_second, size) {
     }
     root.attach(clip)
     return { root = root animation = clip }
+}
+
+// World-space impact effect. Attach root, then play animation.
+// Defined after sized_mini_explosion, which it calls.
+export fn mini_explosion(position, beats_per_second) {
+    return sized_mini_explosion(position, beats_per_second, 1.0)
 }

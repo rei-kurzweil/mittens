@@ -83,6 +83,7 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
     let source = r#"
         import { practice_target } from "../assets/components/target_practice.mms"
         import { laser } from "../assets/components/laser.mms"
+        import { apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
         let target = practice_target({ prefix = "npc" avatar = "mitten" use_xr = false use_desktop = false
             position = [0.0, 0.0, -3.0] yaw = 0.0 strafe = 0.0 })
         target.root
@@ -94,7 +95,13 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
         let events = T { name = "practice_test_events" }
         events
         on(events, "DataEvent", fn(event) {
-            if event == "Pistol" { caster.launch({ pose = muzzle.world_trs() on_hit = target.pistol_hit }) }
+            // As ship_machine_pistol's impact: the hit effect, then the rules.
+            if event == "Pistol" {
+                caster.launch({ pose = muzzle.world_trs() on_hit = fn(hit) {
+                    apply_machine_pistol_impact(hit.hit_point, hit.damage)
+                    target.pistol_hit(hit)
+                } })
+            }
             if event == "Splash" { target.rocket_splash(target.center()) }
             if event == "OuterSplash" {
                 let c = target.center()
@@ -115,6 +122,7 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
     // The worn shield stands in front of the body and absorbs pistol hits.
     event(&mut scene, "Pistol");
     step(&mut scene, &clock, 12);
+    assert!(has_label(&scene, "mini_explosion"), "the pistol hit effect should play");
     event(&mut scene, "Report");
     step(&mut scene, &clock, 2);
     assert_eq!(report(&scene), "90");
