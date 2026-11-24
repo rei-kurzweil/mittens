@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, ComponentRef, ControllerHand, MountableComponent, QueryRootMode, RiderComponent, SerializeComponent, TransformComponent,
-    TransformOperatorComponent, XRHandComponent, resolve_component_ref,
+    AvatarControlComponent, ComponentRef, ControllerHand, MountableComponent, QueryRootMode,
+    RiderComponent, SerializeComponent, TransformComponent, TransformOperatorComponent,
+    XRHandComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::grabbable_system::ensure_generated_raycastable;
 use crate::engine::ecs::system::pointer_system::nearest_ancestor_transform;

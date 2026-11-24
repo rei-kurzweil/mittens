@@ -2,11 +2,9 @@ use crate::engine::ecs::component::{
     AmbientLightComponent, AmplitudeComponent, AnimationComponent, AnimationState,
     AnimationStepDirection, AudioBandPassFilterComponent, AudioInputComponent,
     AvatarControlComponent, BoneRestPoseComponent, ColorComponent, DirectionalLightComponent,
-    EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, PoseInputComponent, QueryRootMode, RayCastComponent, RiderComponent,
-    SliderComponent,
-    TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
-    TransitionComponent, VelocityComponent,
+    EmissiveComponent, InputComponent, InputXRGamepadComponent, PoseInputComponent, QueryRootMode,
+    RayCastComponent, RiderComponent, SliderComponent, TextComponent, ToggleComponent,
+    TransformComponent, TransformOperatorComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
