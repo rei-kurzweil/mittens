@@ -46,6 +46,14 @@ damage *means* (smoking, a dead wheel, a wrecked engine) is owned by the
 vehicle: a vehicle-level damage state that reads its parts' maps and keeps
 operability, rather than a separate operability component per part.
 
+## First version: damage only (decided 2026-11-24)
+
+Track integrity by damage received, not by removed volume. A part's
+integrity falls by the damage that lands on it (Destroyable surfaces already
+sum per-cell damage; uncuttable parts count hits from the same queue), and
+crossing a named threshold emits one event. Removed volume stays a later
+option for parts that need "how much is physically left".
+
 ## Two measures, one component
 
 1. **Hit integrity** for anything: an `Integrity` component (working name)
