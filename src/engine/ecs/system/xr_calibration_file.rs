@@ -1,5 +1,18 @@
 //! Explicit, synchronous persistence for the shared user floor calibration.
-use std::{fs, io::Write, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf, sync::OnceLock};
+
+static CONFIG_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+
+/// For hosts without a user config directory (the Android app, whose process
+/// has no usable HOME): the absolute directory that replaces the platform
+/// config base. Set once before scenes load; later calls are ignored.
+pub fn set_config_directory(directory: PathBuf) -> Result<(), String> {
+    if !directory.is_absolute() {
+        return Err(format!("config directory must be absolute: {}", directory.display()));
+    }
+    let _ = CONFIG_DIRECTORY.set(directory);
+    Ok(())
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +30,9 @@ pub(super) fn validate(meters: f64) -> Result<(), &'static str> {
 
 /// Shared across scenes; never depends on the process working directory.
 pub fn default_file() -> Result<PathBuf, String> {
+    if let Some(directory) = CONFIG_DIRECTORY.get() {
+        return Ok(directory.join("mittens/xr-calibration.json"));
+    }
     let env_path = |name| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())

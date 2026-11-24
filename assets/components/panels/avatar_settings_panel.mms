@@ -90,6 +90,9 @@ export fn avatar_settings_panel(options) {
         width_gu = 44.0
         unit_scale = 0.08
         title = "Humanoid settings"
+        // Optional custom material (the Android renderer draws custom
+        // definitions only); without one, info_panel uses its unlit default.
+        material = options["material"]
         toggle_icon_glow_intensity = 0.0
         content_factory = fn() { return avatar_settings_content(options) }
     })

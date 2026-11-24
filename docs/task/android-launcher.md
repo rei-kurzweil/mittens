@@ -65,6 +65,12 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
 - [ ] Without a pushed project (`adb shell rm -r .../files/project`), the
       launcher still starts and shows the push hint.
 
+- [ ] Tracking space: logcat shows `reference_spaces=[VIEW, LOCAL, STAGE] using=STAGE`.
+  Floors sit at your real floor and the launcher window near eye height.
+- [ ] Humanoid panel (dock, in the launcher and the first-person scene): the
+  floor correction slider moves the view; after release it is saved to
+  `project/.config/mittens/xr-calibration.json` and applies in the next scene.
+  Desired height changes Mitten's size live in the first-person scene.
 - [ ] First-person Mitten: launch `android/examples/mitten-first-person.mms`.
   Looking down shows the skinned body; controllers drive the arms (arm IK) and
   the left stick walks (walking IK). Eye/lash layers use alpha discard in

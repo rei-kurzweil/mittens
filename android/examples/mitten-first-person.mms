@@ -6,11 +6,19 @@ import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mm
 import { vroid_arm_ik_bend_plane_prototype } from "../../assets/components/arm_ik/vroid.mms"
 import { ambient_eye_saccades } from "../../assets/components/animations/ambient_eye_saccades.mms"
 import { mitten_model } from "../../assets/components/characters/mitten.mms"
+import { shell_ui_material } from "../../assets/components/mitten_droid/ui.mms"
+import { dock } from "../../assets/components/ui/dock.mms"
+import { avatar_settings_panel } from "../../assets/components/panels/avatar_settings_panel.mms"
 
 BGC.rgba(1.0, 0.80, 0.86, 1.0)
 AL.rgb(0.38, 0.31, 0.39)
 // The avatar's anime shading uses light facing only; keep one key light.
 T.position(23, 24, 50) { DL.color(1.0, 0.88, 0.80).intensity(1.4) }
+
+// STAGE space: y = 0 is the headset's calibrated floor. Apply the shared
+// floor correction saved from the Humanoid panel (here or in the launcher).
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
 
 let floor_material = anime_surface()
 let pointer_material = ui_unlit_material()
@@ -37,12 +45,12 @@ fn controller_pointer(label) {
     }
 }
 
-// The Android host supplies eye-level LOCAL head and controller poses. AVC
-// hangs the body below the head; its slide capsule settles the locomotion
-// root onto the floor once gravity is enabled.
+// The Android host supplies floor-relative STAGE head and controller poses,
+// like desktop. AVC hangs the body below the head; its slide capsule keeps the
+// locomotion root on the floor once gravity is enabled.
 let player_motion = Velocity {
     name = "mitten_fp_root_velocity"
-    T.position(0.0, 1.7, 1.0) {
+    T.position(0.0, 0.0, 1.0) {
         name = "mitten_fp_root"
         InputXR.on() {
             InputXRGamepad { hand("left") locomotion() speed(1.5) }
@@ -98,3 +106,25 @@ on(avatar_control, "DataEvent", fn(event) {
     if event == "CapsuleReady" { query("[name='mitten_fp_gravity']").set_enabled(true) }
 })
 if avatar_control.capsule_ready() { query("[name='mitten_fp_gravity']").set_enabled(true) }
+
+// Humanoid settings (desired avatar height, XR floor correction) from a dock
+// beside the spawn point.
+let dock_panels = T { name = "mitten_fp_dock_panels" shell_ui_material() }
+dock_panels
+T.position(0.9, 1.3, 0.3).rotation(0.0, -0.6, 0.0) {
+    dock({
+        root_name = "mitten_fp_dock"
+        mount = dock_panels
+        material = shell_ui_material()
+        groups = [[
+            { id = "humanoid" label = "Humanoid" root_name = "mitten_fp_humanoid_settings"
+                position = [1.3, 1.6, -0.5] rotation = [0.0, -0.6, 0.0]
+                build = fn() {
+                    return T.scale(0.65, 0.65, 0.65) {
+                        avatar_settings_panel({ root_name = "mitten_fp_humanoid_settings"
+                            material = shell_ui_material() calibration_file = xr_calibration_file })
+                    }
+                } },
+        ]]
+    })
+}

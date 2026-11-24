@@ -49,6 +49,11 @@ impl Launcher {
         crate::demo_assets::install_missing(&root, crate::demo_assets::LAUNCHER_FILES)?;
         let root = root.canonicalize().map_err(|e| format!("project root: {e}"))?;
         mittens_engine::engine::runtime_assets::set_root(&root)?;
+        // Shared XR floor calibration (XrSettings.floor.default_file) lives
+        // in the project folder: the app process has no usable HOME.
+        mittens_engine::engine::ecs::system::xr_settings_system::calibration_file::set_config_directory(
+            root.join(".config"),
+        )?;
         std::env::set_current_dir(&root).map_err(|e| format!("project working dir: {e}"))?;
         app_launch::set_enabled(true);
         log::info!("launcher project_root={}", root.display());

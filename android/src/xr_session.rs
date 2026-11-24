@@ -119,15 +119,22 @@ impl XrSession {
         let controllers = crate::xr_controllers::Controllers::new(instance, &session, report)?;
         #[cfg(feature = "mobile-renderer")]
         let eyes = crate::xr_eyes::NativeEyes::new(instance, &session, eye_capabilities, report);
-        report.line(format!(
-            "reference_spaces={:?}",
-            session
-                .enumerate_reference_spaces()
-                .api("xrEnumerateReferenceSpaces")?
-        ));
+        let spaces = session
+            .enumerate_reference_spaces()
+            .api("xrEnumerateReferenceSpaces")?;
+        // STAGE puts y = 0 on the headset's calibrated floor, matching the
+        // desktop engine (SteamVR STAGE), so scenes and avatars share one
+        // floor-level convention. LOCAL (origin at the starting eye position)
+        // is only a fallback for runtimes without a stage.
+        let kind = if spaces.contains(&xr::ReferenceSpaceType::STAGE) {
+            xr::ReferenceSpaceType::STAGE
+        } else {
+            xr::ReferenceSpaceType::LOCAL
+        };
+        report.line(format!("reference_spaces={spaces:?} using={kind:?}"));
         let space = session
-            .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
-            .api("xrCreateReferenceSpace(LOCAL)")?;
+            .create_reference_space(kind, xr::Posef::IDENTITY)
+            .api("xrCreateReferenceSpace")?;
         let formats = session
             .enumerate_swapchain_formats()
             .api("xrEnumerateSwapchainFormats")?;

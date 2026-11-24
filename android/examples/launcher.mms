@@ -9,13 +9,17 @@ import { anime_surface } from "../../assets/components/materials/anime_surface.m
 import { graphics_settings_panel } from "../../assets/components/panels/graphics_settings_panel.mms"
 import { dock } from "../../assets/components/ui/dock.mms"
 import { button } from "../../assets/components/button.mms"
+import { avatar_settings_panel } from "../../assets/components/panels/avatar_settings_panel.mms"
 
 BGC.rgba(1.0, 0.80, 0.86, 1.0)
 GraphicsSettings.foveation.quality("off")
 AL.rgb(0.38, 0.31, 0.39)
 T.position(23, 24, -50) { DL.color(1.0, 0.88, 0.80).intensity(1.4) }
-// The Android host uses eye-level LOCAL space: the floor sits below the eyes.
-T.position(0.0, -1.65, -1.5).scale(14.0, 0.1, 14.0) {
+// The Android host tracks in STAGE space, like desktop: y = 0 is the headset's
+// calibrated floor. The saved floor correction is shared with every scene.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+T.position(0.0, -0.05, -1.5).scale(14.0, 0.1, 14.0) {
     R.cube() { anime_surface() C.rgba(0.97, 0.91, 0.87, 1.0) }
 }
 
@@ -78,7 +82,7 @@ fn close_browser() { state.browser = null }
 // Browser-only shell: the selected path and Launch sit directly above FILES.
 let selection = Text { name = "launcher_selection" "" }
 state.selection_view = selection
-T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
+T.position(-0.92, 2.15, -2.6).scale(0.030, 0.030, 0.030) {
     shell("mittens / launcher", "Select an .mms file, then press Launch", T {
         launch refresh
         T { Style { margin_top(0.7) height(2) } selection }
@@ -107,17 +111,25 @@ on(refresh, "Click", fn(event) {
 // Settings panels open from the dock, beside the launcher window.
 let dock_panels = T { name = "launcher_dock_panels" shell_ui_material() }
 dock_panels
-T.position(1.5, 0.6, -1.9).rotation(0.0, -0.55, 0.0) {
+T.position(1.5, 2.2, -1.9).rotation(0.0, -0.55, 0.0) {
     dock({
         root_name = "launcher_dock"
         mount = dock_panels
         material = shell_ui_material()
         groups = [[
             { id = "graphics" label = "Graphics" root_name = "launcher_graphics_settings"
-                position = [1.2, 1.0, -2.4] rotation = [0.0, -0.45, 0.0]
+                position = [1.2, 2.6, -2.4] rotation = [0.0, -0.45, 0.0]
                 build = fn() {
                     return T.scale(0.65, 0.65, 0.65) {
                         graphics_settings_panel({ root_name = "launcher_graphics_settings" material = shell_ui_material() foveation_only = true })
+                    }
+                } },
+            { id = "humanoid" label = "Humanoid" root_name = "launcher_humanoid_settings"
+                position = [1.2, 1.9, -2.4] rotation = [0.0, -0.45, 0.0]
+                build = fn() {
+                    return T.scale(0.65, 0.65, 0.65) {
+                        avatar_settings_panel({ root_name = "launcher_humanoid_settings"
+                            material = shell_ui_material() calibration_file = xr_calibration_file })
                     }
                 } },
         ]]

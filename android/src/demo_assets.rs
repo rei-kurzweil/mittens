@@ -97,6 +97,8 @@ pub(crate) const LAUNCHER_FILES: &[(&str, &[u8])] = bundle![
     "assets/components/materials/ui_unlit.mms",
     "assets/components/materials/anime_surface.mms",
     "assets/components/panels/graphics_settings_panel.mms",
+    "assets/components/panels/avatar_settings_panel.mms",
+    "assets/components/panels/xr_settings_panel.mms",
     "assets/components/ui/info_panel.mms",
     "assets/components/ui/dock.mms",
     "assets/shaders/mitten-droid-ui.frag",
