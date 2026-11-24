@@ -3,10 +3,11 @@ use crate::engine::ecs::component::{
     AnimationStepDirection, AudioBandPassFilterComponent, AudioInputComponent,
     AvatarControlComponent, BoneRestPoseComponent, ColorComponent, DirectionalLightComponent,
     EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, PoseInputComponent, RayCastComponent, SliderComponent,
+    InputXRGamepadComponent, PoseInputComponent, QueryRootMode, RayCastComponent, RiderComponent,
+    SliderComponent,
     TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
     TransitionComponent, VelocityComponent,
-    VolumeNormalizationComponent,
+    VolumeNormalizationComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::engine::transform::TransformSpace;
@@ -20,6 +21,20 @@ fn arg_f32(args: &[Value], index: usize) -> Result<f32, String> {
         )),
         None => Err(format!("missing argument {index}")),
     }
+}
+
+/// The desktop `Input` or `InputXRGamepad` a Rider names as its walking input.
+fn rider_input(world: &World, rider: ComponentId) -> Option<ComponentId> {
+    let source = world
+        .get_component_by_id_as::<RiderComponent>(rider)?
+        .input
+        .clone()?;
+    resolve_component_ref(
+        world,
+        &source,
+        Some(rider),
+        QueryRootMode::ParentScope { levels_up: 1 },
+    )
 }
 
 /// Compatibility vocabulary used only by the legacy engine-owned evaluator.
@@ -119,6 +134,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             "enable" | "disable" | "set_stick_mode" | "set_flight_enabled" | "flight_enabled" | "flying"
         ))
         || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
+        || (matches!(component_type, "Rider" | "rider")
+            && matches!(method, "set_locomotion_enabled" | "locomotion_enabled"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
                 method,
@@ -630,6 +647,40 @@ pub(crate) fn invoke_component_method(
             } else {
                 input.is_flying()
             }))
+        }
+        ("Rider" | "rider", "set_locomotion_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err(format!("{method}(): expected one bool, got {args:?}"));
+            };
+            // A vehicle script owns this; the rider or its input may already
+            // be gone when a forced dismount runs MountEnded, so no-op then.
+            if let Some(input) = rider_input(world, id) {
+                if let Some(input) = world.get_component_by_id_as_mut::<InputComponent>(input) {
+                    input.translation_enabled = *enabled;
+                } else if let Some(input) =
+                    world.get_component_by_id_as_mut::<InputXRGamepadComponent>(input)
+                {
+                    input.locomotion = *enabled;
+                }
+            }
+            Ok(Value::Null)
+        }
+        ("Rider" | "rider", "locomotion_enabled") => {
+            if !args.is_empty() {
+                return Err(format!("{method}(): expected no arguments, got {args:?}"));
+            }
+            let input = rider_input(world, id);
+            Ok(Value::Bool(input.is_some_and(|input| {
+                world
+                    .get_component_by_id_as::<InputComponent>(input)
+                    .map(|input| input.translation_enabled)
+                    .or_else(|| {
+                        world
+                            .get_component_by_id_as::<InputXRGamepadComponent>(input)
+                            .map(|input| input.locomotion)
+                    })
+                    .unwrap_or(false)
+            })))
         }
         ("PoseInput" | "pose_input", "set_flying") => {
             let [Value::Bool(flying)] = args else {

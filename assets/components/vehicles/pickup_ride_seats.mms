@@ -1,3 +1,5 @@
+import { hold_rider_walking } from "./seat_rider_walking.mms"
+
 // Ride-only seats: the passenger side of the cab and a forward-facing bench
 // across the back of the bed. Mounting here never takes the driving controls.
 // Chassis space, like pickup_driving. Occupancy is not replicated; each peer's
@@ -35,6 +37,7 @@ fn ride_seat(prefix, entry_center, entry_half_extents, eye, exit, auto_zone) {
     let seat=T.position(eye[0],eye[1],eye[2]) { name=prefix+"_rider_eye_anchor" }
     let dismount=T.position(exit[0],exit[1],exit[2]) { name=prefix+"_dismount_anchor" }
     let mountable=ride_mountable(prefix, entry, seat, dismount, auto_zone)
+    hold_rider_walking(mountable)
     // Bind with let so the frames are built and callers can attach to them;
     // a component written inline in a table stays an unbuilt expression.
     let frames=T { name=prefix+"_seat" entry_frame entry seat dismount }

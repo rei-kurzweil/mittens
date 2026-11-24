@@ -9,6 +9,7 @@ import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { display_car_sliding_colliders } from "./display_car_sliding_colliders.mms"
 import { display_car_controls } from "./display_car_controls.mms"
 import { display_car_anime_material } from "../materials/display_car_anime.mms"
+import { hold_rider_walking } from "./seat_rider_walking.mms"
 
 export fn display_car(root_name, position, yaw, mount_anchor_name, extra_children) {
     let entry_zone_frame = T.position(0.0, 1.0, -1.4) {
@@ -28,6 +29,7 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
         .mount_anchor(mount_anchor)
         .dismount_anchor(dismount_anchor)
         .on_grip() {}
+    hold_rider_walking(mountable)
 
     let model = GLTF.new("assets/models/car.glb") {
         display_car_anime_material("near")

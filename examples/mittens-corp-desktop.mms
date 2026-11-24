@@ -125,7 +125,7 @@ let bisket_first_person_camera_slot = T.position(0.0, 0.08, 0.12).rotation(0.0, 
 // Desktop mouse/WASD moves the direct Input child. The camera follows mitten's
 // mapped head through the GLTFInitialized attachment above.
 ED.active() {
-    // The attachment system suspends desktop translation while mitten is
+    // The car's seat script turns off desktop translation while mitten is
     // mounted, but deliberately leaves mouse/arrow look live. The car wrapper
     // below consumes mounted W/A/S/D and Space input.
 

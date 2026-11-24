@@ -1,6 +1,10 @@
 # Collision contexts and vehicle carry
 
-Status: planned, 2026-11-24. Phase 1 (input out of `AttachmentSystem`) in progress.
+Status: planned, 2026-11-24. Phase 1 (input out of `AttachmentSystem`)
+implemented 2026-11-24, pending a build and headset check: the attachment no
+longer touches input, `Rider.set_locomotion_enabled` / `locomotion_enabled`
+exist in MMS, and `vehicles/seat_rider_walking.mms` (`hold_rider_walking`) is
+used by every current Mountable.
 
 Related: [separate mounting from movement authority](attachment-movement-authority-and-input-routing.md),
 [attachment valence and Grabbable unification](attachment-valence-and-grabbable-unification.md),

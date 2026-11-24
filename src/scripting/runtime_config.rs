@@ -945,6 +945,19 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("movement_root", any(1))
                         .builder_call("input", any(1))
                         .builder_call("enabled", booleans(1));
+                    // Vehicle scripts own whether a mounted rider can walk.
+                    host_method(
+                        component,
+                        canonical,
+                        "set_locomotion_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "locomotion_enabled",
+                        method(vec![], mms::ValueType::Bool),
+                    );
                 }
                 "Mountable" => {
                     component

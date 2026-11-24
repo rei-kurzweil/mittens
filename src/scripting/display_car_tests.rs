@@ -684,12 +684,14 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             assert_eq!(relationship.mountable, mountable_id);
             assert!(world.attachment_is_live(relationship.attachment));
             assert_eq!(world.component_count(), baseline + 2);
+            // The attachment leaves walking alone; the car's MountStarted
+            // script turns it off (not run here, see the seat walking test).
             if let Some(input) = world.get_component_by_id_as::<InputComponent>(input) {
-                assert!(!input.translation_enabled);
+                assert!(input.translation_enabled);
                 assert!(input.rotation_enabled);
             } else {
                 assert!(
-                    !world
+                    world
                         .get_component_by_id_as::<InputXRGamepadComponent>(input)
                         .unwrap()
                         .locomotion
@@ -758,4 +760,72 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             }
         }
     }
+}
+
+#[test]
+fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
+    use crate::engine::ecs::component::{InputXRGamepadComponent, MountableComponent};
+    let mut f = Fixture::new(
+        r#"
+        import {display_car} from "../assets/components/vehicles/display_car.mms"
+        display_car("test_car",[0,0,0],0,"test_mount",[])
+        T {
+            name = "test_rider_root"
+            InputXRGamepad.locomotion() { name = "test_rider_pad" }
+            Rider.anchor("#test_rider_root").movement_root("#test_rider_root").input("#test_rider_pad") {}
+        }
+    "#,
+    );
+    let pad = f.named("test_rider_pad");
+    let rider = f
+        .world
+        .all_components()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<crate::engine::ecs::component::RiderComponent>(id)
+                .is_some()
+        })
+        .unwrap();
+    let mountable = f
+        .world
+        .children_of(f.named("test_car"))
+        .iter()
+        .copied()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<MountableComponent>(id)
+                .is_some()
+        })
+        .unwrap();
+    let walking = |f: &Fixture| {
+        f.world
+            .get_component_by_id_as::<InputXRGamepadComponent>(pad)
+            .unwrap()
+            .locomotion
+    };
+    assert!(walking(&f));
+    for _ in 0..2 {
+        f.event(mountable, EventSignal::MountStarted { rider, mountable });
+        assert!(!walking(&f), "a seated rider cannot walk");
+        f.event(mountable, EventSignal::MountEnded { rider, mountable });
+        assert!(walking(&f), "dismounting restores walking");
+    }
+
+    // A rider whose walking was already off stays off after dismounting.
+    f.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(pad)
+        .unwrap()
+        .locomotion = false;
+    f.event(mountable, EventSignal::MountStarted { rider, mountable });
+    f.event(mountable, EventSignal::MountEnded { rider, mountable });
+    assert!(!walking(&f));
+
+    // Placeholder riders (no live Rider) are ignored without errors.
+    f.event(
+        mountable,
+        EventSignal::MountStarted {
+            rider: ComponentId::default(),
+            mountable,
+        },
+    );
 }

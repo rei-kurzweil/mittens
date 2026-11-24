@@ -9,6 +9,8 @@
 // named sweep-sensor zone/collidable pair is present for the next slice, but it
 // has no bound Velocity and no listener.
 
+import { hold_rider_walking } from "../vehicles/seat_rider_walking.mms"
+
 let floor_bottom = 0.12
 let floor_thickness = 0.16
 let floor_top = floor_bottom + floor_thickness
@@ -160,9 +162,11 @@ export fn passenger_mount(label, car, car_width, door_size) {
     }
     let seat = T.position(0.0, floor_top + 1.68, 0.0) { name = label + "_seat" }
     let exit = T.position(width / 2.0 + 0.70, 1.42, 0.0) { name = label + "_exit" }
+    let mountable = Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
+    hold_rider_walking(mountable)
     return T {
         name = label + "_passenger"
         car door entry seat exit
-        Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
+        mountable
     }
 }

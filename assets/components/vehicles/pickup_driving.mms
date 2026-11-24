@@ -1,3 +1,4 @@
+import { hold_rider_walking } from "./seat_rider_walking.mms"
 // Input and heading refreshes publish commands to existing native Velocity.
 // This removable asset registers no global callback or MMS pose integration.
 export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acceleration) {
@@ -60,6 +61,7 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acc
     }
     fn install_mountable() {
         let mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
+        hold_rider_walking(mountable)
         attachment.mountable=mountable
         on(mountable,"MountStarted",fn(event) {
             state.mounted=true
@@ -77,7 +79,7 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acc
     truck.set_remote_occupied=fn(occupied) {
         if occupied && attachment.mountable {
             // Removing the seat registration lets native attachment cleanup
-            // dismount a losing rider and restore their input.
+            // dismount a losing rider; its MountEnded restores their walking.
             if state.mounted {stop_driving()}
             attachment.mountable.remove_subtree()
             attachment.mountable=null
