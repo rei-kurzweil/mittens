@@ -10,7 +10,7 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
         InputXRComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
         PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
         SecondaryMotionComponent, SpringBoneComponent, SpringColliderComponent, TransformComponent,
-        XREyeTrackingComponent, XrAxisControl, XrButtonControl, ZoneComponent,
+        XREyeTrackingComponent, XrAxisControl, ZoneComponent,
     };
 
     let mut world = World::default();
@@ -485,7 +485,7 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
     );
     let origin = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("car_laser_origin"))
+        .find(|&id| world.component_label(id) == Some("car_rocket_origin"))
         .unwrap();
     let origin_translation = placement_output
         .intents
@@ -498,7 +498,7 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             } if *component_id == origin => Some(*translation),
             _ => None,
         })
-        .expect("model readiness should position the shared muzzle frame");
+        .expect("model readiness should position the rocket muzzle frame");
     assert!((origin_translation[2] - (model_bounds.min[2] - 0.10)).abs() < 1e-4);
     assert!(
         (origin_translation[1]
@@ -507,30 +507,28 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             < 1e-4
     );
 
-    for control in [XrButtonControl::RightGrip, XrButtonControl::RightTrigger] {
+    // The dashboard button starts one burst; a second press mid-burst is ignored.
+    let fire_button = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("car_rockets_fire_button"))
+        .unwrap();
+    let press = |rx: &mut RxWorld, world: &mut World| {
         rx.dispatch_event_handlers(
-            &mut world,
+            world,
             &Signal::event(
-                vehicle_controls,
-                EventSignal::XrButtonDown {
-                    source_component: vehicle_controls,
-                    hand: crate::engine::ecs::component::ControllerHand::Right,
-                    control,
-                    value: 1.0,
+                fire_button,
+                EventSignal::Click {
+                    raycaster: ComponentId::default(),
+                    renderable: fire_button,
+                    hit_point: [0.; 3],
+                    screen_pos_px: None,
                 },
             ),
         );
-    }
+    };
+    press(&mut rx, &mut world);
     let fire_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
     assert!(fire_output.errors.is_empty(), "{:?}", fire_output.errors);
-    assert!(fire_output.intents.iter().any(|intent| matches!(
-        intent,
-        IntentValue::SetAnimationState {
-            state: crate::engine::ecs::component::AnimationState::Playing,
-            ..
-        }
-    )));
-
     let active_clips: Vec<_> = fire_output
         .intents
         .iter()
@@ -542,11 +540,23 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             _ => None,
         })
         .collect();
-    assert_eq!(
-        active_clips.len(),
-        2,
-        "the weapon flash and independent beam each have their own clip"
-    );
+    let burst = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("car_rockets_burst"))
+        .unwrap();
+    assert_eq!(active_clips, vec![burst]);
+    press(&mut rx, &mut world);
+    let repeat_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(repeat_output.errors.is_empty(), "{:?}", repeat_output.errors);
+    assert!(repeat_output.intents.iter().all(|intent| !matches!(
+        intent,
+        IntentValue::SetAnimationState {
+            state: crate::engine::ecs::component::AnimationState::Playing,
+            ..
+        }
+    )));
+
+    // The burst's first keyframe launches one rocket, independent of the car.
     let mut animation = crate::engine::ecs::system::AnimationSystem::new();
     for &animation_id in &active_clips {
         animation.register_animation(&mut world, animation_id);
@@ -582,45 +592,15 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
     );
     let shot_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
     assert!(shot_output.errors.is_empty(), "{:?}", shot_output.errors);
-    let mut shot_intents = shot_output.intents;
-    shot_intents.extend(
-        rx.drain_ready_intents()
-            .into_iter()
-            .filter_map(|signal| signal.intent.map(|intent| intent.value)),
-    );
-    let named_effect = |name| {
-        world
-            .all_components()
-            .find(|&id| world.component_label(id) == Some(name))
-            .unwrap()
-    };
-    let flash = named_effect("car_laser_muzzle_flash");
-    let flight = named_effect("car_laser_flight");
-    let beam = named_effect("laser_beam_glow");
-    let flash_frame = named_effect("car_laser_muzzle_flash_0");
+    let flights: Vec<_> = world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("sta_rocket_flight"))
+        .collect();
+    assert_eq!(flights.len(), 1, "the first rocket leaves at the burst's start");
     assert_eq!(
-        world.parent_of(flash),
-        Some(origin),
-        "muzzle flash must stay attached to the car's weapon"
-    );
-    assert_eq!(
-        world.parent_of(flight),
+        world.parent_of(flights[0]),
         None,
-        "launched beam must be independent of the car"
-    );
-    assert!(fire_output.intents.iter().any(|intent|matches!(intent, IntentValue::SetTransformTrs {component_id,space:crate::engine::transform::TransformSpace::World,..} if *component_id==flight)));
-    assert!(shot_intents.iter().any(|intent|matches!(intent, IntentValue::UpdateTransform {component_id,scale,..} if *component_id==beam && *scale==[1.;3])));
-    assert!(shot_intents.iter().any(|intent|matches!(intent, IntentValue::UpdateTransform {component_id,scale,..} if *component_id==flash_frame && *scale==[0.90;3])));
-    let flash_rotation = world
-        .get_component_by_id_as::<TransformComponent>(flash)
-        .unwrap()
-        .transform
-        .rotation;
-    assert!(
-        flash_rotation[0].abs() < 1e-4
-            && (flash_rotation[1] - 1.).abs() < 1e-4
-            && flash_rotation[2].abs() < 1e-4
-            && flash_rotation[3].abs() < 1e-4
+        "launched rocket must be independent of the car"
     );
 
     rx.dispatch_event_handlers(
@@ -640,18 +620,7 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             EventSignal::FrameTick { dt_sec: 1.0 },
         ),
     );
-    rx.dispatch_event_handlers(
-        &mut world,
-        &Signal::event(
-            vehicle_controls,
-            EventSignal::XrButtonDown {
-                source_component: vehicle_controls,
-                hand: crate::engine::ecs::component::ControllerHand::Right,
-                control: XrButtonControl::RightTrigger,
-                value: 1.0,
-            },
-        ),
-    );
+    press(&mut rx, &mut world);
     let dismounted_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
     assert!(
         dismounted_output.errors.is_empty(),

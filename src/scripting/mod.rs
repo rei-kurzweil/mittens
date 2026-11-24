@@ -142,6 +142,8 @@ mod sakura_combat_tests;
 #[cfg(test)]
 mod target_practice_tests;
 #[cfg(test)]
+mod burst_rocket_tests;
+#[cfg(test)]
 mod sakura_environment_tests;
 
 #[cfg(test)]

@@ -1,28 +1,20 @@
-import { laser } from "../laser.mms"
-import { muzzle_flash } from "../muzzle-flash.mms"
-import { mini_explosion } from "../mini-explosion.mms"
+import { burst_rocket_weapon_controller, burst_rocket_fire_button } from "../weapons/burst_rocket_weapon_controller.mms"
 import { pickup_power_panel } from "./pickup_power_panel.mms"
 
 // Input and heading callbacks exist only while powered and occupied. Native
 // force/velocity/contact integration continues while off or dismounted.
+// Two nose muzzles fire a three-rocket burst from the dashboard button.
 export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let state = { powered=false mounted=seated==true user=null axis=[0,0]
-        w=false a=false s=false d=false grip=false }
+        w=false a=false s=false d=false }
     let bindings = { active=false handlers=[] }
-    let weapon = laser({ name="car_laser" beam_name="laser_beam_glow" length=40.0 beam_radius=0.014 })
-    let flash = muzzle_flash({ name="car_laser" size=0.90 })
-    let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav")
-    let origin = T { name="car_laser_origin" flash.root AudioOutput { sound } }
+    let left_muzzle = T { name="car_rocket_muzzle_left" }
+    let right_muzzle = T { name="car_rocket_muzzle_right" }
+    let origin = T { name="car_rocket_origin" left_muzzle right_muzzle }
     let model = body.query("#car_model")
-    fn hit_target(hit) {
-        Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
-        let impact = mini_explosion(hit.hit_point, 2.0)
-        impact.root
-        impact.animation.play()
-        let on_hit = hit.renderable.on_hit
-        if on_hit != null { on_hit(hit) }
-    }
     let placement={ready=false}
+    // Just ahead of the nose at 56% of its height, a third of the width
+    // out to each side, so rockets leave clear of the hull.
     fn place_muzzle() {
         if placement.ready {return true}
         let bounds = model.local_bounds()
@@ -30,17 +22,19 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         let low = bounds["min"] let high = bounds["max"]
         origin.update_transform([(low[0]+high[0])*0.5, low[1]+(high[1]-low[1])*0.56, low[2]-0.10],
             [0,0,0], [1,1,1])
+        let side = (high[0]-low[0])*0.30
+        left_muzzle.update_transform([-side,0,0], [0,0,0], [1,1,1])
+        right_muzzle.update_transform([side,0,0], [0,0,0], [1,1,1])
         placement.ready=true
         return true
     }
-    fn fire() {
-        if !state.powered || !state.mounted {return}
-        if !place_muzzle() {return}
-        sound.play() flash.play()
-        weapon.launch({ pose=origin.world_trs() source_tool=body source_user=state.user on_hit=hit_target })
-    }
+    let rockets = burst_rocket_weapon_controller({
+        name="car_rockets" muzzles=[left_muzzle, right_muzzle]
+        source_tool=body user=fn() { return state.user }
+        can_fire=fn() { return state.powered && state.mounted && place_muzzle() }
+    })
     fn reset_inputs() {
-        state.axis=[0,0] state.w=false state.a=false state.s=false state.d=false state.grip=false
+        state.axis=[0,0] state.w=false state.a=false state.s=false state.d=false
     }
     fn publish() {
         if !state.powered || !state.mounted { return }
@@ -69,7 +63,6 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         if input_mode=="desktop" {
             let down=on(world,"KeyDown",fn(event) {
                 if !state.powered || !state.mounted {return}
-                if event.code=="Space" {fire()}
                 if event.code=="KeyW" {state.w=true} if event.code=="KeyA" {state.a=true}
                 if event.code=="KeyS" {state.s=true} if event.code=="KeyD" {state.d=true}
                 publish()
@@ -86,20 +79,11 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
                 if !state.powered || !state.mounted {return}
                 if event.control=="LeftStick" {state.axis=event.value publish()}
             })
-            let down=on(input_source,"XrButtonDown",fn(event) {
-                if !state.powered || !state.mounted {return}
-                if event.control=="RightGrip" {state.grip=true}
-                if event.control=="RightTrigger" && state.grip {fire()}
-            })
-            let up=on(input_source,"XrButtonUp",fn(event) {
-                if !state.powered || !state.mounted {return}
-                if event.control=="RightGrip" {state.grip=false}
-            })
-            bindings.handlers=[axis,down,up]
+            bindings.handlers=[axis]
         }
         let frames=on(world,"FrameTick",fn(event) {publish()})
         if input_mode=="desktop" {bindings.handlers=[bindings.handlers[0],bindings.handlers[1],frames]}
-        else {bindings.handlers=[bindings.handlers[0],bindings.handlers[1],bindings.handlers[2],frames]}
+        else {bindings.handlers=[bindings.handlers[0],frames]}
     }
     // Place in the open cockpit view above the dashboard. The old truck-local
     // offset put this below the view and behind dashboard triangles.
@@ -107,6 +91,9 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         position=[0.30,4.20,-1.90] scale=1.5
     })
     let panel_mount=T { name="car_power_panel_mount" panel }
+    let fire_button=burst_rocket_fire_button("car_rockets", fn() { rockets.fire_burst() }, {
+        position=[-0.30,4.20,-1.90] scale=1.5
+    })
     body.powered=fn() {return state.powered}
     body.set_powered=fn(value) {
         state.powered=value==true
@@ -119,5 +106,5 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         state.mounted=false state.user=null reset_inputs() sync_controls()
     })
     sync_controls()
-    return T { name="car_driver_controls" origin panel_mount }
+    return T { name="car_driver_controls" origin rockets panel_mount fire_button }
 }
