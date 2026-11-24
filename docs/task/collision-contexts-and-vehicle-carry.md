@@ -148,8 +148,10 @@ Two separate questions, kept apart in this design:
 
 `Mountable.carry()` is a mount that:
 
-- keeps the rider's offset (no snap to an eye point) and follows position and
-  yaw by default (full follow as an option, for a vehicle that banks);
+- keeps the rider's offset (no snap to an eye point) and follows the deck's
+  position and full rotation, so a rider pitches and rolls with a tilting
+  deck and keeps its place on it; stepping off levels the rider, keeping
+  its heading;
 - leaves velocity and walking on, and converts velocity on the boundary:
   world minus vehicle becomes local on boarding, local plus vehicle becomes
   world on leaving, so a jump onto a moving deck lands softly and stepping off
@@ -158,9 +160,10 @@ Two separate questions, kept apart in this design:
   slightly larger one (no flicker at the edge), and has no occupant limit;
 - switches the rider's outbound context atomically with the connection.
 
-Gravity stays world-down when following yaw only. With full follow, decide
-whether "down" stays world-down inside the vehicle-relative velocity or tilts
-with the deck.
+Gravity stays world-down: on a tilted deck it has a component along the
+deck, which friction resists (a steep enough tilt slides riders, as it
+should). In XR a tilting deck tilts the view too; that is the intended
+feel for now, with an upright-only option possible later if it is too much.
 
 ## Control: vehicle scripts, not the attachment system
 
@@ -219,8 +222,10 @@ until phase 3 adds contexts there).
 **Phase 3: carry**. First slice implemented 2026-11-24, pending a build, as
 platform-style carry rather than re-parenting (`attachment_carry.rs`): each
 fixed step, after velocities integrate and before contacts, a carried root
-moves with its deck frame (translation of the point it stands on, yaw only)
-and its velocity turns with the deck. Nothing is re-parented, so velocity,
+moves with its deck frame (the point it stands on and the full rotation)
+and its velocity turns with the deck. While carried, a mover's shape is
+taken in the deck's coordinates, so a tilted capsule stays usable; the
+passthrough world query reuses that shape and ignores the tilt. Nothing is re-parented, so velocity,
 gravity, AVC, cameras and the body solver are untouched, and carried riders
 are not "mounted" (no contact skip, no seated posture). `Mountable.carry()`
 boards on `auto_mount_zone` and ends on leaving `entry_zone`;
@@ -228,7 +233,7 @@ boards on `auto_mount_zone` and ends on leaving `entry_zone`;
 subtracts and leaving adds the deck's velocity; the vehicle's own movers
 ignore its riders' zones. A carry needs a CollisionContext for its deck
 floor. Test: `vehicle_carry_tests.rs`. Remaining: lower-body floor support
-on context decks, and vehicles that pitch steeply (the rider stays upright).
+on context decks.
 11. `Mountable.carry()`: offset preserved, follow channels, no control
     hand-off, no occupant limit.
 12. Zone-driven boarding and leaving with hysteresis.

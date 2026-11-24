@@ -282,7 +282,11 @@ impl StaticContactSystem {
                 .and_then(|c| c.query_owner)
                 .filter(|id| world.get_component_record(*id).is_some())
                 .unwrap_or(target);
-            let Some((cached_center, shape)) = zone_world_shape(world, moving) else {
+            let spaces = self.spaces(world, target);
+            let home = spaces[0].expect("outbound space");
+            // A carried rider tilts with its deck; its shape is taken in the
+            // deck's coordinates, where it is still upright.
+            let Some((cached_center, shape)) = mover_shape(world, moving, &home) else {
                 continue;
             };
             // Several contact zones may drive one body. World matrices are
@@ -293,8 +297,6 @@ impl StaticContactSystem {
                 self.body_offsets.get(&target).copied().unwrap_or([0.0; 3])
             };
             let center = std::array::from_fn(|i| cached_center[i] + offset[i]);
-            let spaces = self.spaces(world, target);
-            let home = spaces[0].expect("outbound space");
             let carried = self.riders.get(&target).cloned();
             let carried = carried.as_deref();
             // The previous center was stored relative to the outbound space, so
@@ -708,6 +710,27 @@ pub(crate) fn movement_target(
     world
         .get_component_by_id_as::<TransformComponent>(target)
         .map(|_| target)
+}
+
+/// A mover's center (in world space) and shape, with the shape's frame taken
+/// in its outbound space. In the world this is `zone_world_shape`; in a
+/// context, a capsule upright relative to the deck stays usable while the
+/// deck pitches or rolls. A passthrough world query reuses that shape, which
+/// ignores the tilt for world obstacles.
+fn mover_shape(
+    world: &World,
+    id: ComponentId,
+    space: &Space,
+) -> Option<([f32; 3], crate::engine::ecs::component::CollisionShape)> {
+    if space.context.is_none() {
+        return zone_world_shape(world, id);
+    }
+    let zone = world.get_component_by_id_as::<ZoneComponent>(id)?;
+    let frame = zone_query::resolve_zone_frame(world, id, zone).ok()?;
+    let frame = TransformSystem::world_model(world, frame)?;
+    let local = crate::utils::math::mat4_mul(space.to_space, frame);
+    let (center, shape) = collision_geometry::axis_aligned_world_shape(zone.shape, local)?;
+    Some((space.point_to_world(center), shape))
 }
 
 fn zone_world_shape(

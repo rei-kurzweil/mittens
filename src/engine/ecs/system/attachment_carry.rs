@@ -2,9 +2,10 @@
 //! wings) follow it. A carry is not a seat: nothing is re-parented, walking,
 //! velocity and gravity stay the rider's own, and any number of riders can be
 //! aboard. Each fixed step, after velocities integrate and before contacts,
-//! a carried root moves with its deck's frame: the full translation of the
-//! point it stands on, and yaw only, so the rider stays upright. Its velocity
-//! turns with the deck, so walking stays deck-relative and the vehicle's own
+//! a carried root moves with its deck's frame: the point it stands on and the
+//! deck's full rotation, so a rider pitches and rolls with a tilting deck and
+//! keeps its place on it. Its velocity turns with the deck, so walking stays
+//! deck-relative and the vehicle's own
 //! acceleration, braking and turning never jostle it. In effect the rider's
 //! velocity is parented to the deck's: boarding subtracts the deck's velocity
 //! at the rider's position (its linear velocity plus its turning, w x r) and
@@ -128,10 +129,12 @@ impl AttachmentSystem {
                     .filter(|_| root == Some(carry.root) && !seated);
                 let Some(deck) = deck else {
                     self.end_carry(world, rider, carry, None, step_sec, emit);
+                    changed.push(carry.root);
                     continue;
                 };
                 let Some(position) = follow_deck(world, carry.root, deck) else {
                     self.end_carry(world, rider, carry, None, step_sec, emit);
+                    changed.push(carry.root);
                     continue;
                 };
                 changed.push(carry.root);
@@ -199,9 +202,17 @@ impl AttachmentSystem {
         step_sec: f32,
         emit: &mut dyn SignalEmitter,
     ) {
-        // Stepping off keeps the deck's speed where the rider left it.
+        // Stepping off keeps the deck's speed where the rider left it, and
+        // levels the rider: heading kept, the deck's pitch and roll dropped.
         if let Some((deck, position)) = leaving {
             add_world_velocity(world, carry.root, deck.velocity_at(position, step_sec));
+        }
+        if let Some(transform) =
+            world.get_component_by_id_as_mut::<TransformComponent>(carry.root)
+        {
+            let q = transform.transform.rotation;
+            transform.transform.rotation = quat_normalize([0.0, q[1], 0.0, q[3]]);
+            transform.transform.recompute_model();
         }
         self.carries.remove(&rider);
         self.carry_contacts.push(CarryContact {
@@ -244,25 +255,25 @@ fn deck_zone_holds(
         })
 }
 
-/// Move a root with its deck's last step (translation of the point it stands
-/// on, plus the deck's yaw), turn its velocity by the same yaw, and return its
-/// new world position.
+/// Move a root with its deck's last step (the point it stands on and the
+/// deck's full rotation), turn its velocity by the same rotation, and return
+/// its new world position. The root's parent frame is treated as unrotated,
+/// as a player's locomotion root is.
 fn follow_deck(world: &mut World, root: ComponentId, deck: DeckMotion) -> Option<[f32; 3]> {
     let step = mat4_mul(deck.now, mat4_inverse(deck.previous)?);
     let position = TransformSystem::world_position(world, root)?;
     let moved = mat4_mul_vec4(step, [position[0], position[1], position[2], 1.0]);
     let moved = [moved[0], moved[1], moved[2]];
-    let turn = mat_to_quat(step);
-    let yaw = quat_normalize([0.0, turn[1], 0.0, turn[3]]);
+    let turn = quat_normalize(mat_to_quat(step));
     let local = world_to_local(world, root, moved);
     let transform = world.get_component_by_id_as_mut::<TransformComponent>(root)?;
     transform.transform.translation = local;
-    transform.transform.rotation = quat_normalize(quat_mul(yaw, transform.transform.rotation));
+    transform.transform.rotation = quat_normalize(quat_mul(turn, transform.transform.rotation));
     transform.transform.recompute_model();
     if let Some(owner) = driving_velocity(world, root)
         && let Some(velocity) = world.get_component_by_id_as_mut::<VelocityComponent>(owner)
     {
-        let turned = quat_rotate_vec3(yaw, velocity.linear_local_mps);
+        let turned = quat_rotate_vec3(turn, velocity.linear_local_mps);
         let _ = velocity.set_linear_local(turned);
     }
     Some(moved)

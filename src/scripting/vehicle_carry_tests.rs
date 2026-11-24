@@ -1,5 +1,5 @@
-//! A rider standing on a moving deck follows it, collides with its
-//! CollisionContext, and leaves with the deck's speed.
+//! A rider standing on a moving deck follows it (tilting with it),
+//! collides with its CollisionContext, and leaves level, with the deck's speed.
 use super::rocket_motion_tests::{TestClock, advance};
 use crate::engine::Universe;
 use crate::engine::ecs::component::VelocityComponent;
@@ -68,6 +68,8 @@ fn a_rider_follows_a_moving_deck_and_leaves_with_its_speed() {
         events
         on(events, "DataEvent", fn(event) {
             if event == "Go" { platform_motion.translate([2.0, 0.0, 0.0]) }
+            if event == "Tilt" { platform_motion.rotate([0.2, 0.0, 0.0]) }
+            if event == "Level" { platform_motion.rotate([-0.2, 0.0, 0.0]) }
             if event == "Jump" { rider_velocity.translate([0.0, 3.0, 8.0]) }
         })
     "#;
@@ -98,6 +100,34 @@ fn a_rider_follows_a_moving_deck_and_leaves_with_its_speed() {
         "rider kept its spot: {carried:?} on {platform:?}"
     );
 
+    // The deck pitches about 11 degrees while moving: the rider keeps its
+    // spot in the deck's own coordinates and tilts with it.
+    event(&mut scene, "Tilt");
+    step(&mut scene, &clock, 120);
+    event(&mut scene, "Level");
+    step(&mut scene, &clock, 2);
+    let platform_world =
+        TransformSystem::world_model(&scene.world, named(&scene, "carry_test_platform")).unwrap();
+    let carried = position(&scene, "carry_test_rider");
+    let on_deck = crate::utils::math::mat4_mul_vec4(
+        crate::utils::math::mat4_inverse(platform_world).unwrap(),
+        [carried[0], carried[1], carried[2], 1.0],
+    );
+    assert!(
+        (on_deck[0] - 0.5).abs() < 0.1 && (on_deck[1] - 0.3).abs() < 0.05 && on_deck[2].abs() < 0.1,
+        "rider kept its spot on the tilted deck: {on_deck:?}"
+    );
+    let pitch = |label: &str| {
+        let model = TransformSystem::world_model(&scene.world, named(&scene, label)).unwrap();
+        model[1][2].atan2(model[1][1])
+    };
+    let deck_pitch = pitch("carry_test_platform");
+    assert!(deck_pitch.abs() > 0.15, "the deck tilted: {deck_pitch}");
+    assert!(
+        (pitch("carry_test_rider") - deck_pitch).abs() < 0.02,
+        "the rider tilts with it"
+    );
+
     // Jumping off the side ends the carry with the deck's speed kept.
     event(&mut scene, "Jump");
     step(&mut scene, &clock, 60);
@@ -108,4 +138,14 @@ fn a_rider_follows_a_moving_deck_and_leaves_with_its_speed() {
         .unwrap()
         .linear_local_mps;
     assert!((velocity[0] - 2.0).abs() < 0.2, "kept the deck's speed: {velocity:?}");
+    let rotation = scene
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(rider)
+        .unwrap()
+        .transform
+        .rotation;
+    assert!(
+        rotation[0].abs() < 1e-4 && rotation[2].abs() < 1e-4,
+        "stepping off levels the rider: {rotation:?}"
+    );
 }
