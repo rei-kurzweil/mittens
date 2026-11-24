@@ -234,7 +234,11 @@ pistol_rack("sakura_twilight_main_pistol_rack", 0, roof_x - 2.25, roof_height, -
 pistol_rack("sakura_twilight_row_pistol_rack", 3, row[1].x - 1.9, storey_height, row_z + 3.8)
 fn make_launcher(label, id) {
     let options = weapon_options(id)
-    options.on_explosion = combat_health.rocket_splash
+    options.on_explosion = fn(point) {
+        // Until rockets have their own explosion sound, use the damage cue.
+        arena_sounds.damage(1.0)
+        combat_health.rocket_splash(point)
+    }
     return shared_sta_launcher(label, options)
 }
 let launcher = make_launcher("rooftop_sta_launcher", "arena.sta.1")

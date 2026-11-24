@@ -4,6 +4,9 @@ import { mini_explosion } from "./mini-explosion.mms"
 import { ui_unlit_material } from "./materials/ui_unlit.mms"
 import { pistol_replication } from "./network/pistol_replication.mms"
 
+// Shot sounds play at 60% of the clips' level.
+let SHOT_GAIN = 0.6
+
 // Semi: one shot. Burst: three fast shots. Auto: slower, continuous firing.
 export fn laser_machine_pistol(options) {
     let label = "laser_machine_pistol"
@@ -21,9 +24,9 @@ export fn laser_machine_pistol(options) {
         if device_state.ammunition < 0 { device_state.ammunition = 0 }
     }
     let flash = muzzle_flash({ name = label size = options.flash_size beats_per_second = beats_per_second })
-    let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" }
-    let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav") { name = label + "_sound" }
-    let auto_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_B.0.wav") { name = label + "_auto_sound" }
+    let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" AudioGain.new(SHOT_GAIN) }
+    let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav") { name = label + "_sound" AudioGain.new(SHOT_GAIN) }
+    let auto_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_B.0.wav") { name = label + "_auto_sound" AudioGain.new(SHOT_GAIN) }
     let completion = T { name = label + "_completion" }
     let first_aim = T { name = label + "_first_aim" }
     let second_aim = T.rotation(0.009, 0.012, 0.0) { name = label + "_second_aim" }
