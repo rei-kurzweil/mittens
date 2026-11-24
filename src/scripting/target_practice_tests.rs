@@ -1,6 +1,7 @@
 use super::rocket_motion_tests::{TestClock, Uploader, advance};
 use crate::engine::Universe;
 use crate::engine::ecs::component::{GLTFComponent, TextComponent, TransformComponent};
+use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use std::sync::Arc;
 
@@ -196,6 +197,17 @@ fn target_practice_scene_loads_and_the_npc_strafes() {
     let before = x(&scene);
     step(&mut scene, &clock, 120);
     assert!((x(&scene) - before).abs() > 0.1, "{before} -> {}", x(&scene));
+
+    // Under gravity it stands on the grass (top at y = 0) and its head is at
+    // eye height. A fall through the floor, or a respawn from the catcher
+    // below, puts it elsewhere, and its strafe stays within 2.5 m of x = 0.
+    step(&mut scene, &clock, 240);
+    let world = |label: &str| TransformSystem::world_position(&scene.world, named(&scene, label)).unwrap();
+    let (root, head) = (world("npc_root"), world("npc_head_target"));
+    assert!(
+        root[1].abs() < 0.3 && (1.2..2.0).contains(&head[1]) && root[0].abs() < 3.0,
+        "NPC root {root:?}, head {head:?}"
+    );
 }
 
 #[test]
