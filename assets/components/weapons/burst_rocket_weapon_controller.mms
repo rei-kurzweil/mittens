@@ -83,15 +83,21 @@ export fn burst_rocket_weapon_controller(options) {
     if options["cooldown_seconds"] != null { cooldown = options.cooldown_seconds }
     let step = interval * bps
     let ready_at = step * (count - 1) + cooldown * bps
-    // The ready keyframe sits inside the clip, not on its end, so the burst
-    // always frees the trigger again.
+    // Keyframes run once ahead for audio and again at visual time, so they
+    // only emit events; the handler below does the work once. The ready
+    // keyframe sits inside the clip, not on its end.
+    let events = T { name = name + "_burst_events" }
     let burst = Animation.paused().length(ready_at + 0.1) {
         name = name + "_burst"
         for index in range(count) {
-            Keyframe.at(index * step) { launch_next() }
+            Keyframe.at(index * step) { emit_data(events, "BurstRocket") }
         }
-        Keyframe.at(ready_at) { state.busy = false }
+        Keyframe.at(ready_at) { emit_data(events, "BurstReady") }
     }
+    on(events, "DataEvent", fn(event) {
+        if event == "BurstRocket" && state.shot < count { launch_next() }
+        if event == "BurstReady" { state.busy = false }
+    })
 
     fn fire_burst() {
         if state.busy { return false }
@@ -103,7 +109,7 @@ export fn burst_rocket_weapon_controller(options) {
         return true
     }
 
-    let root = T { name = name + "_controller" burst }
+    let root = T { name = name + "_controller" events burst }
     root.fire_burst = fire_burst
     root.busy = fn() { return state.busy }
     return root

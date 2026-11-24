@@ -16,6 +16,37 @@ let LASER_SHOT_SECONDS = 0.12
 let LASER_GAIN = 0.3
 let ELEVATION_MIN_DEG = -10.0
 let ELEVATION_MAX_DEG = 35.0
+// The reticle: a white glowing wireframe cube on the guns' pivot, this far
+// ahead of the nose along the aim.
+let RETICLE_DISTANCE = 12.0
+let RETICLE_HALF = 0.35
+let RETICLE_EDGE = 0.025
+
+// Twelve thin glowing edges of a cube with half-size h.
+fn wireframe_cube(h, edge) {
+    return T {
+        Raycastable.disabled()
+        Selectable.off()
+        for axis in [0, 1, 2] {
+            for a in [-1.0, 1.0] {
+                for b in [-1.0, 1.0] {
+                    let position = [0.0, 0.0, 0.0]
+                    let size = [edge, edge, edge]
+                    if axis == 0 { position = [0.0, a * h, b * h] size = [2.0 * h, edge, edge] }
+                    if axis == 1 { position = [a * h, 0.0, b * h] size = [edge, 2.0 * h, edge] }
+                    if axis == 2 { position = [a * h, b * h, 0.0] size = [edge, edge, 2.0 * h] }
+                    T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
+                        R.cube() {
+                            C.rgba(1.0, 1.0, 1.0, 1.0)
+                            Material(MaterialDefinition.toon())
+                            EM.on().intensity(1.5)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let state = { powered=false mounted=seated==true user=null axis=[0,0]
         w=false a=false s=false d=false grip=false }
@@ -25,7 +56,12 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") {
         name="car_laser_sound" AudioGain.new(LASER_GAIN)
     }
-    let laser_origin = T { name="car_laser_origin" flash.root AudioOutput { sound } }
+    // The guns' pivot: the slider turns it, carrying the aim reticle ahead.
+    let reticle = T.position(0.0, 0.0, -RETICLE_DISTANCE) {
+        name="car_aim_reticle"
+        wireframe_cube(RETICLE_HALF, RETICLE_EDGE)
+    }
+    let laser_origin = T { name="car_laser_origin" flash.root AudioOutput { sound } reticle }
     fn hit_target(hit) {
         Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
         let impact = mini_explosion(hit.hit_point, 2.0)
@@ -72,15 +108,20 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     })
     fn laser_shot() {
         if !state.powered || !state.mounted {return}
-        sound.play() flash.play()
+        flash.play()
         weapon.launch({ pose=laser_origin.world_trs() source_tool=body source_user=state.user on_hit=hit_target })
     }
-    // Two shots per trigger pull.
+    // Two shots per trigger pull. Keyframes play the sound (audio time) and
+    // emit the shots, which fire once at visual time, like the pistol.
+    let laser_events = T { name="car_laser_events" }
     let laser_pair = Animation.paused().length(LASER_SHOT_SECONDS * 2.0 + 0.1) {
         name="car_laser_pair"
-        Keyframe.at(0.0) { laser_shot() }
-        Keyframe.at(LASER_SHOT_SECONDS * 2.0) { laser_shot() }
+        Keyframe.at(0.0) { sound.play() }
+        Keyframe.at(0.0) { emit_data(laser_events, "LaserShot") }
+        Keyframe.at(LASER_SHOT_SECONDS * 2.0) { sound.play() }
+        Keyframe.at(LASER_SHOT_SECONDS * 2.0) { emit_data(laser_events, "LaserShot") }
     }
+    on(laser_events, "DataEvent", fn(event) { if event == "LaserShot" { laser_shot() } })
     fn fire() {
         if !state.powered || !state.mounted {return}
         if !place_muzzle() {return}
@@ -159,7 +200,7 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let fire_button=burst_rocket_fire_button("car_rockets", fn() { rockets.fire_burst() }, {
         position=[-0.30,4.20,-1.90] scale=1.5
     })
-    // Gun elevation, between the two buttons and a little lower.
+    // Gun elevation.
     let elevation_track = T.scale(0.30, 0.02, 0.05) {
         R.cube() { C.rgba(0.20,0.28,0.25,1.0) Raycastable.enabled() { interaction_priority(180.0) } }
     }
@@ -174,12 +215,13 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         elevation_readout.set_text("AIM " + event.value)
         aim_guns()
     })
-    let elevation_panel=T.position(0.0,3.95,-1.85).scale(1.5,1.5,1.5) {
+    // Off to the right of the dashboard, vertical: up raises the guns.
+    let elevation_panel=T.position(0.95,4.05,-1.75).scale(1.5,1.5,1.5) {
         name="car_gun_elevation"
         Grabbable.off()
         Selectable.off()
-        elevation_slider
-        T.position(-0.07,0.05,0.0).scale(0.015,0.015,0.015) { elevation_readout }
+        T.rotation(0.0,0.0,Math.pi/2.0) { elevation_slider }
+        T.position(0.04,-0.20,0.0).scale(0.015,0.015,0.015) { elevation_readout }
     }
     body.powered=fn() {return state.powered}
     body.set_powered=fn(value) {
@@ -197,5 +239,5 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         state.mounted=false state.user=null reset_inputs() sync_controls()
     })
     sync_controls()
-    return T { name="car_driver_controls" laser_origin laser_pair origin rockets panel_mount fire_button elevation_panel }
+    return T { name="car_driver_controls" laser_origin laser_events laser_pair origin rockets panel_mount fire_button elevation_panel }
 }

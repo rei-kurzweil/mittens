@@ -52,15 +52,22 @@ export fn vehicle_patrol(vehicle, frame, options) {
         vehicle.set_control_input({ throttle = 0.0 steering = 0.0 brake = true })
     }
 
+    // Keyframes run once ahead for audio and again at visual time, so they
+    // only emit events; the handler drives the vehicle once per step.
+    let events = T { name = options.name + "_patrol_events" }
     let leg = (drive + brake) * bps
     let cycle = Animation.looping().length(2.0 * leg) {
         name = options.name + "_patrol"
-        Keyframe.at(0.0) { go() }
-        Keyframe.at(drive * bps) { stop() }
-        Keyframe.at(leg) { go() }
-        Keyframe.at(leg + drive * bps) { stop() }
+        Keyframe.at(0.0) { emit_data(events, "PatrolGo") }
+        Keyframe.at(drive * bps) { emit_data(events, "PatrolStop") }
+        Keyframe.at(leg) { emit_data(events, "PatrolGo") }
+        Keyframe.at(leg + drive * bps) { emit_data(events, "PatrolStop") }
     }
-    let root = T { name = options.name + "_patrol_root" cycle }
+    on(events, "DataEvent", fn(event) {
+        if event == "PatrolGo" { go() }
+        if event == "PatrolStop" { stop() }
+    })
+    let root = T { name = options.name + "_patrol_root" events cycle }
     root.set_running = fn(value) {
         state.running = value == true
         if !state.running { vehicle.set_control_input({ brake = true }) }

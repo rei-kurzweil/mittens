@@ -33,7 +33,8 @@ import { display_car_desktop, display_car_xr } from "../assets/components/vehicl
 // way the target practice NPC does. Climb the crates to the bridge over the
 // road and jump down into the truck bed as it passes: you ride along,
 // walking around the bed while it drives, turns and tilts, and step off with
-// its speed. Items released inside the bed ride along too. Or take the mech
+// its speed. Items released inside the bed ride along too. The ground,
+// road, crates and bridge are all destroyable. Or take the mech
 // parked left of the spawn: grip it to climb in, press POWER, drive it to the
 // road and shoot the truck with its nose laser (trigger) or its three-rocket
 // burst (the red dashboard button).
@@ -67,18 +68,22 @@ lighting.world
 let pink = [0.88, 0.65, 0.73]
 let crate = [0.80, 0.62, 0.44]
 
+// Everything built from boxes is destroyable: crates, the bridge, the stands.
 fn box(position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
-        R.cube() { hardware C.rgba(color[0], color[1], color[2], 1.0) }
+        Destroyable.threshold(3.0)
+        R.cube() { Raycastable.enabled() hardware C.rgba(color[0], color[1], color[2], 1.0) }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
     }
 }
 
-// A 96 x 32 m grass range of 8 m tiles (solid, so the truck never drops
-// into a hole), with a road along it at z = -12.
+// A 96 x 30 m range of destroyable 8 m tiles: grass, with a 6 m road of
+// tiles across it at z = -12. A truck that drops through a hole is caught
+// and put back like anyone else.
 let grass = ship_environment_material("far")
 fn grass_tile(x, z) {
     return T.position(x, -0.15, z).scale(8.0, 0.3, 8.0) {
+        Destroyable.threshold(3.0)
         R.cube() {
             Raycastable.enabled()
             grass C.rgba(1.0, 1.0, 1.0, 1.0)
@@ -88,14 +93,19 @@ fn grass_tile(x, z) {
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
     }
 }
-for ix in range(12) {
-    for iz in range(4) { grass_tile(-44.0 + ix * 8.0, -19.0 + iz * 8.0) }
-}
 let road_z = -12.0
-T.position(0.0, 0.004, road_z).rotation(-Math.pi / 2.0, 0.0, 0.0).scale(96.0, 6.0, 1.0) {
+for ix in range(12) {
+    for z in [-19.0, -5.0, 3.0] { grass_tile(-44.0 + ix * 8.0, z) }
+}
+T {
     name = "demo_road"
-    Raycastable.disabled()
-    R.plane() { hardware C.rgba(0.22, 0.21, 0.27, 1.0) }
+    for ix in range(12) {
+        T.position(-44.0 + ix * 8.0, -0.15, road_z).scale(8.0, 0.3, 6.0) {
+            Destroyable.threshold(3.0)
+            R.cube() { Raycastable.enabled() hardware C.rgba(0.22, 0.21, 0.27, 1.0) }
+            Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+        }
+    }
 }
 fall_respawn("demo_fall_respawn", { min_x = -47.0 max_x = 47.0 min_z = -22.0 max_z = 8.0 }, 0.0, 5.0)
 destroyable_ceramic_box([0.0, 1.0, -22.5], [96.0, 2.0, 0.4], [0.94, 0.96, 0.97], pool_tile_material("middle"))

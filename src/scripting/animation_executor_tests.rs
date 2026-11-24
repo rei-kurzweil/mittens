@@ -590,6 +590,11 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
         &mut rx,
         Some(&mut animation_executor),
     );
+    // The keyframe emits a BurstRocket event; its handler launches the rocket.
+    queue.drain_into_rx(&mut rx);
+    for signal in rx.drain_ready_events() {
+        rx.dispatch_event_handlers(&mut world, &signal);
+    }
     let shot_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
     assert!(shot_output.errors.is_empty(), "{:?}", shot_output.errors);
     let flights: Vec<_> = world
