@@ -7,6 +7,7 @@ import { vroid_humanoid_bone_map } from "../humanoid_bone_maps/vroid.mms"
 import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
+import { pose as bisket_relaxed_pose } from "../poses/bisket/000-relaxed.pose.mms"
 import { miku_twintails, miku_hand_colliders, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
 import { detach_avatar_equipment, install_vroid_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
@@ -40,11 +41,15 @@ let model_uris = {
     succubus = "assets/models/local/succubus.glb"
 }
 
-fn make_mitten(model_name, track_hands, bucket, target_meters) {
-    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket) target_height = target_meters })
+// relaxed: start untracked arms in the relaxed rest pose (Mitten only).
+fn make_mitten(model_name, track_hands, bucket, target_meters, relaxed) {
+    let children = null
+    if relaxed { children = [bisket_relaxed_pose()] }
+    return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket)
+        target_height = target_meters children = children })
 }
 
-fn make_lumae(model_name, track_hands, bucket, target_meters) {
+fn make_lumae(model_name, track_hands, bucket, target_meters, relaxed) {
     let model = GLTF.new(model_uris.lumae) {
         if target_meters != null { target_height(target_meters) }
         name = model_name
@@ -60,7 +65,7 @@ fn make_lumae(model_name, track_hands, bucket, target_meters) {
     return { model = model eye_height = 1.644 sole_offset = [0.0, 0.0687271, 0.1129329] }
 }
 
-fn make_miku(model_name, track_hands, bucket, target_meters) {
+fn make_miku(model_name, track_hands, bucket, target_meters, relaxed) {
     let model = GLTF.new(model_uris.miku) {
         if target_meters != null { target_height(target_meters) } else { default_height_if_outside(1.0, 3.0, MIKU_HEIGHT) }
         name = model_name
@@ -76,7 +81,7 @@ fn make_miku(model_name, track_hands, bucket, target_meters) {
     return { model = model eye_height = MIKU_EYE_GLB * MIKU_ASSUMED_SCALE import_scale = MIKU_ASSUMED_SCALE }
 }
 
-fn make_succubus(model_name, track_hands, bucket, target_meters) {
+fn make_succubus(model_name, track_hands, bucket, target_meters, relaxed) {
     let model = GLTF.new(model_uris.succubus) {
         if target_meters != null { target_height(target_meters) }
         name = model_name
@@ -103,11 +108,13 @@ export fn make_rooftop_player(options) {
     // A non-local player that walks under its own gravity and slides against
     // the world (an NPC), instead of following a peer's replicated root.
     let physical = !local_player && options["physics"] == true
+    // Mitten bodies start in the relaxed rest pose (arms down) when set.
+    let relaxed_pose = options["relaxed_pose"] == true
     let view = { third_person = local_player && options["third_person"] == true }
     let initial_factory = factories[options.avatar]
     // Optional opaque depth bucket for every body this player wears.
     let bucket = options["opaque_bucket"]
-    let initial = initial_factory(prefix + "_model", track_hands, bucket, null)
+    let initial = initial_factory(prefix + "_model", track_hands, bucket, null, relaxed_pose)
     let left = T.position(-0.35, -0.35, -0.25) {
         name = prefix + "_left_target"
         if track_hands {
@@ -354,7 +361,7 @@ export fn make_rooftop_player(options) {
             rig_scale = target_meters / TINY_BODY_METERS
         }
         let factory = factories[choice]
-        let spec = factory(prefix + "_model", track_hands, bucket, model_meters)
+        let spec = factory(prefix + "_model", track_hands, bucket, model_meters, relaxed_pose)
         let probe = spec.model
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         spec.staging = staging

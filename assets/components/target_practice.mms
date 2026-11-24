@@ -2,7 +2,6 @@ import { make_rooftop_player } from "./characters/rooftop_player.mms"
 import { energy_shield } from "./energy_sheild.mms"
 import { player_death } from "./player_death.mms"
 import { ship_machine_pistol } from "./weapons/ship_machine_pistol.mms"
-import { pose as bisket_relaxed_pose } from "./poses/bisket/000-relaxed.pose.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -86,12 +85,9 @@ export fn practice_target(options) {
         prefix = options.prefix local_player = false avatar = options.avatar
         use_xr = options.use_xr use_desktop = options.use_desktop opaque_bucket = "near"
         show_health = true health_view = options["health_view"] shield_mount = true
-        physics = physics
+        // The untracked left arm rests in the relaxed pose.
+        physics = physics relaxed_pose = true
     })
-    if options.avatar == "mitten" {
-        // A relaxed rest pose; the untracked left arm stays in it.
-        npc.model.attach(bisket_relaxed_pose())
-    }
     let strafe = 2.5
     if options["strafe"] != null { strafe = options.strafe }
     let speed = 1.2
@@ -142,7 +138,8 @@ export fn practice_target(options) {
 
     // Turning: the head target carries the whole rig (body, both arms and
     // the pistol). One update_transform per aim; the Transition tweens it.
-    npc.head.attach(Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() })
+    let turn = Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() }
+    npc.head.attach(turn)
     fn face(yaw) {
         // Take the short way round from the current heading.
         if yaw - state.yaw > Math.pi { yaw = yaw - 2.0 * Math.pi }
@@ -163,7 +160,8 @@ export fn practice_target(options) {
         })
         // The player can't take it out of the NPC's hand.
         for grab in gun.grip.query_all("grabbable") { grab.remove_subtree() }
-        npc.right.attach(T.position(0.0, 0.0, -0.105) { gun })
+        let gun_mount = T.position(0.0, 0.0, -0.105) { name = options.prefix + "_gun_mount" gun }
+        npc.right.attach(gun_mount)
     }
     fn heading_to_player() {
         let h = npc.head.world_trs().translation
