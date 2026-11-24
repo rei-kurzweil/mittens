@@ -78,6 +78,7 @@ fn external_frame_drives_avatar_free_controller_and_locomotion() {
             ],
             head_pose_rotation: Some([0.0, 0.0, 0.0, 1.0]),
         },
+        eyes: None,
     };
     for _ in 0..120 {
         universe.systems.xr.set_external_frame(Some(frame));
@@ -205,6 +206,7 @@ fn explicit_left_stick_ignores_right_stick() {
             ],
             head_pose_rotation: None,
         },
+        eyes: None,
     };
     let id = universe
         .world
