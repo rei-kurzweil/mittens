@@ -75,6 +75,7 @@ let refresh = launcher_button("Refresh", "launcher_refresh", 12)
 fn show_selection() {
     let selected = FileBrowser.selection(state.browser)
     state.selected = selected.path
+    print("launcher: selected '" + selected.path + "'")
     if state.selection_view != null { state.selection_view.set_text(selected.path) }
 }
 fn build_browser() {
@@ -97,6 +98,7 @@ T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
 }
 
 fn launch_selection() {
+    print("launcher: launch requested for '" + state.selected + "'")
     if state.selected == "" {
         status.set_text("Select an .mms file first.")
         return
@@ -105,6 +107,17 @@ fn launch_selection() {
     App.launch(state.selected)
 }
 on(launch, "Click", fn(event) { launch_selection() })
+// A plain 3D Launch button left of the window, outside the 2D layout (the
+// layout's Launch box has not appeared on the headset).
+let launch_box = R.cube() { name = "launcher_launch_3d" pointer_material C.rgba(0.98, 0.75, 0.26, 1.0) Raycastable.enabled() }
+T.position(-1.35, 0.0, -2.3).rotation(0.0, 0.35, 0.0) {
+    T.scale(0.42, 0.16, 0.04) { launch_box }
+    T.position(-0.15, -0.03, 0.03) {
+        Text { font_size(0.085) "LAUNCH" pointer_material C.rgba(0.13, 0.085, 0.015, 1.0) }
+    }
+}
+on(launch_box, "Click", fn(event) { launch_selection() })
+
 // A on the right controller launches the selected file.
 on_global("XrButtonDown", fn(event) {
     if event.control == "ButtonA" { launch_selection() }
