@@ -1740,7 +1740,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             })
             .collect();
         self.scopes.push(HashMap::new());
-        let result = (|| {
+        let result: Result<Flow, EvalError> = (|| {
             for (statement, runs) in body.statements.iter().zip(runs) {
                 if !runs {
                     continue;
