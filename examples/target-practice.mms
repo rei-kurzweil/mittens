@@ -21,6 +21,7 @@ import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_p
 import { ship_environment_material } from "../assets/components/materials/ship_anime_materials.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
+import { fall_respawn } from "../assets/components/fall_respawn.mms"
 
 // Target practice: Sakura Twilight Simpler's weapons and combat rules
 // against a Mitten NPC, with no multiplayer. The NPC strafes left and right
@@ -85,6 +86,8 @@ fn grass_tile(x, z) {
 for ix in range(8) {
     for iz in range(8) { grass_tile(-14.0 + ix * 4.0, -22.0 + iz * 4.0) }
 }
+// Anyone who falls through a hole (or off the edge) lands back on the grass.
+fall_respawn("practice_fall_respawn", { min_x = -15.0 max_x = 15.0 min_z = -23.0 max_z = 7.0 }, 0.0, 5.0)
 destroyable_ceramic_box([0.0, 1.0, -12.0], [14.0, 2.0, 0.4], [0.94, 0.96, 0.97], pool_tile_material("middle"))
 for x in [-4.5, 4.5] { box([x, 0.4, -5.0], [1.2, 0.8, 0.6], pink) }
 
