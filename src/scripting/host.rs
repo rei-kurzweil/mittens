@@ -8,6 +8,8 @@ pub(super) mod xr_settings_api;
 pub(super) mod avatar_settings_api;
 #[path = "input_settings_api.rs"]
 pub(super) mod input_settings_api;
+#[path = "physics_api.rs"]
+pub(super) mod physics_api;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -281,6 +283,9 @@ impl mms::Host for MittensHost<'_, '_> {
                         super::runtime_config::MittensApi::InputXrStickModeGet
                         | super::runtime_config::MittensApi::InputXrStickModeSet,
                     ) => self.invoke_input_settings(&args),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::PhysicsRaycast,
+                    ) => self.invoke_physics_raycast(&args),
                     super::runtime_config::MittensBinding::Api(api)
                         if xr_settings_api::supports(*api) =>
                     {

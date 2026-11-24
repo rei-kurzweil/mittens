@@ -37,6 +37,9 @@ let AUTO_POINTS = 0.5
 // laser_machine_pistol's auto cadence.
 let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
 let SHOT_HALF_WIDTH = 0.35
+// A solid this close in front of the player's chest is the player's own
+// body or hitbox, not cover.
+let COVER_MARGIN = 0.6
 // The NPC's right hand, in head-target space: it pivots on the shoulder,
 // a little short of full reach so the elbow bends down, and yaws a quarter
 // turn so the palm faces left around the pistol grip.
@@ -315,7 +318,12 @@ export fn practice_target(options) {
         let along = d[0] * f[0] + d[1] * f[1] + d[2] * f[2]
         let off = [d[0] - f[0] * along, d[1] - f[1] * along, d[2] - f[2] * along]
         let miss = Math.sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2])
-        return along > 0.0 && miss < SHOT_HALF_WIDTH
+        if along <= 0.0 || miss >= SHOT_HALF_WIDTH { return false }
+        // Cover blocks it: anything solid on the line well before the player
+        // (crates, the ammo cabinet, a vehicle's hull or cockpit walls).
+        let distance = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+        let hit = Physics.raycast(s, d, distance)
+        return hit == null || hit.distance > distance - COVER_MARGIN
     }
 
     // Combat activity state machine, timed by animations (no per-frame
