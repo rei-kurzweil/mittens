@@ -1,5 +1,9 @@
 //! Explicit, synchronous persistence for the shared user floor calibration.
-use std::{fs, io::Write, path::PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +21,11 @@ pub(super) fn validate(meters: f64) -> Result<(), &'static str> {
 
 /// Shared across scenes; never depends on the process working directory.
 pub fn default_file() -> Result<PathBuf, String> {
+    config_file("xr-calibration.json")
+}
+
+/// A file in the user's mittens config directory.
+pub fn config_file(name: &str) -> Result<PathBuf, String> {
     let env_path = |name| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
@@ -33,7 +42,7 @@ pub fn default_file() -> Result<PathBuf, String> {
     let base = base
         .filter(|p| p.is_absolute())
         .ok_or("cannot determine an absolute user config directory")?;
-    Ok(base.join("mittens/xr-calibration.json"))
+    Ok(base.join("mittens").join(name))
 }
 
 /// Local filenames or local file URLs only. URL parsing handles percent escapes.
@@ -85,24 +94,30 @@ pub fn load(file: &str) -> Result<f64, String> {
 pub fn save(file: &str, meters: f64) -> Result<(), String> {
     validate(meters)?;
     let path = local_path(file)?;
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-    let temporary = parent.join(format!(".xr-calibration-{}.tmp", uuid::Uuid::new_v4()));
     let data = serde_json::to_vec_pretty(&Calibration {
         version: 1,
         floor_correction_meters: meters,
     })
     .map_err(|e| e.to_string())?;
+    write_atomically(&path, &data, "xr-calibration")
+}
+
+/// Sync a temporary file beside `path`, then rename it over `path`. An
+/// unsuccessful write leaves the previous destination intact.
+pub fn write_atomically(path: &Path, data: &[u8], label: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    let temporary = parent.join(format!(".{label}-{}.tmp", uuid::Uuid::new_v4()));
     let mut output = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|e| format!("cannot create calibration temporary file: {e}"))?;
+        .map_err(|e| format!("cannot create {label} temporary file: {e}"))?;
     let result = (|| {
-        output.write_all(&data)?;
+        output.write_all(data)?;
         output.write_all(b"\n")?;
         output.sync_all()?;
         drop(output);

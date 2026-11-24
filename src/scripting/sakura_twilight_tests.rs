@@ -566,18 +566,39 @@ fn sakura_twilight_loads_its_city_without_the_train() {
 
     check_mirror_controls(&mut scene);
     drop(scene);
-    let mut xr = Universe::new(World::default());
-    xr.systems.xr.set_external_frame(Some(Default::default()));
-    xr.load_mms_source_at_path(&original, path).unwrap();
-    for _ in 0..3 {
-        xr.update(1.0 / 60.0, &Default::default());
-    }
+    // The XR scene loads and saves input settings; keep them out of the
+    // user's config directory.
+    let settings_dir =
+        std::env::temp_dir().join(format!("mittens-sakura-input-{}", uuid::Uuid::new_v4()));
+    let settings_file = settings_dir.join("input-settings.json");
+    let xr_source = original.replace(
+        "InputSettings.xr.default_file()",
+        &format!("{:?}", settings_file.to_str().unwrap()),
+    );
+    let load_xr = || {
+        let mut xr = Universe::new(World::default());
+        xr.systems.xr.set_external_frame(Some(Default::default()));
+        xr.load_mms_source_at_path(&xr_source, path).unwrap();
+        for _ in 0..3 {
+            xr.update(1.0 / 60.0, &Default::default());
+        }
+        xr
+    };
+    let mut xr = load_xr();
     open_dock_items(&mut xr, &["humanoid"]);
     named(&xr, "sakura_twilight_avatar_settings");
     named(&xr, "avatar_height_slider");
     named(&xr, "xr_floor_correction_slider");
     check_avatar_camera_setting(&mut xr, true);
     check_input_settings(&mut xr);
+    // The choice was saved and the next session starts with it.
+    drop(xr);
+    let mut xr = load_xr();
+    assert_eq!(
+        xr.systems.input_settings.xr_stick_mode(),
+        crate::engine::ecs::component::XrStickMode::Turn
+    );
+    let _ = std::fs::remove_dir_all(&settings_dir);
     assert!(xr.world.all_components().any(|id| {
         xr.world
             .get_component_by_id_as::<CameraXRComponent>(id)

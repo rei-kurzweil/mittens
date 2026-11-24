@@ -12,7 +12,7 @@ fn radio_text(mode, selected) {
     return "( ) " + mode.label
 }
 
-fn stick_mode_button(mode) {
+fn stick_mode_button(mode, settings_file) {
     let button = T {
         name = "input_stick_mode_" + mode.id
         Grabbable.off()
@@ -27,7 +27,10 @@ fn stick_mode_button(mode) {
             Text { name = "input_stick_mode_" + mode.id + "_label" radio_text(mode, InputSettings.xr.stick_mode()) }
         }
     }
-    on(button, "Click", fn(event) { InputSettings.xr.set_stick_mode(mode.id) })
+    on(button, "Click", fn(event) {
+        if settings_file { InputSettings.xr.set_stick_mode(mode.id, { file = settings_file }) }
+        else { InputSettings.xr.set_stick_mode(mode.id) }
+    })
     return button
 }
 
@@ -39,7 +42,7 @@ export fn sync_input_settings(panel) {
     }
 }
 
-fn input_settings_content() {
+fn input_settings_content(settings_file) {
     return T {
         name = "input_settings_content"
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) }
@@ -60,7 +63,7 @@ fn input_settings_content() {
                 }
                 T.position(0.0, 0.0, 0.03) { Text { "Sticks" } }
             }
-            for mode in STICK_MODES { stick_mode_button(mode) }
+            for mode in STICK_MODES { stick_mode_button(mode, settings_file) }
         }
         T {
             Style { display("block") width(100%) font_size(0.55) }
@@ -69,7 +72,8 @@ fn input_settings_content() {
     }
 }
 
-// Required: root_name. The caller owns world placement.
+// Required: root_name. Optional: settings_file, which saves each choice
+// (see InputSettings.xr.default_file()). The caller owns world placement.
 export fn input_settings_panel(options) {
     let panel = info_panel({
         root_name = options.root_name
@@ -77,7 +81,7 @@ export fn input_settings_panel(options) {
         unit_scale = 0.08
         title = "Input settings"
         toggle_icon_glow_intensity = 0.0
-        content_factory = fn() { return input_settings_content() }
+        content_factory = fn() { return input_settings_content(options["settings_file"]) }
     })
     let root = panel.query("#" + options.root_name)
     let selection_guard = Selectable.off()

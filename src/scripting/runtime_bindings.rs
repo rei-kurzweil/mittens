@@ -64,6 +64,7 @@ pub enum MittensApi {
     AvatarHeightSet,
     InputXrStickModeGet,
     InputXrStickModeSet,
+    InputXrSettingsDefaultFile,
     FileReadText,
     FileListDir,
     BrowserLocal,

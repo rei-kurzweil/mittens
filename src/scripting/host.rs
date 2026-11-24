@@ -238,9 +238,10 @@ impl mms::Host for MittensHost<'_, '_> {
                         | super::runtime_config::MittensApi::AvatarHeightSet,
                     ) => self.invoke_avatar_settings(&args),
                     super::runtime_config::MittensBinding::Api(
-                        super::runtime_config::MittensApi::InputXrStickModeGet
-                        | super::runtime_config::MittensApi::InputXrStickModeSet,
-                    ) => self.invoke_input_settings(&args),
+                        api @ (super::runtime_config::MittensApi::InputXrStickModeGet
+                        | super::runtime_config::MittensApi::InputXrStickModeSet
+                        | super::runtime_config::MittensApi::InputXrSettingsDefaultFile),
+                    ) => self.invoke_input_settings(*api, &args),
                     super::runtime_config::MittensBinding::Api(api)
                         if xr_settings_api::supports(*api) =>
                     {
