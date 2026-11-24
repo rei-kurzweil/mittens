@@ -274,6 +274,11 @@ if use_desktop && !use_xr {
 } else { local.locomotion }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
+let input_settings_file = null
+if use_xr {
+    input_settings_file = InputSettings.xr.default_file()
+    InputSettings.xr.set_stick_mode(InputSettings.xr.stick_mode({ file = input_settings_file }))
+}
 let xr_calibration_file = null
 if use_xr {
     xr_calibration_file = XrSettings.floor.default_file()
@@ -310,7 +315,7 @@ let dock_items = {
         build = fn() { return mirror_panel({ name = "sakura_twilight_mirror" width = 3.0 height = 1.4 quality = 1024 }) } }
     input = { id = "input" label = "Input" root_name = "sakura_twilight_input_settings"
         position = [roof_x + spawn_x + 1.2, roof_height + 2.3, -2.2]
-        build = fn() { return input_settings_panel({ root_name = "sakura_twilight_input_settings" }) } }
+        build = fn() { return input_settings_panel({ root_name = "sakura_twilight_input_settings" settings_file = input_settings_file }) } }
     humanoid = { id = "humanoid" label = "Humanoid" root_name = "sakura_twilight_avatar_settings"
         position = [roof_x + spawn_x - 4.65, roof_height + 2.3, -2.2]
         build = fn() {

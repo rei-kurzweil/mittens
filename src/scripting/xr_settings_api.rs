@@ -36,7 +36,7 @@ pub(crate) fn supports(api: MittensApi) -> bool {
     )
 }
 
-fn file_option(args: &[mms::TransportValue]) -> Result<Option<&str>, &'static str> {
+pub(super) fn file_option(args: &[mms::TransportValue]) -> Result<Option<&str>, &'static str> {
     use mms::TransportValue as V;
     match args {
         [] => Ok(None),
