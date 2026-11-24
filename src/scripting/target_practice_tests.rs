@@ -90,6 +90,14 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
         on(events, "DataEvent", fn(event) {
             if event == "Pistol" { caster.launch({ pose = muzzle.world_trs() on_hit = target.pistol_hit }) }
             if event == "Splash" { target.rocket_splash(target.center()) }
+            if event == "OuterSplash" {
+                let c = target.center()
+                target.rocket_splash([c[0] + 2.0, c[1], c[2]])
+            }
+            if event == "FarSplash" {
+                let c = target.center()
+                target.rocket_splash([c[0] + 3.5, c[1], c[2]])
+            }
             if event == "Report" { report.set_text("" + target.shield_integrity()) }
         })
     "#;
@@ -106,12 +114,21 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
     assert_eq!(report(&scene), "90");
     assert!((fill(&scene, "npc_health_overhead") - 1.0).abs() < 1e-5);
 
-    // Splash takes half the health and 50 shield.
+    // Beyond 3 m nothing happens; the outer ring takes a third of the
+    // health damage and 33 shield.
+    event(&mut scene, "FarSplash");
+    event(&mut scene, "OuterSplash");
+    event(&mut scene, "Report");
+    step(&mut scene, &clock, 2);
+    assert!((fill(&scene, "npc_health_overhead") - 5.0 / 6.0).abs() < 1e-4);
+    assert_eq!(report(&scene), "57");
+
+    // Up close, splash takes half the health and 50 shield.
     event(&mut scene, "Splash");
     event(&mut scene, "Report");
     step(&mut scene, &clock, 2);
-    assert!((fill(&scene, "npc_health_overhead") - 0.5).abs() < 1e-5);
-    assert_eq!(report(&scene), "40");
+    assert!((fill(&scene, "npc_health_overhead") - 1.0 / 3.0).abs() < 1e-4);
+    assert_eq!(report(&scene), "7");
 
     // A second splash takes the rest; the NPC drops its shield.
     event(&mut scene, "Splash");
