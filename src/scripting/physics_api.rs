@@ -1,14 +1,15 @@
 //! `Physics.raycast(origin, direction, max_distance)`: the nearest solid
 //! collision zone along a ray, for line-of-sight checks in scripts (an NPC's
 //! shot blocked by cover). Returns `{ distance, point }` or null. Tests every
-//! enabled, non-sensor collidable's zone in its own frame (boxes; spheres;
-//! capsules as their box), ignoring zones the ray starts inside, so a shooter's
+//! enabled, non-sensor collidable's zone in its own frame (triangle meshes of
+//! imported and cut parts; boxes; spheres; capsules as their box), ignoring
+//! zones the ray starts inside (meshes: surfaces behind it), so a shooter's
 //! own body never blocks its shot. One query walks the collidables once; call
 //! it per shot, not per frame.
 use super::MittensHost;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{CollidableComponent, CollidableMode, CollisionShape, ZoneComponent};
-use crate::engine::ecs::system::{TransformSystem, zone_query};
+use crate::engine::ecs::system::{TransformSystem, triangle_collision, zone_query};
 use crate::scripting::runtime_config::{MittensApi, MittensBinding};
 use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
 use meow_meow_script as mms;
@@ -59,13 +60,19 @@ pub(crate) fn raycast(world: &World, origin: [f32; 3], direction: [f32; 3], max:
         let (o, d) = ([o[0], o[1], o[2]], [d[0], d[1], d[2]]);
         // World distance and local ray parameter agree: the local direction
         // is the world unit direction mapped linearly.
-        let entry = match zone.shape {
-            CollisionShape::Sphere { radius } => ray_sphere(o, d, radius),
-            CollisionShape::Cube { half_extents } => ray_box(o, d, half_extents),
-            CollisionShape::CapsuleY {
-                radius,
-                half_segment,
-            } => ray_box(o, d, [radius, radius + half_segment, radius]),
+        // Imported and cut parts carry their triangle mesh: a door panel's
+        // window stays open, where its bounding box would not.
+        let entry = if let Some(mesh) = triangle_collision::on(world, zone_id) {
+            mesh.ray(o, d).filter(|t| *t > 1e-4)
+        } else {
+            match zone.shape {
+                CollisionShape::Sphere { radius } => ray_sphere(o, d, radius),
+                CollisionShape::Cube { half_extents } => ray_box(o, d, half_extents),
+                CollisionShape::CapsuleY {
+                    radius,
+                    half_segment,
+                } => ray_box(o, d, [radius, radius + half_segment, radius]),
+            }
         };
         if let Some(t) = entry.filter(|t| *t <= max)
             && best.is_none_or(|b| t < b)
