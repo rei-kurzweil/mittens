@@ -154,13 +154,13 @@ pub(super) fn try_init_or_route_capsule(
     {
         return;
     }
-    let world_scale = if xr.is_some() {
-        let Some(scale) = uniform_world_scale(world, model_root_id) else {
-            return;
-        };
-        scale
-    } else {
-        1.0
+    // Bounds are measured in the model root's space; a scaled rig (a tiny
+    // player) scales its capsule with it. Desktop keeps the unscaled capsule
+    // under a non-uniform scale, as before.
+    let world_scale = match (xr.is_some(), uniform_world_scale(world, model_root_id)) {
+        (_, Some(scale)) => scale,
+        (true, None) => return,
+        (false, None) => 1.0,
     };
 
     let measured_bounds =
@@ -198,9 +198,9 @@ pub(super) fn try_init_or_route_capsule(
             };
             ("fallback_avatar_height", bounds, inferred)
         };
-    let inferred = if xr.is_some() {
-        // STAGE's floor-relative origin is the pre-tracking frame's Y. Geometry
-        // supplies a stable rest-pose offset; never calibrate from live head Y.
+    // STAGE's floor-relative origin is the pre-tracking frame's Y. Geometry
+    // supplies a stable rest-pose offset; never calibrate from live head Y.
+    let inferred = if world_scale != 1.0 {
         let scaled = crate::engine::graphics::bounds::Aabb {
             min: inference_bounds.min.map(|value| value * world_scale),
             max: inference_bounds.max.map(|value| value * world_scale),
@@ -461,7 +461,9 @@ pub(super) fn fallback_avatar_height(
         .get_component_by_id_as::<TransformComponent>(bone)?
         .transform
         .matrix_world[3][1];
-    Some((bone_y - root_y).abs())
+    // World distance back to model-root units; the caller applies the scale.
+    let scale = uniform_world_scale(world, model_root_id).unwrap_or(1.0);
+    Some((bone_y - root_y).abs() / scale)
 }
 
 pub(super) fn ancestor_input_xr_is_ready(world: &World, start: ComponentId) -> bool {

@@ -227,7 +227,8 @@ export fn make_rooftop_player(options) {
     let shield_frame = null
     if options["shield_mount"] == true {
         shield_mount = T.position(0.0, -0.62, 0.0) { name = prefix + "_shield_mount" }
-        shield_frame = TOP.fork_trs().drop("rotation").drop("scale") { shield_mount }
+        // Upright, but at the rig's scale so a tiny player's shield fits them.
+        shield_frame = TOP.fork_trs().drop("rotation") { shield_mount }
         head.attach(shield_frame)
     }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }

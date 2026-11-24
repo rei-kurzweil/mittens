@@ -13,8 +13,8 @@ export fn hud(name, position, content) {
             SpringBone.new(name + "_spring")
                 .allow_stretch(true).world_collision(false).avatar_collision(false) {
                 name = name + "_spring"
-                SpringJoint.new(anchor).stiffness(10.0).drag_force(0.65).gravity(0.0, [0.0, -1.0, 0.0])
-                SpringJoint.new(display).stiffness(10.0).drag_force(0.65).gravity(0.0, [0.0, -1.0, 0.0])
+                SpringJoint.new(anchor).stiffness(4.0).drag_force(0.65).gravity(0.0, [0.0, -1.0, 0.0])
+                SpringJoint.new(display).stiffness(4.0).drag_force(0.65).gravity(0.0, [0.0, -1.0, 0.0])
             }
         }
     }

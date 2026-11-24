@@ -838,6 +838,59 @@ fn generated_capsule_uses_height_once_and_routes_desktop_movement() {
 }
 
 #[test]
+fn generated_desktop_capsule_follows_a_scaled_rig() {
+    let mut world = World::default();
+    let assets = RenderAssets::new();
+    let driven = world.add_component(TransformComponent::new());
+    let avc = world.add_component(AvatarControlComponent::new());
+    let model = world.add_component(TransformComponent::new());
+    // A tiny player's rig scale reaches the model root's world matrix.
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(model)
+        .unwrap()
+        .transform
+        .matrix_world = TransformComponent::new().with_scale(0.5, 0.5, 0.5).transform.model;
+    let tall_mesh = world.add_component(
+        TransformComponent::new()
+            .with_position(0.0, 0.5, 0.0)
+            .with_scale(1.0, 3.0, 1.0),
+    );
+    let renderable = world.add_component(RenderableComponent::cube());
+    attach(&mut world, driven, avc);
+    attach(&mut world, avc, model);
+    attach(&mut world, model, tall_mesh);
+    attach(&mut world, tall_mesh, renderable);
+
+    let mut queue = CommandQueue::new();
+    try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+
+    let state = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .unwrap();
+    let capsule_t = state.capsule_transform_id.unwrap();
+    let zone = world.parent_of(state.capsule_collidable_id.unwrap()).unwrap();
+    // Model-space bounds span y = -1..2; at half scale that is -0.5..1.0.
+    let CollisionShape::CapsuleY {
+        radius,
+        half_segment,
+    } = world
+        .get_component_by_id_as::<ZoneComponent>(zone)
+        .unwrap()
+        .shape
+    else {
+        panic!("expected an upright capsule")
+    };
+    assert!((radius - 0.28).abs() < 1e-5, "{radius}");
+    assert!((half_segment - 0.47).abs() < 1e-5, "{half_segment}");
+    let center = world
+        .get_component_by_id_as::<TransformComponent>(capsule_t)
+        .unwrap()
+        .transform
+        .translation;
+    assert!((center[1] - 0.25).abs() < 1e-5, "{center:?}");
+}
+
+#[test]
 fn disabled_and_delayed_fallback_behave_deterministically() {
     let assets = RenderAssets::new();
     let mut queue = CommandQueue::new();

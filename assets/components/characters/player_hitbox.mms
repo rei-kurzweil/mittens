@@ -7,7 +7,8 @@ export fn player_hitbox(name) {
     }
     let proxy = R.cube() { Opacity.opacity(0.0).multiple_layers() Raycastable.enabled() }
     proxy.player_hit_zone = zone
-    let root = TOP.fork_trs().extract_yaw().drop("scale") {
+    // Keeps the rig's scale, so a tiny player's hitbox shrinks with them.
+    let root = TOP.fork_trs().extract_yaw() {
         T.position(0.0, -0.38, 0.0) {
             Selectable.off()
             zone
