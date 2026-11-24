@@ -42,6 +42,7 @@ impl EyeView {
                 self.initial_view_from_stage = None;
                 tracked_frame
             };
+        let z_far = view_far(camera, &world_from_stage);
         Some(
             views
                 .iter()
@@ -52,11 +53,40 @@ impl EyeView {
                     );
                     CameraData {
                         view: OpenXRSystem::invert_affine_transform(&world_from_eye),
-                        proj: OpenXRSystem::proj_from_fov_rh_zo(v.fov, camera.z_near, camera.z_far),
+                        proj: OpenXRSystem::proj_from_fov_rh_zo(v.fov, camera.z_near, z_far),
                         transform: OpenXRSystem::transform_from_matrix_world(world_from_eye),
                     }
                 })
                 .collect(),
         )
+    }
+}
+
+/// A scaled rig (a tiny player) scales view space with it. Far is a world
+/// distance, so it reaches as far into the world at any scale; near stays in
+/// view space so it stays close to a shrunken viewer.
+fn view_far(camera: &CameraXRComponent, world_from_stage: &[[f32; 4]; 4]) -> f32 {
+    let column = world_from_stage[1];
+    let rig_scale = (column[0] * column[0] + column[1] * column[1] + column[2] * column[2]).sqrt();
+    if !rig_scale.is_finite() || rig_scale <= 0.0 {
+        return camera.z_far;
+    }
+    (camera.z_far / rig_scale).max(camera.z_near * 2.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::TransformComponent;
+
+    #[test]
+    fn far_plane_is_a_world_distance_under_a_scaled_rig() {
+        let camera = CameraXRComponent::new(true);
+        let rig = |s: f32| TransformComponent::new().with_scale(s, s, s).transform.model;
+        assert_eq!(view_far(&camera, &rig(1.0)), camera.z_far);
+        // A rig at a tenth of the size sees the same 100 m of world.
+        assert!((view_far(&camera, &rig(0.1)) - camera.z_far / 0.1).abs() < 1e-2);
+        // A degenerate rig keeps the authored far plane.
+        assert_eq!(view_far(&camera, &rig(0.0)), camera.z_far);
     }
 }

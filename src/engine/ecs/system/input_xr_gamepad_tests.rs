@@ -455,3 +455,19 @@ fn turn_stick_mode_moves_on_the_left_stick_and_turns_on_the_right() {
     assert_eq!(rotation(&strafe), [0., 0., 0., 1.]);
     assert!((strafe.position()[0] - 0.14).abs() < 1e-5);
 }
+
+#[test]
+fn stick_locomotion_keeps_its_pace_in_body_lengths_on_a_scaled_rig() {
+    let mut f = Fixture::new(false);
+    let target = f
+        .world
+        .get_component_by_id_as_mut::<TransformComponent>(f.target)
+        .unwrap();
+    target.transform.scale = [0.1; 3];
+    target.transform.recompute_model();
+    f.propagate();
+    f.xr.hands[0].thumbstick = Some([1., 0.]);
+    f.tick(0.1, false);
+    // 1.4 m/s for 0.1 s at a tenth of the size.
+    assert!((f.position()[0] - 0.014).abs() < 1e-5, "{:?}", f.position());
+}

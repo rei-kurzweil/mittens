@@ -19,6 +19,10 @@ let MIKU_HEIGHT = 1.7
 let MIKU_EYE_GLB = 1.59 / 0.09
 // Before the GLB loads (a player starting as Miku) assume that old scale.
 let MIKU_ASSUMED_SCALE = 0.09
+// Below this height the body stays this tall and the whole rig scales down
+// instead, shrinking eye spacing, head motion and hands with it. The scale is
+// 1 at the boundary, so heights move smoothly into tiny mode.
+let TINY_BODY_METERS = 0.5
 
 fn vroid_face() {
     return MorphTargetMap.new()
@@ -267,6 +271,11 @@ export fn make_rooftop_player(options) {
         return true
     }
 
+    // The cameras, hands, capsule and stick locomotion follow the root's scale.
+    fn apply_rig_scale(scale) {
+        let pose = root.trs()
+        root.trs({ translation = pose.translation rotation_quat_xyzw = pose.rotation_quat_xyzw scale = [scale, scale, scale] })
+    }
     fn cancel_avatar_load() {
         if state.pending {
             state.pending.staging.remove_subtree()
@@ -287,8 +296,14 @@ export fn make_rooftop_player(options) {
         if !factories[choice] { report("Avatar unavailable", false) return }
         if !can_swap(report) { return }
         // Load and validate away from the play area while the live body and camera stay mounted.
+        let model_meters = target_meters
+        let rig_scale = 1.0
+        if target_meters != null && target_meters < TINY_BODY_METERS {
+            model_meters = TINY_BODY_METERS
+            rig_scale = target_meters / TINY_BODY_METERS
+        }
         let factory = factories[choice]
-        let spec = factory(prefix + "_model", track_hands, bucket, target_meters)
+        let spec = factory(prefix + "_model", track_hands, bucket, model_meters)
         let probe = spec.model
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         spec.staging = staging
@@ -328,7 +343,7 @@ export fn make_rooftop_player(options) {
             if choice == "miku" {
                 // Keep the authored capsule proportional to the imported avatar.
                 let capsule_scale = 1.0
-                if target_meters != null { capsule_scale = target_meters / MIKU_HEIGHT }
+                if model_meters != null { capsule_scale = model_meters / MIKU_HEIGHT }
                 let capsule = T.position(0, 0.91 * capsule_scale, 0) {
                     name = prefix + "_miku_capsule"
                     Zone.capsule_y(0.28 * capsule_scale, 0.63 * capsule_scale) {
@@ -353,6 +368,7 @@ export fn make_rooftop_player(options) {
             state.choice = choice
             state.height = target_meters
             state.pending = null
+            apply_rig_scale(rig_scale)
             if state.changed { state.changed(next_head, spec.model, choice) }
             report(choice + " is active", true)
         })

@@ -60,7 +60,7 @@ fn avatar_settings_content(options) {
     let desired_meters = AvatarSettings.height.meters()
     let slider_start = desired_meters
     if slider_start == null { slider_start = SLIDER_START_METERS }
-    let slider = settings_slider("avatar_height_slider", 0.5, 3.0, 0.01, slider_start, TRACK_WIDTH_GU)
+    let slider = settings_slider("avatar_height_slider", 0.05, 3.0, 0.01, slider_start, TRACK_WIDTH_GU)
     let readout = Text { name = "avatar_height_readout" height_text(desired_meters) }
     on(slider, "SliderChanged", fn(event) { readout.set_text(height_text(event.value)) })
     on(slider, "SliderCommitted", fn(event) {

@@ -482,7 +482,13 @@ fn apply_locomotion(
         move_world = move_world.map(|v| v / length);
     }
 
-    let speed = cfg.speed * if cfg.flying { 2.0 } else { 1.0 };
+    // Speed is in the rig's own units, so a scaled-down rig (a tiny player)
+    // keeps the same pace in body lengths.
+    let rig_scale = TransformSystem::world_model(world, target_tcid)
+        .map(|m| math::vec3_len([m[1][0], m[1][1], m[1][2]]))
+        .filter(|s| s.is_finite() && *s > 0.)
+        .unwrap_or(1.);
+    let speed = cfg.speed * rig_scale * if cfg.flying { 2.0 } else { 1.0 };
     let delta_world = move_world.map(|v| v * speed * dt_sec);
 
     // The locomotion target stores a local translation. Convert the world-space
