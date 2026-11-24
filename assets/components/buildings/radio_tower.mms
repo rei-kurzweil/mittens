@@ -44,6 +44,13 @@ fn beacon(index, height) {
     return { frame = frame glow = glow }
 }
 
+fn section_integrity(index, span) {
+    let integrity = Integrity.max(SECTION_HEALTH).reach(span * 0.5).threshold("broken", 0.0) {
+        name = "radio_tower_integrity_" + index
+    }
+    return integrity
+}
+
 // Dish drums (flat faces outward) and panel antennas around the top.
 fn top_equipment(height) {
     return T.position(0.0, height, 0.0) {
@@ -73,11 +80,9 @@ export fn radio_tower(label, material) {
     let state = {}
     let events = T { name = "radio_tower_events" }
     let beacons = [beacon(0, span * 0.5), beacon(1, span * 0.5), beacon(2, span * 0.5 + 0.62)]
-    let integrities = [
-        Integrity.max(SECTION_HEALTH).reach(span * 0.5).threshold("broken", 0.0) { name = "radio_tower_integrity_0" },
-        Integrity.max(SECTION_HEALTH).reach(span * 0.5).threshold("broken", 0.0) { name = "radio_tower_integrity_1" },
-        Integrity.max(SECTION_HEALTH).reach(span * 0.5).threshold("broken", 0.0) { name = "radio_tower_integrity_2" },
-    ]
+    // Built by a function: a component written inline in an array literal
+    // would stay an unbuilt expression.
+    let integrities = [section_integrity(0, span), section_integrity(1, span), section_integrity(2, span)]
 
     // One truss section, centred `y` above its parent; `above` nests the next
     // section so breaking this one takes it along.
