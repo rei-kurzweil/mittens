@@ -257,7 +257,10 @@ and interiors without any extra step (this covers step 9).
     in over the walls counts; the old entry zone as the stay zone; a context
     with floor, walls, cab wall, tailgate and bench boxes on the truck root).
     Cargo in the bed (the hot dog stand) is not in the context yet, so riders
-    walk through it.
+    walk through it. The deck frame (`mount_anchor`) and the context ride the
+    chassis, so riders tilt and lift with the hydraulics as well as with the
+    truck root on a ramp; `CollisionContext.exclude(truck)` keeps passthrough
+    skipping the whole truck.
 18. A mech in the target practice range.
 
 **Phase 5: multiplayer**: latched `carried_by` + epoch on pose packets; the

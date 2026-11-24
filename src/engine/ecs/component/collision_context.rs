@@ -1,4 +1,4 @@
-use super::Component;
+use super::{Component, ComponentRef};
 
 /// A collision space for the zones beneath it, kept in the coordinates of its
 /// nearest transform (usually a vehicle body). Its zones stay out of the world
@@ -6,11 +6,13 @@ use super::Component;
 /// vehicle never refits them, and only movers whose outbound context is this
 /// one collide with them. With `passthrough`, those movers also collide with
 /// the world, except for zones under this context's frame (the vehicle's own
-/// exterior).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// exterior), or under `exclude` when set: a context on a tilting chassis can
+/// still exclude the whole vehicle root.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollisionContextComponent {
     pub passthrough: bool,
     pub enabled: bool,
+    pub exclude: Option<ComponentRef>,
 }
 
 impl Default for CollisionContextComponent {
@@ -24,7 +26,13 @@ impl CollisionContextComponent {
         Self {
             passthrough: true,
             enabled: true,
+            exclude: None,
         }
+    }
+
+    pub fn exclude(mut self, value: ComponentRef) -> Self {
+        self.exclude = Some(value);
+        self
     }
 
     pub fn passthrough(mut self, value: bool) -> Self {
@@ -62,6 +70,13 @@ impl Component for CollisionContextComponent {
         }
         if !self.enabled {
             expression = expression.with_call("enabled", vec![b(false)]);
+        }
+        if let Some(value) = &self.exclude {
+            let reference = match value {
+                ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
+                ComponentRef::Query(query) => s(query),
+            };
+            expression = expression.with_call("exclude", vec![reference]);
         }
         expression
     }

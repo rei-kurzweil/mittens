@@ -3598,6 +3598,13 @@ fn apply_call(
         match method {
             "passthrough" => context.passthrough = arg_bool(args, 0)?,
             "enabled" => context.enabled = arg_bool(args, 0)?,
+            "exclude" => {
+                use crate::engine::ecs::component::CollisionContextComponent as Context;
+                let reference = arg_component_ref(world, args, 0)?;
+                if let Some(context) = world.get_component_by_id_as_mut::<Context>(id) {
+                    context.exclude = Some(reference);
+                }
+            }
             _ => return Err(format!("CollisionContext: unknown builder '{method}'")),
         }
         return Ok(());

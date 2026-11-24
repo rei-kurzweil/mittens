@@ -204,9 +204,23 @@ impl StaticContactSystem {
             to_world,
             exclude: None,
         };
+        // Passthrough skips the vehicle: the context's frame, or a wider root
+        // when the context sits on a part (a tilting chassis) of the vehicle.
+        let exclude = settings
+            .exclude
+            .as_ref()
+            .and_then(|source| {
+                resolve_component_ref(
+                    world,
+                    source,
+                    Some(context),
+                    QueryRootMode::ParentScope { levels_up: 1 },
+                )
+            })
+            .unwrap_or(frame);
         [
             Some(inside),
-            settings.passthrough.then(|| Space::world(Some(frame))),
+            settings.passthrough.then(|| Space::world(Some(exclude))),
         ]
     }
 

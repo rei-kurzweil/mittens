@@ -130,6 +130,10 @@ fn items_released_over_the_bed_stay_put_and_ride_the_truck() {
     assert!(near(position(&scene, gun), [3.0, 1.0, 0.0]));
 }
 
+fn chassis_frame(scene: &Universe) -> ComponentId {
+    named(scene, "pickup_chassis_frame")
+}
+
 fn zone_holds(scene: &Universe, zone: &str, point: [f32; 3]) -> bool {
     use crate::engine::ecs::system::{ZoneRelation, classify_zone_point};
     matches!(
@@ -162,8 +166,8 @@ fn driver_and_passenger_seats_share_the_truck_grip_and_the_bed_is_a_deck() {
         })
         .count();
     assert_eq!(seats, 2, "driver and passenger");
-    // The bed is a carry deck on the truck root, with its own collision
-    // context there too, so riders' passthrough skips the whole truck.
+    // The bed is a carry deck on the truck root whose deck frame and
+    // collision context follow the chassis; passthrough skips the whole truck.
     let deck = named(&scene, "pickup_bed_mountable");
     assert_eq!(scene.world.parent_of(deck), Some(truck));
     let deck_settings = scene
@@ -171,10 +175,19 @@ fn driver_and_passenger_seats_share_the_truck_grip_and_the_bed_is_a_deck() {
         .get_component_by_id_as::<MountableComponent>(deck)
         .unwrap();
     assert!(deck_settings.carry && !deck_settings.on_grip && deck_settings.context.is_some());
-    assert_eq!(
-        scene.world.parent_of(named(&scene, "pickup_bed_context")),
-        Some(truck)
+    let context = named(&scene, "pickup_bed_context");
+    assert_eq!(scene.world.parent_of(context), Some(chassis_frame(&scene)));
+    assert!(
+        scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::CollisionContextComponent>(
+                context
+            )
+            .unwrap()
+            .exclude
+            .is_some()
     );
+    assert!(deck_settings.mount_anchor.is_some());
     let chassis = named(&scene, "pickup_chassis_frame");
     let model = TransformSystem::world_model(&scene.world, chassis).unwrap();
     let at = |p: [f32; 3]| {

@@ -164,15 +164,15 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed,drive))
     body.attach(power)
     // The passenger seat and the bed deck sit beside the driver's seat on the
-    // truck root; see pickup_ride_seats. The bed's collision context hangs on
-    // the truck root too, so riders' passthrough skips the whole truck.
+    // truck root; see pickup_ride_seats. The bed's collision context rides the
+    // chassis (so it tilts with the hydraulics) and excludes the whole truck.
     let passenger=pickup_passenger_seat()
     body.attach(passenger.frames)
     truck.attach(passenger.mountable)
-    let bed=pickup_bed_deck()
+    let bed=pickup_bed_deck(body, truck)
     body.attach(bed.frames)
     truck.attach(bed.mountable)
-    truck.attach(bed.context)
+    body.attach(bed.context)
     if options && options["socket"] {
         fn follow_peer(following,occupied) {
             truck.set_remote_occupied(occupied)

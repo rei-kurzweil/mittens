@@ -34,10 +34,12 @@ pub(crate) struct CarryContact {
     pub vehicle: Option<ComponentId>,
 }
 
-/// One fixed step of a carry mountable's frame.
+/// One fixed step of a carry mountable's deck frame: its `mount_anchor` when
+/// set (a tilting chassis), else the transform it sits on. `vehicle` is that
+/// transform, whose own movers ignore the riders.
 #[derive(Debug, Clone, Copy)]
 struct DeckMotion {
-    frame: ComponentId,
+    vehicle: ComponentId,
     now: Frame,
     previous: Frame,
 }
@@ -89,12 +91,18 @@ impl AttachmentSystem {
         }
         let mut motion = HashMap::new();
         for &deck in &decks {
-            let Some(frame) = world
+            let Some(vehicle) = world
                 .parent_of(deck)
                 .and_then(|parent| nearest_ancestor_transform(world, parent))
             else {
                 continue;
             };
+            let frame = world
+                .get_component_by_id_as::<MountableComponent>(deck)
+                .and_then(|mountable| mountable.mount_anchor.clone())
+                .and_then(|source| resolve_required(world, deck, Some(&source)))
+                .and_then(|id| nearest_ancestor_transform(world, id))
+                .unwrap_or(vehicle);
             let Some(now) = TransformSystem::world_model(world, frame) else {
                 continue;
             };
@@ -102,7 +110,7 @@ impl AttachmentSystem {
             motion.insert(
                 deck,
                 DeckMotion {
-                    frame,
+                    vehicle,
                     now,
                     previous,
                 },
@@ -188,7 +196,7 @@ impl AttachmentSystem {
         self.carry_contacts.push(CarryContact {
             root,
             context,
-            vehicle: Some(deck.frame),
+            vehicle: Some(deck.vehicle),
         });
         emit.push_event(mountable, EventSignal::MountStarted { rider, mountable });
     }
