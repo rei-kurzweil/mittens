@@ -10,11 +10,6 @@ import { hold_rider_walking } from "./seat_rider_walking.mms"
 // so the zones must not overlap: the driver's covers the left door (x < -0.35,
 // z < 0.75), the passenger's the right door, and the bed's the whole bed plus
 // a margin outside its walls and tailgate (z > 0.8).
-fn bench_block(position, size) {
-    return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
-        R.cube() { C.rgba(0.34, 0.27, 0.22, 1.0) }
-    }
-}
 
 // Builders run only in the constructor chain, not on a live component, so
 // each variant is its own chain; returning it from a function builds it.
@@ -59,7 +54,7 @@ fn deck_box(position, size) {
 // counts) put the rider on the truck's movement basis, and they keep walking,
 // crouching and jumping there until they leave the bed's entry zone (the bed
 // plus about 0.4 m past its walls and tailgate). While aboard they collide
-// with this context's floor, walls, tailgate and bench, plus the world
+// with this context's floor, walls and tailgate, plus the world
 // outside the truck, but not the truck's own hull.
 // The deck frame and the context follow the chassis, so a rider tilts and
 // lifts with the hydraulics as well as with the truck on a ramp; passthrough
@@ -78,16 +73,10 @@ export fn pickup_bed_deck(chassis, truck) {
         // The cab's back wall stands taller, so the bed never leads into the cab.
         deck_box([0,1.30,0.70],[1.80,1.40,0.12])
         deck_box([0,0.98,2.66],[1.80,0.76,0.12])
-        deck_box([0,0.775,2.36],[1.50,0.35,0.40])
     }
     let mountable=Mountable.carry().entry_zone(entry).auto_mount_zone(board).context(context).mount_anchor(chassis) {
         name="pickup_bed_mountable"
     }
-    let bench=T {
-        name="pickup_bed_bench"
-        bench_block([0,0.735,2.38],[1.40,0.27,0.30])
-        bench_block([0,0.91,2.35],[1.50,0.08,0.40])
-    }
-    let frames=T { name="pickup_bed_seat" board_frame board entry_frame entry bench }
+    let frames=T { name="pickup_bed_seat" board_frame board entry_frame entry }
     return { frames=frames mountable=mountable context=context }
 }

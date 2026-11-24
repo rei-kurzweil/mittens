@@ -9,6 +9,7 @@
 // frame:   the transform whose position and -Z facing are the vehicle's
 // options: name, axis ("x" or "z", default "x"), center (default 0),
 //          drive_seconds (3.0), brake_seconds (1.5), throttle (1.0),
+//          slow_throttle (every other run uses it instead; default none),
 //          beats_per_second (the scene Clock, 2.0 at 120 bpm)
 export fn vehicle_patrol(vehicle, frame, options) {
     let axis = 0
@@ -23,7 +24,9 @@ export fn vehicle_patrol(vehicle, frame, options) {
     if options["throttle"] != null { throttle = options.throttle }
     let bps = 2.0
     if options["beats_per_second"] != null { bps = options.beats_per_second }
-    let state = { running = true }
+    let slow = throttle
+    if options["slow_throttle"] != null { slow = options.slow_throttle }
+    let state = { running = true runs = 0 }
 
     fn go() {
         if !state.running { return }
@@ -39,7 +42,10 @@ export fn vehicle_patrol(vehicle, frame, options) {
         if pose.translation[axis] > center { toward = -1.0 }
         let facing = 1.0
         if forward[axis] < 0.0 { facing = -1.0 }
-        vehicle.set_control_input({ throttle = throttle * toward * facing steering = 0.0 brake = false })
+        let amount = throttle
+        if state.runs % 2 == 1 { amount = slow }
+        state.runs = state.runs + 1
+        vehicle.set_control_input({ throttle = amount * toward * facing steering = 0.0 brake = false })
     }
     fn stop() {
         if !state.running { return }

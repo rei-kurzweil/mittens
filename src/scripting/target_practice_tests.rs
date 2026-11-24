@@ -261,6 +261,10 @@ fn truck_bed_demo_drives_the_pickup_with_seated_mitten_aboard() {
     // Mitten rides the chassis, shielded; nothing drives but the script.
     assert!(has_label(&scene, "npc_shield"));
     assert!(has_label(&scene, "demo_truck_patrol"));
+    // The drivable mech is parked with its weapons and dashboard button.
+    assert!(has_label(&scene, "demo_mech"));
+    assert!(has_label(&scene, "car_rockets_fire_button"));
+    assert!(has_label(&scene, "car_laser_origin"));
     assert_eq!(
         scene.world.parent_of(named(&scene, "npc_frame")),
         Some(named(&scene, "pickup_chassis_frame"))

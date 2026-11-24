@@ -8,7 +8,8 @@ import { pickup_power_panel } from "./pickup_power_panel.mms"
 // force/velocity/contact integration continues while off or dismounted.
 // Two weapons: the nose laser on the trigger (grip + trigger in XR, Space on
 // desktop), and a three-rocket burst from two nose muzzles on the dashboard
-// button (R on desktop).
+// button (R on desktop). A scene can route their hits into its own rules by
+// setting body.on_laser_hit(hit) and body.on_rocket_hit(hit).
 export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let state = { powered=false mounted=seated==true user=null axis=[0,0]
         w=false a=false s=false d=false grip=false }
@@ -24,6 +25,7 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         impact.animation.play()
         let on_hit = hit.renderable.on_hit
         if on_hit != null { on_hit(hit) }
+        if body.on_laser_hit != null { body.on_laser_hit(hit) }
     }
     let left_muzzle = T { name="car_rocket_muzzle_left" }
     let right_muzzle = T { name="car_rocket_muzzle_right" }
@@ -50,6 +52,7 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         name="car_rockets" muzzles=[left_muzzle, right_muzzle]
         source_tool=body user=fn() { return state.user }
         can_fire=fn() { return state.powered && state.mounted && place_muzzle() }
+        on_hit=fn(hit) { if body.on_rocket_hit != null { body.on_rocket_hit(hit) } }
     })
     fn fire() {
         if !state.powered || !state.mounted {return}

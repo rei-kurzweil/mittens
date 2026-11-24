@@ -24,6 +24,7 @@ import { destroyable_ceramic_box } from "../assets/components/buildings/pool_bui
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
 import { vehicle_patrol } from "../assets/components/vehicles/vehicle_patrol.mms"
+import { display_car_desktop, display_car_xr } from "../assets/components/vehicles/display_car.mms"
 
 // Truck bed demo: target practice on a range three times as long, with a
 // road across it. A control script drives a pickup back and forth along the
@@ -32,7 +33,10 @@ import { vehicle_patrol } from "../assets/components/vehicles/vehicle_patrol.mms
 // way the target practice NPC does. Climb the crates to the bridge over the
 // road and jump down into the truck bed as it passes: you ride along,
 // walking around the bed while it drives, turns and tilts, and step off with
-// its speed. Items released inside the bed ride along too.
+// its speed. Items released inside the bed ride along too. Or take the mech
+// parked left of the spawn: grip it to climb in, press POWER, drive it to the
+// road and shoot the truck with its nose laser (trigger) or its three-rocket
+// burst (the red dashboard button).
 // Pistols and rockets work as in target practice; the far wall is
 // destroyable.
 //
@@ -120,7 +124,10 @@ T.position(-12.0, 0.0, road_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
 }
 let truck = truck_motion.query("#pickup_truck")
 let chassis = truck_motion.query("#pickup_chassis_frame")
-let patrol = vehicle_patrol(truck_motion, truck, { name = "demo_truck" axis = "x" center = 0.0 drive_seconds = 4.0 })
+// Every other run is slower, to make jumping in easier.
+let patrol = vehicle_patrol(truck_motion, truck, {
+    name = "demo_truck" axis = "x" center = 0.0 drive_seconds = 4.0 slow_throttle = 0.4
+})
 patrol
 
 let sounds = arena_audio()
@@ -207,6 +214,23 @@ T.position(1.6, 0.0, -1.4) {
 }
 T.position(2.7, 0.0, -1.6) { sta_ammo_cabinet("demo_sta_ammo_cabinet") }
 ship_input_controller(false, [launcher.grip], pistols)
+
+// The mech, parked left of the spawn and facing the road. Its laser hits
+// count as pistol hits on Mitten and its rockets as rocket splash; both cut
+// the truck like any weapon.
+let mech = null
+if use_xr {
+    mech = display_car_xr("demo_mech", [-22.0, 0.1, 3.0], 0.0, "demo_mech_mount", query("#local_xr_locomotion"))
+} else {
+    mech = display_car_desktop("demo_mech", [-22.0, 0.1, 3.0], 0.0, "demo_mech_mount")
+}
+mech
+let mech_body = mech.query("#demo_mech")
+mech_body.on_laser_hit = target.pistol_hit
+mech_body.on_rocket_hit = fn(hit) {
+    sounds.damage(1.0)
+    target.rocket_splash(hit.hit_point)
+}
 
 if use_desktop {
     on_global("KeyUp", fn(event) { if event.code == "KeyV" { local.toggle_camera_view() } })
