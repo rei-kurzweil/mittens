@@ -33,6 +33,9 @@ T {
     anime_surface()
     InputXR.on() {
         InputXRGamepad { hand("left") locomotion() speed(1.4) }
+        // Button events are emitted per gamepad for its own hand only; this
+        // one reports the right controller (A launches) without moving.
+        InputXRGamepad { hand("right") locomotion(false) }
         T { CXR {} }
         XRHand.new(true, "Left", "Aim") { controller_pointer("launcher_left_pointer") }
         XRHand.new(true, "Right", "Aim") { controller_pointer("launcher_right_pointer") }

@@ -46,6 +46,8 @@ let player_motion = Velocity {
         name = "mitten_fp_root"
         InputXR.on() {
             InputXRGamepad { hand("left") locomotion() speed(1.5) }
+            // Right-hand buttons (B jumps); button events are per-hand.
+            InputXRGamepad { hand("right") locomotion(false) }
             T {
                 name = "mitten_fp_driver"
                 // No OpenXR hand tracking on the Focus 3 host; controllers drive the arms.
