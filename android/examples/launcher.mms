@@ -3,7 +3,7 @@
 // opens the selected MMS file. Hold the left menu button in any scene to come
 // back here; a scene that fails to load or render also returns here with its
 // error. See docs/task/android-launcher.md.
-import { shell, caption, action, shell_ui_material } from "../../assets/components/mitten_droid/ui.mms"
+import { shell, caption, shell_ui_material } from "../../assets/components/mitten_droid/ui.mms"
 import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mms"
 import { anime_surface } from "../../assets/components/materials/anime_surface.mms"
 import { graphics_settings_panel } from "../../assets/components/panels/graphics_settings_panel.mms"
@@ -55,8 +55,22 @@ let status = Text { name = "launcher_status" "Select an MMS file, then press Lau
 if !pushed { status.set_text("Only the bundled launcher is here. Push a project with android/packaging/sync-project.sh.") }
 let previous_error = App.last_error()
 if previous_error != "" { status.set_text("Returned home: " + previous_error) }
-let launch = action("Launch", "launcher_launch")
-let refresh = action("Refresh", "launcher_refresh")
+// Explicitly sized blocks in a flex row: the shared inline-block action()
+// buttons laid out with no visible size on the headset, while the status text
+// in the same row rendered.
+fn launcher_button(label, id, width) {
+    return T {
+        name = id
+        Raycastable.enabled()
+        Style {
+            width(width) height(3.2) padding_xy(0.9, 0.7)
+            background_color([0.98, 0.75, 0.26, 1.0]) color([0.13, 0.085, 0.015, 1.0])
+        }
+        Text { label }
+    }
+}
+let launch = launcher_button("Launch", "launcher_launch", 12)
+let refresh = launcher_button("Refresh", "launcher_refresh", 12)
 
 fn show_selection() {
     let selected = FileBrowser.selection(state.browser)
@@ -75,7 +89,7 @@ let selection = Text { name = "launcher_selection" "" }
 state.selection_view = selection
 T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
     shell("mittens / launcher", "Select an .mms file, then press Launch", T {
-        launch refresh
+        T { Style { display("flex") flex_direction("row") column_gap(1.0) height(3.2) } launch refresh }
         T { Style { margin_top(0.7) height(2) } selection }
         T { Style { margin_top(0.4) height(3) font_size(0.85) } status }
     }, { build = build_browser, close = close_browser }, null,
