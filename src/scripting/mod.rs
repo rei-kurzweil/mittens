@@ -140,6 +140,8 @@ mod sakura_twilight_tests;
 #[cfg(test)]
 mod sakura_combat_tests;
 #[cfg(test)]
+mod target_practice_tests;
+#[cfg(test)]
 mod sakura_environment_tests;
 
 #[cfg(test)]
