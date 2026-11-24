@@ -55,6 +55,21 @@ fn remote_listing_has_no_pc_paths_and_actions_reference_displayed_revision() {
     assert!(remote.action.is_some());
     assert!(remote.set_listing(&mms::TransportValue::Null).is_err());
 }
+/// The `button()` root (assets/components/button.mms) whose label is `label`.
+fn labeled_button(scene: &Universe, label: &str) -> ComponentId {
+    let world = &scene.world;
+    world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("button_root"))
+        .find(|&id| {
+            world.children_of(id).iter().any(|&child| {
+                world
+                    .get_component_by_id_as::<TextComponent>(child)
+                    .is_some_and(|text| text.text == label)
+            })
+        })
+        .unwrap_or_else(|| panic!("missing button {label:?}"))
+}
 fn named(scene: &Universe, name: &str) -> ComponentId {
     scene
         .world
@@ -355,7 +370,7 @@ fn launcher_launches_the_selected_script_through_the_host() {
     for _ in 0..3 {
         scene.update(0.01, &Default::default());
     }
-    let launch = named(&scene, "launcher_launch");
+    let launch = labeled_button(&scene, "Launch");
     scene.systems.rx.push_event(
         launch,
         EventSignal::Click {
@@ -373,5 +388,68 @@ fn launcher_launches_the_selected_script_through_the_host() {
     assert_eq!(
         request,
         Some(LaunchRequest::Scene("android/examples/launcher.mms".into()))
+    );
+}
+
+/// The Launch button must lay out a visible, hittable background quad: on the
+/// headset the button text row rendered but the button did not, and clicks on
+/// it did nothing. Prints the quad's placement next to the status text.
+#[test]
+fn launcher_launch_button_has_a_visible_hittable_quad() {
+    use crate::engine::ecs::component::{RaycastableComponent, TransformComponent};
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            include_str!("../../../android/examples/launcher.mms"),
+            "android/examples/launcher.mms",
+        )
+        .unwrap();
+    for _ in 0..5 {
+        scene.update(0.01, &Default::default());
+    }
+    let world = &scene.world;
+    let launch = labeled_button(&scene, "Launch");
+    let world_matrix = |id| {
+        world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .map(|t| t.transform.matrix_world)
+    };
+    let bg = world
+        .children_of(launch)
+        .iter()
+        .copied()
+        .find(|&child| world.component_label(child) == Some("__bg"))
+        .expect("Launch button has no generated __bg quad");
+    let renderable = world
+        .all_components()
+        .find(|&id| {
+            world.get_component_by_id_as::<RenderableComponent>(id).is_some()
+                && std::iter::successors(Some(id), |&c| world.parent_of(c)).any(|a| a == bg)
+        })
+        .expect("Launch __bg has no renderable");
+    let m = world_matrix(bg).expect("__bg transform");
+    let scale_x = (m[0][0].powi(2) + m[0][1].powi(2) + m[0][2].powi(2)).sqrt();
+    let scale_y = (m[1][0].powi(2) + m[1][1].powi(2) + m[1][2].powi(2)).sqrt();
+    let status = named(&scene, "launcher_status");
+    eprintln!(
+        "launch __bg world translation={:?} size=({scale_x:.4}, {scale_y:.4}); status translation={:?}",
+        [m[3][0], m[3][1], m[3][2]],
+        world_matrix(status).map(|s| [s[3][0], s[3][1], s[3][2]]),
+    );
+    assert!(scale_x > 1e-4 && scale_y > 1e-4, "Launch __bg is degenerate");
+    assert!(
+        matches!(
+            crate::engine::ecs::system::material_system::MaterialSystem::resolve_surface(
+                world, renderable
+            ),
+            Some(crate::engine::ecs::system::material_system::SurfaceSource::Material(_))
+        ),
+        "Launch __bg must resolve a custom material for Android"
+    );
+    assert!(
+        world.children_of(renderable).iter().any(|&child| {
+            world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
+        }),
+        "Launch __bg renderable is not raycastable"
     );
 }

@@ -8,6 +8,7 @@ import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mm
 import { anime_surface } from "../../assets/components/materials/anime_surface.mms"
 import { graphics_settings_panel } from "../../assets/components/panels/graphics_settings_panel.mms"
 import { dock } from "../../assets/components/ui/dock.mms"
+import { button } from "../../assets/components/button.mms"
 
 BGC.rgba(1.0, 0.80, 0.86, 1.0)
 GraphicsSettings.foveation.quality("off")
@@ -58,22 +59,9 @@ let status = Text { name = "launcher_status" "Select an .mms file, then press A 
 if !pushed { status.set_text("Only the bundled launcher is here. Push a project with android/packaging/sync-project.sh.") }
 let previous_error = App.last_error()
 if previous_error != "" { status.set_text("Returned home: " + previous_error) }
-// Explicitly sized blocks in a flex row: the shared inline-block action()
-// buttons laid out with no visible size on the headset, while the status text
-// in the same row rendered.
-fn launcher_button(label, id, button_width) {
-    return T {
-        name = id
-        Raycastable.enabled()
-        Style {
-            width(button_width) height(3.2) padding_xy(0.9, 0.7)
-            background_color([0.98, 0.75, 0.26, 1.0]) color([0.13, 0.085, 0.015, 1.0])
-        }
-        Text { label }
-    }
-}
-let launch = launcher_button("Launch", "launcher_launch", 12)
-let refresh = launcher_button("Refresh", "launcher_refresh", 12)
+let button_colors = { background_color = [0.98, 0.75, 0.26, 1.0] color = [0.13, 0.085, 0.015, 1.0] }
+let launch = button("Launch", button_colors)
+let refresh = button("Refresh", button_colors)
 
 fn show_selection() {
     let selected = FileBrowser.selection(state.browser)
@@ -93,7 +81,7 @@ let selection = Text { name = "launcher_selection" "" }
 state.selection_view = selection
 T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
     shell("mittens / launcher", "Select an .mms file, then press Launch", T {
-        T { Style { display("flex") flex_direction("row") column_gap(1.0) height(3.2) } launch refresh }
+        launch refresh
         T { Style { margin_top(0.7) height(2) } selection }
         T { Style { margin_top(0.4) height(3) font_size(0.85) } status }
     }, { build = build_browser, close = close_browser }, null,
@@ -110,17 +98,6 @@ fn launch_selection() {
     App.launch(state.selected)
 }
 on(launch, "Click", fn(event) { launch_selection() })
-// A plain 3D Launch button left of the window, outside the 2D layout (the
-// layout's Launch box has not appeared on the headset).
-let launch_box = R.cube() { name = "launcher_launch_3d" pointer_material C.rgba(0.98, 0.75, 0.26, 1.0) Raycastable.enabled() }
-T.position(-1.35, 0.0, -2.3).rotation(0.0, 0.35, 0.0) {
-    T.scale(0.42, 0.16, 0.04) { launch_box }
-    T.position(-0.15, -0.03, 0.03) {
-        Text { font_size(0.085) "LAUNCH" pointer_material C.rgba(0.13, 0.085, 0.015, 1.0) }
-    }
-}
-on(launch_box, "Click", fn(event) { launch_selection() })
-
 // A on the right controller launches the selected file.
 on_global("XrButtonDown", fn(event) {
     if event.control == "ButtonA" { launch_selection() }

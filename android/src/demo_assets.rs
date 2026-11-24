@@ -91,6 +91,7 @@ const NOISE_BENCH_FILES: &[(&str, &[u8])] = bundle![
 pub(crate) const LAUNCHER_FILES: &[(&str, &[u8])] = bundle![
     "android/examples/launcher.mms",
     "assets/components/mitten_droid/ui.mms",
+    "assets/components/button.mms",
     "assets/components/internal/ui/accordion.mms",
     "assets/components/icons.mms",
     "assets/components/materials/ui_unlit.mms",
