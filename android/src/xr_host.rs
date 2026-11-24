@@ -165,6 +165,7 @@ fn run(
     {
         extensions.htc_vive_focus3_controller_interaction =
             available.htc_vive_focus3_controller_interaction;
+        crate::xr_eyes::enable(&available, &mut extensions);
     }
     let instance = entry
         .create_instance(
@@ -199,6 +200,8 @@ fn run(
     report.line(format!(
         "system={system:?} properties={system_properties:?}"
     ));
+    #[cfg(feature = "mobile-renderer")]
+    let eyes = crate::xr_eyes::probe(&instance, system, &available, &extensions, report);
     for view in instance
         .enumerate_view_configurations(system)
         .api("xrEnumerateViewConfigurations")?
@@ -230,6 +233,8 @@ fn run(
             requirements,
             report,
             directory,
+            #[cfg(feature = "mobile-renderer")]
+            eyes,
         )?;
         probe.run(&instance, stop, resumed, report)?;
     }

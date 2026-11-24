@@ -21,6 +21,9 @@ pub(super) struct XrSession {
     renderer: FrameRenderer,
     #[cfg(feature = "mobile-renderer")]
     controllers: crate::xr_controllers::Controllers,
+    /// Native eye tracker; destroyed before the session below.
+    #[cfg(feature = "mobile-renderer")]
+    eyes: Option<crate::xr_eyes::NativeEyes>,
     swapchain: xr::Swapchain<xr::Vulkan>,
     space: xr::Space,
     frames: xr::FrameStream<xr::Vulkan>,
@@ -84,6 +87,7 @@ impl XrSession {
         requirements: xr::vulkan::Requirements,
         report: &mut Report,
         directory: Option<&std::path::Path>,
+        #[cfg(feature = "mobile-renderer")] eye_capabilities: crate::xr_eyes::EyeCapabilities,
     ) -> Result<Self> {
         let gpu = Gpu::new(instance, system, enable2, requirements, report)?;
         #[cfg(feature = "foveation-visualization")]
@@ -113,6 +117,8 @@ impl XrSession {
         report.line("xrCreateSession(Vulkan) SUCCESS");
         #[cfg(feature = "mobile-renderer")]
         let controllers = crate::xr_controllers::Controllers::new(instance, &session, report)?;
+        #[cfg(feature = "mobile-renderer")]
+        let eyes = crate::xr_eyes::NativeEyes::new(instance, &session, eye_capabilities, report);
         report.line(format!(
             "reference_spaces={:?}",
             session
@@ -229,6 +235,8 @@ impl XrSession {
             renderer,
             #[cfg(feature = "mobile-renderer")]
             controllers,
+            #[cfg(feature = "mobile-renderer")]
+            eyes,
             swapchain,
             space,
             frames,
@@ -395,12 +403,14 @@ impl XrSession {
         }
         #[cfg(feature = "mobile-renderer")]
         {
-            self.renderer.set_external_frame(self.controllers.sample(
-                &self.session,
-                &self.space,
-                time,
-                [views[0], views[1]],
-            ));
+            let mut frame =
+                self.controllers
+                    .sample(&self.session, &self.space, time, [views[0], views[1]]);
+            frame.eyes = self
+                .eyes
+                .as_mut()
+                .and_then(|eyes| eyes.sample(time, report));
+            self.renderer.set_external_frame(frame);
             self.renderer.set_menu_down(self.controllers.menu_down());
         }
         let index = self

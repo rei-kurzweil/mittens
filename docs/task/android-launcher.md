@@ -70,6 +70,12 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
   the left stick walks (walking IK). Eye/lash layers use alpha discard in
   `anime-cutout.frag` (opaque base), so they draw in the same tiled pass. A
   renderer rejection returns home with the reason in the status line.
+- [ ] Native eyes (Focus 3 with the eye tracker module): logcat shows
+  `native eyes: XR_HTC_eye_tracker advertised=true enabled=true ...
+  supportsEyeTracking=true`, then `XR_HTC_eye_tracker created`, then
+  `openness valid=true` once worn. Blinking each eye closes Mitten's matching
+  eyelid. Without the module: `supportsEyeTracking=false`, and the scene runs
+  normally.
 
 ## Next
 

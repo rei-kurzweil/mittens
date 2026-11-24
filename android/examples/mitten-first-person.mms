@@ -63,6 +63,11 @@ let player_motion = Velocity {
                         name = "mitten_fp_head_camera_anchor"
                         CXR {}
                     }
+                    // Generic eye tracking: the engine uses whichever source is
+                    // delivering data (native XR_HTC_eye_tracker on a Focus 3 with
+                    // the eye module, else UDP sources). Lid closure only; eye
+                    // direction stays with the ambient saccade animation.
+                    XREyeTracking.on().enable_pupil_direction_tracking(false)
                     XRHand.new(true, "Left", "GripAim") { controller_pointer("L") }
                     XRHand.new(true, "Right", "GripAim") { controller_pointer("R") }
                 }

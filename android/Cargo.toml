@@ -77,6 +77,12 @@ categories = [
 name = "android.hardware.vr.headtracking"
 required = true
 version = 1
+# Declared by the ALVR build whose XR_HTC_eye_tracker probe worked on a Focus 3
+# (rei-kurzweil/wave-eye-tracking-notes); optional, so devices without the
+# eye tracker module still install.
+[[package.metadata.android.uses_feature]]
+name = "wave.feature.eyetracking"
+required = false
 
 [[package.metadata.android.uses_permission]]
 name = "android.permission.INTERNET"

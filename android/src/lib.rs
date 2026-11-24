@@ -31,6 +31,8 @@ mod scene_runtime;
 mod triangle_probe;
 #[cfg(all(target_os = "android", feature = "mobile-renderer"))]
 mod xr_controllers;
+#[cfg(all(target_os = "android", feature = "mobile-renderer"))]
+mod xr_eyes;
 #[cfg(all(target_os = "android", feature = "xr-probe"))]
 mod xr_host;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
