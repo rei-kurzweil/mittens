@@ -51,7 +51,7 @@ let start = "android/examples"
 if pushed { start = "examples" }
 
 let state = { selected = "", browser = null, selection_view = null, scroll_right = 0, scroll_time = 0 }
-let status = Text { name = "launcher_status" "Select an MMS file, then press Launch." }
+let status = Text { name = "launcher_status" "Select an .mms file, then press A (or Launch)." }
 if !pushed { status.set_text("Only the bundled launcher is here. Push a project with android/packaging/sync-project.sh.") }
 let previous_error = App.last_error()
 if previous_error != "" { status.set_text("Returned home: " + previous_error) }
@@ -93,16 +93,21 @@ T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
         T { Style { margin_top(0.7) height(2) } selection }
         T { Style { margin_top(0.4) height(3) font_size(0.85) } status }
     }, { build = build_browser, close = close_browser }, null,
-    caption("Left stick moves. Right stick scrolls. Hold the left menu button in any scene to return here."), true, true)
+    caption("A launches the selected file. Left stick moves. Right stick scrolls. Hold the left menu button in any scene to return here."), true, true)
 }
 
-on(launch, "Click", fn(event) {
+fn launch_selection() {
     if state.selected == "" {
         status.set_text("Select an .mms file first.")
         return
     }
     status.set_text("Loading " + state.selected)
     App.launch(state.selected)
+}
+on(launch, "Click", fn(event) { launch_selection() })
+// A on the right controller launches the selected file.
+on_global("XrButtonDown", fn(event) {
+    if event.control == "ButtonA" { launch_selection() }
 })
 on(refresh, "Click", fn(event) {
     if state.browser != null { FileBrowser.refresh(state.browser) }
