@@ -261,7 +261,8 @@ mech
 let mech_body = mech.query("#demo_mech")
 mech_body.on_laser_hit = target.pistol_hit
 // Shot to pieces, the mech smokes, burns and is wrecked (its driver thrown
-// out); twenty seconds later it is repaired where it stands.
+// out); twenty seconds later it comes back repaired at the next of three
+// parking spots along the range, facing the road.
 let mech_events = T { name = "demo_mech_events" }
 mech_events
 let mech_repair = Animation.paused().length(40.0) {
@@ -269,7 +270,16 @@ let mech_repair = Animation.paused().length(40.0) {
     Keyframe.at(40.0) { emit_data(mech_events, "MechRepaired") }
 }
 mech_events.attach(mech_repair)
-on(mech_events, "DataEvent", fn(event) { if event == "MechRepaired" { mech_body.repair_damage() } })
+let mech_spots = [[-22.0, 0.1, 3.0], [22.0, 0.1, 3.0], [-36.0, 0.1, 3.0]]
+let mech_respawns = { count = 0 }
+on(mech_events, "DataEvent", fn(event) {
+    if event != "MechRepaired" { return }
+    mech_body.repair_damage()
+    mech_respawns.count = mech_respawns.count + 1
+    let spot = mech_spots[mech_respawns.count % 3]
+    mech.reset()
+    mech_body.update_transform(spot, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+})
 mech_body.on_wrecked = fn() { mech_repair.play() }
 mech_body.on_rocket_hit = fn(hit) {
     sounds.damage(1.0)
