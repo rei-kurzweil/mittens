@@ -70,9 +70,14 @@ for x in [-4.5, 4.5] { box([x, 0.4, -5.0], [1.2, 0.8, 0.6], pink) }
 let sounds = arena_audio()
 sounds.root
 
+// Local voice drives the avatar's mouth. Stays neutral without a microphone.
+let microphone = AudioInput {}
+let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
+let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
+
 let local = make_rooftop_player({
     prefix = "local" local_player = true avatar = "mitten" use_xr = use_xr use_desktop = use_desktop
-    camera_far = 250.0 third_person = start_in_third_person
+    camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
     opaque_bucket = "near" show_health = true shield_mount = true
 })
 let player = practice_health(local.health, local.shield_mount, { on_damage = sounds.damage })
