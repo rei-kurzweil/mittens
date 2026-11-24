@@ -17,6 +17,7 @@ import { display_car_sliding_colliders } from "./display_car_sliding_colliders.m
 import { display_car_controls } from "./display_car_controls.mms"
 import { display_car_anime_material } from "../materials/display_car_anime.mms"
 import { hold_rider_walking } from "./seat_rider_walking.mms"
+import { core_damage } from "./core_damage.mms"
 
 // A solid box in the car's deck context (car space).
 fn deck_box(position, size) {
@@ -110,6 +111,20 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
     body.attach(display_car_sliding_colliders(body))
     // The driver's seat; its controls ignore riders boarding the deck.
     body.seat = mountable
+    // The mech's core (see core_damage): smoking at half, burning at a
+    // quarter, wrecked at zero, when its controls stop and the driver is
+    // thrown out of the seat. It reaches the wings.
+    let core = core_damage({
+        prefix = root_name + "_core" position = [0.0, 3.4, 0.5] max = 120.0 reach = 4.0
+        smoke_size = 0.6 flame_scale = 2.5
+    })
+    body.attach(core.part)
+    body.core_wrecked = core.wrecked
+    body.repair_damage = core.repair
+    core.set_on_wrecked(fn() {
+        if body.eject_driver != null { body.eject_driver() }
+        if body.on_wrecked != null { body.on_wrecked() }
+    })
     let motion = ship_vehicle_motion(body, root_name + "_velocity")
     let gravity = Gravity { name = root_name + "_gravity" }
     motion.attach(gravity)

@@ -49,7 +49,9 @@ fn wireframe_cube(h, edge) {
 }
 export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let state = { powered=false mounted=seated==true user=null axis=[0,0]
-        w=false a=false s=false d=false grip=false }
+        w=false a=false s=false d=false grip=false ejected=null }
+    // A wrecked mech neither drives nor fires.
+    fn wrecked() { return body.core_wrecked != null && body.core_wrecked() }
     let bindings = { active=false handlers=[] }
     let weapon = laser({ name="car_laser" beam_name="laser_beam_glow" length=40.0 beam_radius=0.014 })
     let flash = muzzle_flash({ name="car_laser" size=0.90 })
@@ -103,11 +105,11 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         name="car_rockets" muzzles=[left_muzzle, right_muzzle]
         count=5 interval_seconds=0.3 cooldown_seconds=1.5
         source_tool=body user=fn() { return state.user }
-        can_fire=fn() { return state.powered && state.mounted && place_muzzle() }
+        can_fire=fn() { return state.powered && state.mounted && !wrecked() && place_muzzle() }
         on_hit=fn(hit) { if body.on_rocket_hit != null { body.on_rocket_hit(hit) } }
     })
     fn laser_shot() {
-        if !state.powered || !state.mounted {return}
+        if !state.powered || !state.mounted || wrecked() {return}
         flash.play()
         weapon.launch({ pose=laser_origin.world_trs() source_tool=body source_user=state.user on_hit=hit_target })
     }
@@ -123,7 +125,7 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     }
     on(laser_events, "DataEvent", fn(event) { if event == "LaserShot" { laser_shot() } })
     fn fire() {
-        if !state.powered || !state.mounted {return}
+        if !state.powered || !state.mounted || wrecked() {return}
         if !place_muzzle() {return}
         laser_pair.play()
     }
@@ -132,6 +134,12 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     }
     fn publish() {
         if !state.powered || !state.mounted { return }
+        if wrecked() {
+            let fall=motion.linear()[1]
+            motion.reset()
+            motion.translate([0,fall,0])
+            return
+        }
         place_muzzle()
         let steering=state.axis[0] let throttle=state.axis[1]
         if input_mode=="desktop" {
@@ -223,6 +231,25 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         T.rotation(0.0,0.0,Math.pi/2.0) { elevation_slider }
         T.position(0.04,-0.20,0.0).scale(0.015,0.015,0.015) { elevation_readout }
     }
+    // Wrecked: the driver is let out of the seat (onto the cockpit floor);
+    // a moment later their riding is re-enabled.
+    let eject_events=T { name="car_eject_events" }
+    let eject_delay=Animation.paused().length(1.0) {
+        Keyframe.at(0.0) {}
+        Keyframe.at(1.0) { emit_data(eject_events, "RideAgain") }
+    }
+    on(eject_events,"DataEvent",fn(event) {
+        if event=="RideAgain" && state.ejected {
+            state.ejected.set_enabled(true)
+            state.ejected=null
+        }
+    })
+    body.eject_driver=fn() {
+        if !state.user || !state.user.is_alive() {return}
+        state.ejected=state.user
+        state.user.set_enabled(false)
+        eject_delay.play()
+    }
     body.powered=fn() {return state.powered}
     body.set_powered=fn(value) {
         state.powered=value==true
@@ -239,5 +266,5 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         state.mounted=false state.user=null reset_inputs() sync_controls()
     })
     sync_controls()
-    return T { name="car_driver_controls" laser_origin laser_events laser_pair origin rockets panel_mount fire_button elevation_panel }
+    return T { name="car_driver_controls" laser_origin laser_events laser_pair origin rockets panel_mount fire_button elevation_panel eject_events eject_delay }
 }
