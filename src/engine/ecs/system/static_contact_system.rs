@@ -185,7 +185,7 @@ impl StaticContactSystem {
                     let index = candidates[cursor];
                     cursor += 1;
                     let surface = self.broad_phase.surface(index);
-                    if surface.zone == moving || is_body_part(world, surface.zone, owner) {
+                    if surface.zone == moving || own_zone(world, surface.zone, owner, target) {
                         continue;
                     }
                     self.candidate_pairs += 1;
@@ -279,7 +279,7 @@ impl StaticContactSystem {
             let mut remaining = false;
             for &index in &candidates {
                 let surface = self.broad_phase.surface(index);
-                if surface.zone == moving || is_body_part(world, surface.zone, owner) {
+                if surface.zone == moving || own_zone(world, surface.zone, owner, target) {
                     continue;
                 }
                 self.candidate_pairs += 1;
@@ -380,6 +380,13 @@ impl StaticContactSystem {
         self.bvh_node_visits += self.broad_phase.query(min, max, &mut self.traversal, out);
         self.query_time += started.map(|t| t.elapsed()).unwrap_or_default();
     }
+}
+
+/// A mover never collides with its own zones: those under its query owner
+/// (an AVC capsule's avatar) or anywhere under the movement root it drives,
+/// such as a hitbox attached beside the avatar on the same rig.
+fn own_zone(world: &World, zone: ComponentId, owner: ComponentId, target: ComponentId) -> bool {
+    is_body_part(world, zone, owner) || (target != owner && is_body_part(world, zone, target))
 }
 
 fn is_body_part(world: &World, zone: ComponentId, target: ComponentId) -> bool {

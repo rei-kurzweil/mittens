@@ -95,6 +95,55 @@ fn compound_body_ignores_its_parts_and_accumulates_corner_corrections() {
 }
 
 #[test]
+fn owned_capsule_ignores_zones_elsewhere_on_its_movement_root() {
+    // An avatar capsule's query owner is its AVC; a hitbox attached beside
+    // the AVC under the same movement root is still part of the body.
+    let mut world = World::default();
+    let root = world.add_component(TransformComponent::new());
+    let avatar = world.add_component(TransformComponent::new());
+    world.add_child(root, avatar).unwrap();
+    let (capsule, zone) = add_zone(
+        &mut world,
+        [0.0, 0.9, 0.0],
+        CollisionShape::capsule_y(0.28, 0.6),
+        CollidableMode::Slide,
+    );
+    world.add_child(avatar, capsule).unwrap();
+    let collider = world.children_of(zone)[0];
+    let mut slide = CollidableComponent::slide().with_runtime_movement_target(Some(root));
+    slide.query_owner = Some(avatar);
+    *world
+        .get_component_by_id_as_mut::<CollidableComponent>(collider)
+        .unwrap() = slide;
+    // Like player_hitbox: read-only moving geometry, an obstacle for others.
+    let (hitbox, hitbox_zone) = add_zone(
+        &mut world,
+        [0.0, 1.2, 0.0],
+        CollisionShape::cube_half_extents([0.24, 0.5, 0.22]),
+        CollidableMode::Slide,
+    );
+    let hitbox_collider = world.children_of(hitbox_zone)[0];
+    world
+        .get_component_by_id_as_mut::<CollidableComponent>(hitbox_collider)
+        .unwrap()
+        .response = CollisionResponse::ReadOnly;
+    world.add_child(root, hitbox).unwrap();
+    propagate(&mut world, root);
+    let mut system = StaticContactSystem::default();
+    assert!(
+        system.tick(&mut world).is_empty(),
+        "a capsule must not push its own rig away from its hitbox"
+    );
+    assert_eq!(
+        world
+            .get_component_by_id_as::<TransformComponent>(root)
+            .unwrap()
+            .translation(),
+        [0.0; 3]
+    );
+}
+
+#[test]
 fn fixed_substeps_land_on_thin_floor_and_preserve_tangent_speed() {
     fn run(render_dt: f32, frames: usize, gravity: bool) -> ([f32; 3], [f32; 3]) {
         let mut world = World::default();
