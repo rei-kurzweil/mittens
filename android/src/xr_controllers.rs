@@ -261,6 +261,8 @@ impl Controllers {
             grip,
             input,
             gamepad,
+            // Filled by the session's native eye adapter when one is active.
+            eyes: None,
         }
     }
 
