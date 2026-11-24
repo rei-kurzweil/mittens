@@ -19,6 +19,17 @@ let RESPAWN_SECONDS = 6.0
 let AIM_PERIOD_SECONDS = 5.0
 let AIM_TURN_SECONDS = 0.6
 let SHOT_HALF_WIDTH = 0.35
+// The physics NPC's wander: kick strength (m/s per sqrt second), leak back
+// toward a stop (per second) and a speed cap (m/s). Typical speed is about
+// WANDER_KICK / sqrt(2 * WANDER_LEAK), here ~0.8 m/s.
+let WANDER_KICK = 1.0
+let WANDER_LEAK = 0.8
+let WANDER_MAX_SPEED = 1.5
+
+fn noise(value) {
+    let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
+    return raw - Math.floor(raw)
+}
 
 // bar: a health_bar. center: the transform splash distance is measured from.
 // on_damage(cue), on_death() and on_respawn() are optional.
@@ -65,16 +76,16 @@ export fn practice_health(bar, center, options) {
     return { alive = alive damage = damage blast_at = blast_at }
 }
 
-// A rooftop player that strafes left and right, wears an energy shield and
-// takes pistol and rocket damage. It drops the shield when it goes down and
+// A rooftop player that wanders (or, without physics, strafes left and
+// right), wears an energy shield and takes pistol and rocket damage. It drops the shield when it goes down and
 // comes back with a fresh one.
 // Required: prefix, avatar, use_xr, use_desktop, position, yaw (the head's
 // starting yaw; 0 faces -Z).
 // Optional:
-//   strafe       metres either side of position (default 2.5)
-//   speed        strafing speed in m/s with physics, radians per second of
-//                its sine sweep without (default 1.2)
-//   physics      walk under gravity with a sliding capsule (default false)
+//   physics      walk under gravity with a sliding capsule, wandering in a
+//                brown-noise pattern; it may wander off the edge (default false)
+//   strafe       without physics: metres either side of position (default 2.5)
+//   speed        without physics: radians per second of the sweep (default 1.2)
 //   player       a transform to aim at: every 5 s the NPC turns to face it
 //                and fires a machine pistol held in its right hand
 //   on_player_hit()  called when a shot lands within 0.35 m of the player
@@ -94,7 +105,8 @@ export fn practice_target(options) {
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
     let player = options["player"]
-    let state = { shield = null time = 0.0 direction = 1.0 yaw = options.yaw cycle = 0.0 firing = false }
+    let state = { shield = null time = 0.0 yaw = options.yaw cycle = 0.0 firing = false
+        steps = 0 walk_x = 0.0 walk_z = 0.0 }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -160,7 +172,12 @@ export fn practice_target(options) {
         })
         // The player can't take it out of the NPC's hand.
         for grab in gun.grip.query_all("grabbable") { grab.remove_subtree() }
-        let gun_mount = T.position(0.0, 0.0, -0.105) { name = options.prefix + "_gun_mount" gun }
+        // The grip's axes are a quarter turn off the hand target's: yaw the
+        // pistol left so it points where the NPC faces.
+        let gun_mount = T.position(0.0, 0.0, -0.105).rotation(0.0, Math.pi / 2.0, 0.0) {
+            name = options.prefix + "_gun_mount"
+            gun
+        }
         npc.right.attach(gun_mount)
     }
     fn heading_to_player() {
@@ -189,17 +206,32 @@ export fn practice_target(options) {
     on_global("FrameTick", fn(event) {
         let dt = event.dt_sec
         let alive = health.alive()
-        // Strafe back and forth along X; hold still while down.
         if physics {
-            let x = npc.root.trs().translation[0]
-            if x > strafe { state.direction = -1.0 }
-            if x < -strafe { state.direction = 1.0 }
+            // Brown-noise wander: random kicks integrate into the walking
+            // velocity, which leaks back toward a stop so it stays bounded.
+            // Hold still while down.
+            state.steps = state.steps + 1
+            let kick = WANDER_KICK * Math.sqrt(dt)
+            let white_x = 2.0 * noise(state.steps * 2.0) - 1.0
+            let white_z = 2.0 * noise(state.steps * 2.0 + 1.0) - 1.0
+            state.walk_x = state.walk_x + white_x * kick - state.walk_x * WANDER_LEAK * dt
+            state.walk_z = state.walk_z + white_z * kick - state.walk_z * WANDER_LEAK * dt
+            let walk_speed = Math.sqrt(state.walk_x * state.walk_x + state.walk_z * state.walk_z)
+            if walk_speed > WANDER_MAX_SPEED {
+                state.walk_x = state.walk_x * WANDER_MAX_SPEED / walk_speed
+                state.walk_z = state.walk_z * WANDER_MAX_SPEED / walk_speed
+            }
             let vx = 0.0
-            if alive { vx = state.direction * speed }
-            // translate adds velocity: steer toward vx, leave Y to gravity.
+            let vz = 0.0
+            if alive {
+                vx = state.walk_x
+                vz = state.walk_z
+            }
+            // translate adds velocity: steer toward the walk, leave Y to gravity.
             let linear = npc.velocity.linear()
-            npc.velocity.translate([vx - linear[0], 0.0, -linear[2]])
+            npc.velocity.translate([vx - linear[0], 0.0, vz - linear[2]])
         } else if alive {
+            // Strafe back and forth along X.
             state.time = state.time + dt
             npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])
         }

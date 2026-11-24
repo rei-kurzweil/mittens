@@ -175,7 +175,7 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
 }
 
 #[test]
-fn target_practice_scene_loads_and_the_npc_strafes() {
+fn target_practice_scene_loads_and_the_npc_wanders() {
     let path = "examples/target-practice.mms";
     let source = std::fs::read_to_string(path)
         .unwrap()
@@ -186,27 +186,19 @@ fn target_practice_scene_loads_and_the_npc_strafes() {
     assert!(has_label(&scene, "npc_shield"));
     assert!(has_label(&scene, "npc_health_overhead"));
     assert!(has_label(&scene, "local_health_hud"));
-    let x = |scene: &Universe| {
-        scene
-            .world
-            .get_component_by_id_as::<TransformComponent>(named(scene, "npc_root"))
-            .unwrap()
-            .transform
-            .translation[0]
+    let world = |scene: &Universe, label: &str| {
+        TransformSystem::world_position(&scene.world, named(scene, label)).unwrap()
     };
-    let before = x(&scene);
-    step(&mut scene, &clock, 120);
-    assert!((x(&scene) - before).abs() > 0.1, "{before} -> {}", x(&scene));
+    let start = world(&scene, "npc_root");
 
-    // Under gravity it stands on the grass (top at y = 0) and its head is at
-    // eye height. A fall through the floor, or a respawn from the catcher
-    // below, puts it elsewhere, and its strafe stays within 2.5 m of x = 0.
-    step(&mut scene, &clock, 240);
-    let world = |label: &str| TransformSystem::world_position(&scene.world, named(&scene, label)).unwrap();
-    let (root, head) = (world("npc_root"), world("npc_head_target"));
+    // Under gravity it stands on the grass (top at y = 0) with its head at
+    // eye height, and it has wandered away from where it started.
+    step(&mut scene, &clock, 360);
+    let (root, head) = (world(&scene, "npc_root"), world(&scene, "npc_head_target"));
+    let moved = ((root[0] - start[0]).powi(2) + (root[2] - start[2]).powi(2)).sqrt();
     assert!(
-        root[1].abs() < 0.3 && (1.2..2.0).contains(&head[1]) && root[0].abs() < 3.0,
-        "NPC root {root:?}, head {head:?}"
+        root[1].abs() < 0.3 && (1.2..2.0).contains(&head[1]) && moved > 0.05,
+        "NPC root {start:?} -> {root:?}, head {head:?}"
     );
 }
 
