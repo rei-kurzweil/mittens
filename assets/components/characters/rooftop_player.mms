@@ -287,10 +287,14 @@ export fn make_rooftop_player(options) {
         // Voice capture belongs to the player across body replacements.
         if local_player { voice_level }
         if local_player && use_xr {
-            Rider.anchor("#local_xr_camera_anchor").movement_root("#local_root").input("#local_xr_locomotion") {}
+            Rider.anchor("#local_xr_camera_anchor").movement_root("#local_root").input("#local_xr_locomotion") {
+                name = "local_xr_rider"
+            }
         }
         if local_player && use_desktop {
-            Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("/#local_desktop_locomotion") {}
+            Rider.anchor("#local_desktop_camera_anchor").movement_root("#local_root").input("/#local_desktop_locomotion") {
+                name = "local_desktop_rider"
+            }
         }
         if local_player || !health {
             T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label }
@@ -457,6 +461,15 @@ export fn make_rooftop_player(options) {
         state.remote_height = height
         apply_desired_height(report)
     }
+    // Local players: false lets go of any seat or deck (the attachment ends
+    // the connection on its next tick) and keeps the player from mounting or
+    // boarding until set back to true.
+    fn set_riding_enabled(value) {
+        for name in ["#local_xr_rider", "#local_desktop_rider"] {
+            let rider = query(name)
+            if rider { rider.set_enabled(value) }
+        }
+    }
     if local_player {
         on_global("MountStarted", fn(event) { held.mounted = true })
         on_global("MountEnded", fn(event) { held.mounted = false })
@@ -501,6 +514,7 @@ export fn make_rooftop_player(options) {
         select_avatar = select_avatar watch_pointer = watch_pointer blink = blink head_pose = head_pose
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
         desired_height = desired_height set_remote_height = set_remote_height
+        set_riding_enabled = set_riding_enabled
         flying = flying set_remote_flying = set_remote_flying
         camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load

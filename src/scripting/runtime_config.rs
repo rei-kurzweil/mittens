@@ -958,6 +958,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "locomotion_enabled",
                         method(vec![], mms::ValueType::Bool),
                     );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
                 }
                 "CollisionContext" => {
                     component

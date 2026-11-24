@@ -133,7 +133,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
         ))
         || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
         || (matches!(component_type, "Rider" | "rider")
-            && matches!(method, "set_locomotion_enabled" | "locomotion_enabled"))
+            && matches!(method, "set_locomotion_enabled" | "locomotion_enabled" | "set_enabled"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
                 method,
@@ -660,6 +660,17 @@ pub(crate) fn invoke_component_method(
                 {
                     input.locomotion = *enabled;
                 }
+            }
+            Ok(Value::Null)
+        }
+        ("Rider" | "rider", "set_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err(format!("{method}(): expected one bool, got {args:?}"));
+            };
+            // A disabled Rider's seat or deck connection ends on the next
+            // attachment tick; it can't mount or board again until re-enabled.
+            if let Some(rider) = world.get_component_by_id_as_mut::<RiderComponent>(id) {
+                rider.enabled = *enabled;
             }
             Ok(Value::Null)
         }

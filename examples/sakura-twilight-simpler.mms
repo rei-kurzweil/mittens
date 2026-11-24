@@ -58,8 +58,10 @@ import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/comp
 // Equip one STA rocket on each thigh to unlock flight. Double-tap B to
 // toggle it, then hold B/A to rise/descend. Removing either rocket ends flight.
 // Use Third person camera in Humanoid, V on desktop, or Y on the left XR controller.
-// Pistol hits take 10% health and rocket splash takes 50%. At zero health,
-// choose an avatar from the main rooftop's Panels dock to heal and fire again.
+// Pistol hits take 10% health and rocket splash takes 50%. At zero health
+// you're let out of any seat or truck bed and put back on your spawn spot on
+// the main rooftop; choose an avatar from its Panels dock to heal (a fresh
+// avatar) and fire again.
 // Grab and release a cyan shield pickup to wear it. It drops at zero health.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
@@ -281,10 +283,32 @@ let remote = make_rooftop_player({
     opaque_bucket = "near" show_health = true health_view = local.health_view shield_mount = true
 })
 combat_health.bind(local.health, remote.health, remote.hit_zone)
+// Dying sends the local player back to their spawn on the main rooftop, by
+// the dock, to come back in by choosing an avatar. Riding is released first
+// (seats end on the next attachment tick), then the move follows a moment
+// later. The peer sees it through the replicated root.
+let respawn = { at = null }
+let respawn_events = T { name = "sakura_twilight_respawn_events" }
+respawn_events
+let respawn_delay = Animation.paused().length(0.5) {
+    Keyframe.at(0.0) {}
+    Keyframe.at(0.5) { emit_data(respawn_events, "ReturnToRoof") }
+}
+respawn_events.attach(respawn_delay)
+on(respawn_events, "DataEvent", fn(event) {
+    if event != "ReturnToRoof" || !respawn.at { return }
+    if local.velocity { local.velocity.reset() }
+    local.root.update_transform(respawn.at)
+    local.set_riding_enabled(true)
+})
 combat_health.bind_death(fn(is_local) {
     let center = remote.shield_mount
     if is_local { center = local.shield_mount }
     player_death(center.world_trs().translation, 2.0)
+    if is_local {
+        local.set_riding_enabled(false)
+        respawn_delay.play()
+    }
 })
 let shields = arena_shields(socket, grab_rank, mounts, local, remote,
     [[roof_x - 0.85, roof_height + 0.24, -1.35], [roof_x + 0.85, roof_height + 0.24, -1.35]],
@@ -314,6 +338,7 @@ local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
+respawn.at = [roof_x + spawn_x, roof_height, 0.0]
 local.root.attach(washroom_probe_frame)
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
