@@ -87,6 +87,7 @@ mod vulkan_probe {
                     dynamic,
                     dynamic_api,
                     density_texel: None,
+                    astc_ldr: false,
                 })
             }
         }

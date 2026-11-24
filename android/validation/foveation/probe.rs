@@ -84,7 +84,7 @@ T.position(0, 0, -2).scale(20, 20, 0.1) {{
                 &mut universe.command_queue,
             );
             universe.visuals.prepare_draw_cache();
-            let stats = renderer.draw(0, &universe.visuals, &cameras)?;
+            let stats = renderer.draw(0, &mut universe.visuals, &cameras)?;
             if stats.draws > 0 {
                 break;
             }
@@ -115,7 +115,7 @@ T.position(0, 0, -2).scale(20, 20, 0.1) {{
             if renderer.set_foveation(quality, &cameras).is_some() {
                 return Err("unchanged density map request did work".into());
             }
-            renderer.draw(0, &universe.visuals, &cameras)?;
+            renderer.draw(0, &mut universe.visuals, &cameras)?;
             let pixels = target.pixels();
             for eye in 0..2 {
                 let pixels = &pixels[eye * 1712 * 1712 * 4..][..1712 * 1712 * 4];
