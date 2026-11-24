@@ -55,6 +55,11 @@ pub(super) struct Deformation {
     vertex_counts: HashMap<MeshHandle, u32>,
     base_cpu: Vec<GpuBaseDeformationVertex>,
     skin_cpu: Vec<GpuDeformationSkinVertex>,
+    /// 16-bit skin mode: per vertex [joints 0|1, joints 2|3, weights 0|1,
+    /// weights 2|3] as u16 pairs (unorm16 weights); 16 bytes instead of 32.
+    skin_packed_cpu: Vec<[u32; 4]>,
+    /// Set at startup from `debug.mittens.skin_bits` (16 selects it).
+    pub packed_skin: bool,
     morph_cpu: Vec<GpuMorphDelta>,
     arenas_dirty: bool,
     jobs_cpu: Vec<GpuDeformationJob>,
@@ -93,7 +98,12 @@ impl Deformation {
         // Descriptors cannot reference empty buffers; start with one record each.
         let empty = |size: usize| Buffer::new(gpu.clone(), size, STORAGE);
         let base = empty(size_of::<GpuBaseDeformationVertex>())?;
-        let skin = empty(size_of::<GpuDeformationSkinVertex>())?;
+        let packed_skin = packed_skin_requested();
+        log::info!(
+            "SKINNING skin_bits={} (adb shell setprop debug.mittens.skin_bits 16|32, then relaunch)",
+            if packed_skin { 16 } else { 32 }
+        );
+        let skin = empty(if packed_skin { 16 } else { size_of::<GpuDeformationSkinVertex>() })?;
         let morph = empty(size_of::<GpuMorphDelta>())?;
         let bones = empty(64)?;
         let active_morphs = empty(size_of::<GpuActiveMorph>())?;
@@ -112,6 +122,8 @@ impl Deformation {
             vertex_counts: HashMap::new(),
             base_cpu: Vec::new(),
             skin_cpu: Vec::new(),
+            skin_packed_cpu: Vec::new(),
+            packed_skin,
             morph_cpu: Vec::new(),
             arenas_dirty: false,
             jobs_cpu: Vec::new(),
@@ -162,11 +174,12 @@ impl Deformation {
                     None,
                 )
                 .api("deformation pipeline layout")?;
-            let words = ash::util::read_spv(&mut Cursor::new(include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/mesh-deformation.comp.spv"
-            ))))
-            .api("read deformation SPIR-V")?;
+            let spirv: &[u8] = if deformation.packed_skin {
+                include_bytes!(concat!(env!("OUT_DIR"), "/mesh-deformation-packed.comp.spv"))
+            } else {
+                include_bytes!(concat!(env!("OUT_DIR"), "/mesh-deformation.comp.spv"))
+            };
+            let words = ash::util::read_spv(&mut Cursor::new(spirv)).api("read deformation SPIR-V")?;
             let module = device
                 .create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None)
                 .api("vkCreateShaderModule(deformation)")?;
@@ -226,7 +239,12 @@ impl Deformation {
         };
         let vertex_count = u32::try_from(mesh.vertices.len()).map_err(|e| e.to_string())?;
         let base_vertex = u32::try_from(self.base_cpu.len()).map_err(|e| e.to_string())?;
-        let skin_vertex = u32::try_from(self.skin_cpu.len()).map_err(|e| e.to_string())?;
+        let skin_records = if self.packed_skin {
+            self.skin_packed_cpu.len()
+        } else {
+            self.skin_cpu.len()
+        };
+        let skin_vertex = u32::try_from(skin_records).map_err(|e| e.to_string())?;
         let mut max_joint = 0;
         for (index, ((vertex, joints), weights)) in
             mesh.vertices.iter().zip(joints).zip(weights).enumerate()
@@ -247,10 +265,23 @@ impl Deformation {
                 position: [vertex.pos[0], vertex.pos[1], vertex.pos[2], 1.0],
                 normal: [vertex.normal[0], vertex.normal[1], vertex.normal[2], 0.0],
             });
-            self.skin_cpu.push(GpuDeformationSkinVertex {
-                joints: joints.map(u32::from),
-                weights: *weights,
-            });
+            if self.packed_skin {
+                let joint = |i: usize| u32::from(joints[i]);
+                // Round to unorm16; the shader renormalises nothing, and
+                // rounding keeps the four weights summing within 2/65535.
+                let weight = |i: usize| (weights[i].clamp(0.0, 1.0) * 65535.0).round() as u32;
+                self.skin_packed_cpu.push([
+                    joint(0) | (joint(1) << 16),
+                    joint(2) | (joint(3) << 16),
+                    weight(0) | (weight(1) << 16),
+                    weight(2) | (weight(3) << 16),
+                ]);
+            } else {
+                self.skin_cpu.push(GpuDeformationSkinVertex {
+                    joints: joints.map(u32::from),
+                    weights: *weights,
+                });
+            }
         }
         let morph_delta = if mesh.morph_targets.is_empty() {
             None
@@ -316,11 +347,20 @@ impl Deformation {
         }
         if self.arenas_dirty {
             ensure(&self.gpu, &mut self.base, size_of_val(self.base_cpu.as_slice()))?;
-            ensure(&self.gpu, &mut self.skin, size_of_val(self.skin_cpu.as_slice()))?;
+            let skin_bytes = if self.packed_skin {
+                size_of_val(self.skin_packed_cpu.as_slice())
+            } else {
+                size_of_val(self.skin_cpu.as_slice())
+            };
+            ensure(&self.gpu, &mut self.skin, skin_bytes)?;
             ensure(&self.gpu, &mut self.morph, size_of_val(self.morph_cpu.as_slice()))?;
             unsafe {
                 self.base.write(bytes(&self.base_cpu))?;
-                self.skin.write(bytes(&self.skin_cpu))?;
+                if self.packed_skin {
+                    self.skin.write(bytes(&self.skin_packed_cpu))?;
+                } else {
+                    self.skin.write(bytes(&self.skin_cpu))?;
+                }
                 self.morph.write(bytes(&self.morph_cpu))?;
             }
             self.arenas_dirty = false;
@@ -473,4 +513,28 @@ impl Deformation {
             );
         }
     }
+}
+
+/// `adb shell setprop debug.mittens.skin_bits 16` selects 16-bit skin inputs
+/// at the next launch; anything else keeps 32-bit.
+#[cfg(target_os = "android")]
+fn packed_skin_requested() -> bool {
+    unsafe extern "C" {
+        fn __system_property_get(
+            name: *const std::ffi::c_char,
+            value: *mut std::ffi::c_char,
+        ) -> std::ffi::c_int;
+    }
+    let mut value = [0 as std::ffi::c_char; 92];
+    let length = unsafe { __system_property_get(c"debug.mittens.skin_bits".as_ptr(), value.as_mut_ptr()) };
+    if length <= 0 {
+        return false;
+    }
+    let bytes: Vec<u8> = value[..length as usize].iter().map(|&c| c as u8).collect();
+    bytes.as_slice() == b"16"
+}
+
+#[cfg(not(target_os = "android"))]
+fn packed_skin_requested() -> bool {
+    false
 }

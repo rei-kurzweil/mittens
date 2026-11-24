@@ -10,10 +10,20 @@ layout(std430, set = 0, binding = 0) readonly buffer BaseVertices {
     BaseVertex vertices[];
 } base_vertices;
 
+#ifdef PACKED_SKIN
+// 16-bit skin inputs (the Android renderer's optional mode): four joint
+// indices as two u16 pairs and four unorm16 weights, 16 bytes per vertex
+// instead of 32.
+struct SkinVertex {
+    uvec2 joints;
+    uvec2 weights;
+};
+#else
 struct SkinVertex {
     uvec4 joints;
     vec4 weights;
 };
+#endif
 layout(std430, set = 0, binding = 1) readonly buffer SkinVertices {
     SkinVertex vertices[];
 } skin_vertices;
@@ -119,15 +129,23 @@ void main() {
     // Do not read it unless this job actually has a skin.
     if (job.bones_count > 0u) {
         SkinVertex skin_vertex = skin_vertices.vertices[job.skin_vertex + local_vertex];
-        float weight_sum =
-            skin_vertex.weights.x + skin_vertex.weights.y +
-            skin_vertex.weights.z + skin_vertex.weights.w;
+#ifdef PACKED_SKIN
+        uvec4 joints = uvec4(
+            skin_vertex.joints.x & 0xffffu, skin_vertex.joints.x >> 16,
+            skin_vertex.joints.y & 0xffffu, skin_vertex.joints.y >> 16);
+        vec4 weights = vec4(
+            unpackUnorm2x16(skin_vertex.weights.x), unpackUnorm2x16(skin_vertex.weights.y));
+#else
+        uvec4 joints = skin_vertex.joints;
+        vec4 weights = skin_vertex.weights;
+#endif
+        float weight_sum = weights.x + weights.y + weights.z + weights.w;
         if (weight_sum > 0.0) {
             skin =
-                bones.matrices[job.bones_base + skin_vertex.joints.x] * skin_vertex.weights.x +
-                bones.matrices[job.bones_base + skin_vertex.joints.y] * skin_vertex.weights.y +
-                bones.matrices[job.bones_base + skin_vertex.joints.z] * skin_vertex.weights.z +
-                bones.matrices[job.bones_base + skin_vertex.joints.w] * skin_vertex.weights.w;
+                bones.matrices[job.bones_base + joints.x] * weights.x +
+                bones.matrices[job.bones_base + joints.y] * weights.y +
+                bones.matrices[job.bones_base + joints.z] * weights.z +
+                bones.matrices[job.bones_base + joints.w] * weights.w;
         }
     }
 

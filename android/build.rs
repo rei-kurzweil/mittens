@@ -19,20 +19,32 @@ fn main() {
         shaderc::TargetEnv::Vulkan,
         shaderc::EnvVersion::Vulkan1_0 as u32,
     );
-    // The deformation kernel is shared with the desktop renderer.
-    for (directory, name, kind) in [
-        ("shaders", "triangle.vert", shaderc::ShaderKind::Vertex),
-        ("shaders", "triangle.frag", shaderc::ShaderKind::Fragment),
-        ("shaders", "surface.vert", shaderc::ShaderKind::Vertex),
-        ("shaders", "surface-skinned.vert", shaderc::ShaderKind::Vertex),
-        ("../assets/shaders", "mesh-deformation.comp", shaderc::ShaderKind::Compute),
+    // The deformation kernel is shared with the desktop renderer; Android also
+    // builds its 16-bit skin variant (PACKED_SKIN) for comparison.
+    for (directory, name, kind, output, define) in [
+        ("shaders", "triangle.vert", shaderc::ShaderKind::Vertex, "triangle.vert", None),
+        ("shaders", "triangle.frag", shaderc::ShaderKind::Fragment, "triangle.frag", None),
+        ("shaders", "surface.vert", shaderc::ShaderKind::Vertex, "surface.vert", None),
+        ("shaders", "surface-skinned.vert", shaderc::ShaderKind::Vertex, "surface-skinned.vert", None),
+        ("../assets/shaders", "mesh-deformation.comp", shaderc::ShaderKind::Compute, "mesh-deformation.comp", None),
+        (
+            "../assets/shaders",
+            "mesh-deformation.comp",
+            shaderc::ShaderKind::Compute,
+            "mesh-deformation-packed.comp",
+            Some("PACKED_SKIN"),
+        ),
     ] {
         let source = std::fs::read_to_string(format!("{directory}/{name}")).expect("read shader");
+        let mut variant = options.clone().expect("shader options");
+        if let Some(define) = define {
+            variant.add_macro_definition(define, Some("1"));
+        }
         let compiled = compiler
-            .compile_into_spirv(&source, kind, name, "main", Some(&options))
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
+            .compile_into_spirv(&source, kind, name, "main", Some(&variant))
+            .unwrap_or_else(|error| panic!("{output}: {error}"));
         let path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-        std::fs::write(path.join(format!("{name}.spv")), compiled.as_binary_u8())
+        std::fs::write(path.join(format!("{output}.spv")), compiled.as_binary_u8())
             .expect("write shader");
     }
 }

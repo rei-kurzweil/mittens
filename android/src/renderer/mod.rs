@@ -53,6 +53,8 @@ pub(crate) struct Stats {
     pub gpu_wait_ms: f64,
     pub gpu_ms: Option<f64>,
     pub deformation_jobs: usize,
+    /// 16 or 32: the skin input precision this run uses.
+    pub skin_bits: u32,
 }
 pub(crate) struct SceneRenderer {
     gpu: Arc<Gpu>,
@@ -442,6 +444,7 @@ impl SceneRenderer {
         stats.instance_capacity = self.instance_buffer.capacity;
         stats.lights = visuals.lights().len();
         stats.deformation_jobs = self.deformation.jobs_last_frame;
+        stats.skin_bits = if self.deformation.packed_skin { 16 } else { 32 };
         Ok(stats)
     }
     /// A batch of a skinned mesh draws from the deformation output once every
