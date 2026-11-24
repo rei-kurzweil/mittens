@@ -969,6 +969,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "Mountable" => {
                     component
                         .constructor("entry_zone", any(1))
+                        .constructor("carry", no_args())
                         .builder_call("entry_zone", any(1))
                         .builder_call("mount_anchor", any(1))
                         .builder_call("dismount_anchor", any(1))

@@ -2268,6 +2268,7 @@ fn create_component(
             Some("entry_zone") => add!(MountableComponent::new().entry_zone(arg_component_ref(
                 world, args, 0
             )?)),
+            Some("carry") => add!(MountableComponent::new().carry()),
             _ => add!(MountableComponent::new()),
         },
         "Draggable" => match ctor {
