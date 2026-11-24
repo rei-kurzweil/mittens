@@ -16,8 +16,8 @@ impl AvatarSettingsSystem {
         height: f64,
         emit: &mut dyn SignalEmitter,
     ) -> Result<(), &'static str> {
-        if !(0.5..=3.0).contains(&height) {
-            return Err("desired avatar height must be between 0.5 and 3.0 meters");
+        if !(0.025..=3.0).contains(&height) {
+            return Err("desired avatar height must be between 0.025 and 3.0 meters");
         }
         let height = Some(height as f32);
         if self.desired_height_meters != height {

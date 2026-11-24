@@ -5,7 +5,9 @@ use crate::engine::graphics::CameraTarget;
 #[derive(Debug, Clone, Copy)]
 pub struct CameraXRComponent {
     pub enabled: bool,
+    /// Near plane in eye space; it shrinks with a scaled rig.
     pub z_near: f32,
+    /// Far plane as a world distance, independent of the rig's scale.
     pub z_far: f32,
 
     // Cached ECS id (runtime-only). Filled in during init.

@@ -8,6 +8,10 @@ use crate::engine::graphics::{CameraData, CameraTarget};
 use crate::utils::math::{mat4_mul_vec4, vec3_len, vec3_sub};
 
 fn setup(xr: bool) -> Universe {
+    setup_at_scale(xr, 1.0)
+}
+
+fn setup_at_scale(xr: bool, scale: f32) -> Universe {
     let source = r##"
         import { mitten_model } from "../assets/components/characters/mitten.mms"
         let use_xr = __XR__
@@ -20,7 +24,7 @@ fn setup(xr: bool) -> Universe {
             }
         }
         let head = T.position(0, 1.6, 0) { name = "view_test_head" body }
-        T {
+        T.scale(__SCALE__, __SCALE__, __SCALE__) {
             name = "view_test_root"
             if use_xr { InputXR.on() { head } } else { I { head } }
         }
@@ -29,7 +33,8 @@ fn setup(xr: bool) -> Universe {
             if event.code == "KeyB" { body.set_third_person(false) }
         })
     "##
-    .replace("__XR__", if xr { "true" } else { "false" });
+    .replace("__XR__", if xr { "true" } else { "false" })
+    .replace("__SCALE__", &format!("{scale:?}"));
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/_avatar_camera_test.mms")
@@ -195,5 +200,27 @@ fn third_person_xr_keeps_stereo_and_head_motion_separate_from_the_tracked_head()
     near(
         eye_center,
         TransformSystem::world_position(&scene.world, head).unwrap(),
+    );
+}
+
+#[test]
+fn third_person_xr_frames_a_scaled_rig_at_its_own_scale() {
+    let eyes_at = |scale: f32| {
+        let scene = setup_at_scale(true, scale);
+        let root = named(&scene, "view_test_root");
+        let origin = TransformSystem::world_position(&scene.world, root).unwrap();
+        let [left, right] = eyes(&scene, CameraTarget::Xr) else {
+            panic!("expected two XR eyes")
+        };
+        let separation = vec3_len(vec3_sub(eye_position(right), eye_position(left)));
+        (separation, vec3_len(vec3_sub(eye_position(left), origin)))
+    };
+    let (full_separation, full_distance) = eyes_at(1.0);
+    let (tiny_separation, tiny_distance) = eyes_at(0.1);
+    assert!((full_separation - 0.064).abs() < 1e-4);
+    assert!((tiny_separation - 0.0064).abs() < 1e-5, "{tiny_separation}");
+    assert!(
+        (tiny_distance - full_distance * 0.1).abs() < 1e-3,
+        "{tiny_distance} vs {full_distance}"
     );
 }

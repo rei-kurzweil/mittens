@@ -6,6 +6,12 @@ let SLIDER_START_METERS = 1.7
 
 fn height_text(meters) {
     if meters == null { return "Model default" }
+    // Tiny heights read in centimeters, down to the 2.5 cm (1 inch) minimum.
+    if meters < 0.1 {
+        let mm = Math.round(meters * 1000.0)
+        let whole_cm = Math.floor(mm / 10.0)
+        return whole_cm + "." + (mm - whole_cm * 10.0) + " cm"
+    }
     let cm = Math.round(meters * 100.0)
     let whole = Math.floor(cm / 100.0)
     let fraction = cm - whole * 100.0
@@ -60,7 +66,7 @@ fn avatar_settings_content(options) {
     let desired_meters = AvatarSettings.height.meters()
     let slider_start = desired_meters
     if slider_start == null { slider_start = SLIDER_START_METERS }
-    let slider = settings_slider("avatar_height_slider", 0.5, 3.0, 0.01, slider_start, TRACK_WIDTH_GU)
+    let slider = settings_slider("avatar_height_slider", 0.025, 3.0, 0.005, slider_start, TRACK_WIDTH_GU)
     let readout = Text { name = "avatar_height_readout" height_text(desired_meters) }
     on(slider, "SliderChanged", fn(event) { readout.set_text(height_text(event.value)) })
     on(slider, "SliderCommitted", fn(event) {
