@@ -731,6 +731,13 @@ impl RxMutationExecutor {
                 systems
                     .input_xr_gamepad
                     .set_flight_enabled(world, *component_id, *enabled);
+                systems.input_xr_gamepad.publish_flight_state(world, *component_id, emit);
+            }
+            IntentValue::SetTubeTrail { component_id, config } => {
+                systems.tube_trails.set_trail(*component_id, config.as_deref().copied());
+            }
+            IntentValue::SetParticleEmission { component_id, config } => {
+                systems.particles.set_emission(*component_id, config.as_deref().copied());
             }
             IntentValue::RemoveInputXr { component_id } => {
                 let component = *component_id;

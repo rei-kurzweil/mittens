@@ -177,6 +177,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             let method = |arguments, result| mms::ValueSignature::new(arguments, result);
             match canonical {
                 "Transform" => {
+                    for name in ["set_particle_emission", "set_tube_trail"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            mms::ValueSignature::with_optional(
+                                vec![mms::ValueType::Component, mms::ValueType::Table],
+                                0,
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                     for name in ["set_translation", "set_rotation_quat"] {
                         host_method(
                             component,
@@ -1430,6 +1442,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "XrButtonChanged",
         "XrAxisChanged",
         "XrGamepadLocomotion",
+        "XrGamepadFlightChanged",
         "HttpRequest",
         "HttpResponse",
         "HttpError",

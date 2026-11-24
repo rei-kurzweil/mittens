@@ -122,6 +122,8 @@ pub mod avatar_settings_system;
 pub mod input_settings_system;
 pub mod zone_query;
 pub mod zone_visualization_system;
+pub(crate) mod particle_system;
+pub(crate) mod tube_trail_system;
 
 pub use amplitude_system::{AmplitudeSnapshot, AmplitudeSystem};
 pub use animation_system::AnimationSystem;

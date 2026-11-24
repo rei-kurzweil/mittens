@@ -28,6 +28,7 @@ struct ComponentEventState {
     buttons: HashMap<(ControllerHand, XrButtonControl), bool>,
     axes: HashMap<(ControllerHand, XrAxisControl), [f32; 2]>,
     movement: Option<LocomotionMode>,
+    flying: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,13 @@ enum LocomotionMode {
 }
 
 impl ComponentEventState {
+    fn set_flying(&mut self, cid: ComponentId, flying: bool, emit: &mut dyn SignalEmitter) {
+        if self.flying != flying {
+            self.flying = flying;
+            emit.push_event(cid, EventSignal::XrGamepadFlightChanged { flying });
+        }
+    }
+
     fn set_movement(
         &mut self,
         cid: ComponentId,
@@ -74,6 +82,20 @@ impl InputXRGamepadSystem {
         self.flying.set_flight_enabled(world, id, enabled);
     }
 
+    pub(crate) fn publish_flight_state(
+        &mut self,
+        world: &World,
+        id: ComponentId,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        if let Some(state) = self.previous.get_mut(&id) {
+            let flying = world
+                .get_component_by_id_as::<InputXRGamepadComponent>(id)
+                .is_some_and(InputXRGamepadComponent::is_flying);
+            state.set_flying(id, flying, emit);
+        }
+    }
+
     pub fn remove_input_xr_gamepad(&mut self, world: &mut World, component: ComponentId) {
         self.flying.stop(world, component);
         self.components.remove(&component);
@@ -103,10 +125,17 @@ impl InputXRGamepadSystem {
         self.flying.advance(dt_sec);
         if !xr_state.active {
             self.flying.suspend(world);
-            if self.xr_active_last_frame {
-                for (&cid, state) in &mut self.previous {
-                    state.set_movement(cid, None, emit);
+            for (&cid, state) in &mut self.previous {
+                state.set_movement(cid, None, emit);
+                if state.flying
+                    && !world
+                        .get_component_by_id_as::<InputXRGamepadComponent>(cid)
+                        .is_some_and(InputXRGamepadComponent::is_flying)
+                {
+                    state.set_flying(cid, false, emit);
                 }
+            }
+            if self.xr_active_last_frame {
                 eprintln!("[input_xr_gamepad_system] XR gamepad input inactive");
             }
             self.xr_active_last_frame = false;
@@ -130,6 +159,7 @@ impl InputXRGamepadSystem {
                 self.flying.stop(world, cid);
                 if let Some(state) = self.previous.get_mut(&cid) {
                     state.set_movement(cid, None, emit);
+                    state.set_flying(cid, false, emit);
                 }
                 continue;
             }
@@ -139,6 +169,7 @@ impl InputXRGamepadSystem {
                 self.flying.stop(world, cid);
                 if let Some(state) = self.previous.get_mut(&cid) {
                     state.set_movement(cid, None, emit);
+                    state.set_flying(cid, false, emit);
                 }
                 if self.logged_missing_owner.insert(cid) {
                     eprintln!(
@@ -191,6 +222,8 @@ impl InputXRGamepadSystem {
             }
             next.movement = prev.movement;
             next.set_movement(cid, movement, emit);
+            next.flying = prev.flying;
+            next.set_flying(cid, cfg.flying, emit);
             self.previous.insert(cid, next);
         }
     }

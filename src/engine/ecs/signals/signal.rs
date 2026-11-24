@@ -395,6 +395,9 @@ pub enum EventSignal {
     XrGamepadLocomotion {
         active: bool,
     },
+    XrGamepadFlightChanged {
+        flying: bool,
+    },
 
     HttpRequest {
         request_id: u64,
@@ -518,6 +521,7 @@ impl EventSignal {
             EventSignal::XrButtonChanged { .. } => SignalKind::XrButtonChanged,
             EventSignal::XrAxisChanged { .. } => SignalKind::XrAxisChanged,
             EventSignal::XrGamepadLocomotion { .. } => SignalKind::XrGamepadLocomotion,
+            EventSignal::XrGamepadFlightChanged { .. } => SignalKind::XrGamepadFlightChanged,
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
@@ -1018,6 +1022,14 @@ pub enum IntentValue {
         component_id: ComponentId,
         enabled: bool,
     },
+    SetTubeTrail {
+        component_id: ComponentId,
+        config: Option<Box<crate::engine::ecs::system::tube_trail_system::TubeTrail>>,
+    },
+    SetParticleEmission {
+        component_id: ComponentId,
+        config: Option<Box<crate::engine::ecs::system::particle_system::ParticleEmission>>,
+    },
     RemoveInputXr {
         component_id: ComponentId,
     },
@@ -1295,6 +1307,8 @@ impl IntentValue {
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
             IntentValue::RegisterInputXrGamepad { .. } => "register_input_xr_gamepad",
             IntentValue::SetXrFlightEnabled { .. } => "set_xr_flight_enabled",
+            IntentValue::SetParticleEmission { .. } => "set_particle_emission",
+            IntentValue::SetTubeTrail { .. } => "set_tube_trail",
             IntentValue::RemoveInputXr { .. } => "remove_input_xr",
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
             IntentValue::RemoveInputXrGamepad { .. } => "remove_input_xr_gamepad",
@@ -1403,6 +1417,7 @@ pub enum SignalKind {
     XrButtonChanged,
     XrAxisChanged,
     XrGamepadLocomotion,
+    XrGamepadFlightChanged,
     HttpRequest,
     HttpResponse,
     HttpError,

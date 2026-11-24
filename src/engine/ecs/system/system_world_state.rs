@@ -37,6 +37,8 @@ pub struct SystemWorld {
     pub destroyable: crate::engine::ecs::system::destroyable_system::DestroyableSystem,
     pub mesh_bounds: MeshBoundsSystem,
     pub renderable: RenderableSystem,
+    pub(crate) tube_trails: crate::engine::ecs::system::tube_trail_system::TubeTrailSystem,
+    pub(crate) particles: crate::engine::ecs::system::particle_system::ParticleSystem,
     pub material: crate::engine::ecs::system::material_system::MaterialSystem,
     pub clipping: ClippingSystem,
     pub renderer_stats: RendererStatsSystem,

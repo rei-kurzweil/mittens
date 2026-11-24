@@ -561,6 +561,8 @@ impl SystemWorld {
         #[cfg(test)]
         cpu_profile.mark(Phase::LayoutTail);
         self.renderable.tick(world, visuals, input, dt_sec);
+        self.particles.tick(world, visuals, dt_sec);
+        self.tube_trails.tick(world, visuals, dt_sec);
 
         self.renderer_stats
             .tick_with_queue(world, visuals, queue, dt_sec);

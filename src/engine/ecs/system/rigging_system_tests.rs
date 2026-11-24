@@ -633,6 +633,126 @@ fn black_gohei_has_seven_panels_and_authored_secondary_motion() {
     );
 }
 
+#[test]
+fn subdivided_tube_bends_with_a_translucent_custom_material() {
+    use crate::engine::ecs::{IntentValue, SignalEmitter};
+    use crate::engine::graphics::deformation_reference::deform_vertices;
+
+    let mut scene = Universe::new(Default::default());
+    scene
+        .load_mms_source_at_path(
+            r#"
+        import { smoke_material } from "../assets/components/materials/smoke.mms"
+        let smoke = smoke_material()
+        let joints = T {
+            Joint {}
+            T.position(0, 0.4, 0) {
+                name = "tube_bend"
+                Joint {}
+                T.position(0, 0.4, 0) { Joint {} T.position(0, 0.4, 0) { Joint {} } }
+            }
+        }
+        T {
+            joints
+            Armature.joints(joints).give_automatic_weights() {
+                R.helix_tube(0, 0.1, 1.2, 0, 0, 12, 12) {
+                    name = "smoke_tube"
+                    C.rgba(1.0, 1.0, 1.0, 0.65)
+                    smoke
+                }
+            }
+        }
+    "#,
+            "examples/_smoke_tube_rig_test.mms",
+        )
+        .unwrap();
+    scene.update(0.0, &Default::default());
+    prepare(&mut scene, &mut Uploader::default());
+    wait_materials(&scene);
+    assert_eq!(scene.systems.rigging.binding_count(), 1);
+
+    let tube = named(&scene, "smoke_tube");
+    let bend = named(&scene, "tube_bend");
+    scene.command_queue.push_intent_now(
+        bend,
+        IntentValue::UpdateTransform {
+            component_id: bend,
+            translation: [0.0, 0.4, 0.0],
+            rotation_quat_xyzw: crate::utils::math::quat_from_axis_angle([0.0, 0.0, 1.0], 0.7),
+            scale: [1.0; 3],
+        },
+    );
+    scene.update(0.0, &Default::default());
+    scene.visuals.prepare_draw_cache();
+    assert!(
+        scene
+            .visuals
+            .transparent_single_draw_order()
+            .iter()
+            .any(|&index| { scene.visuals.instances()[index as usize].component == tube })
+    );
+
+    let renderable = scene
+        .world
+        .get_component_by_id_as::<RenderableComponent>(tube)
+        .unwrap();
+    let visual = scene
+        .visuals
+        .instance(renderable.get_handle().unwrap())
+        .unwrap();
+    assert_eq!(visual.bones_count, 4);
+    let material = scene
+        .visuals
+        .materials
+        .instance(visual.material_instance.unwrap())
+        .unwrap();
+    let definition = scene
+        .visuals
+        .materials
+        .definition(material.definition)
+        .unwrap();
+    assert_eq!(
+        Some(visual.renderable.material),
+        definition.deformed_program
+    );
+
+    let mesh = scene
+        .render_assets
+        .cpu_mesh(renderable.renderable.mesh)
+        .unwrap();
+    let vertices_per_ring = 13;
+    assert_eq!(mesh.vertices.len(), 13 * vertices_per_ring);
+    assert_eq!(mesh.indices_u32.len(), 12 * 12 * 6);
+    let bone_base = visual.bones_base as usize;
+    let deformed = deform_vertices(
+        &mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.pos)
+            .collect::<Vec<_>>(),
+        &mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.normal)
+            .collect::<Vec<_>>(),
+        mesh.joints0.as_ref().unwrap(),
+        mesh.weights0.as_ref().unwrap(),
+        &scene.visuals.bones_palette()[bone_base..bone_base + 4],
+    )
+    .unwrap();
+    let tail = 12 * vertices_per_ring;
+    assert!(deformed[tail].position[0] < -0.3, "tail follows the bend");
+    for ring in deformed.chunks_exact(vertices_per_ring) {
+        assert!(
+            crate::utils::math::vec3_len(crate::utils::math::vec3_sub(
+                ring[0].position,
+                ring[vertices_per_ring - 1].position,
+            )) < 1.0e-5,
+            "circumference stays closed"
+        );
+    }
+}
+
 fn wait_materials(scene: &Universe) {
     for (_, material) in scene.visuals.materials.instances() {
         if let Some(custom) = scene

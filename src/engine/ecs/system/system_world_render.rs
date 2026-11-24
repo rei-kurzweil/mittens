@@ -25,6 +25,8 @@ impl SystemWorld {
         // coalesced material updates before this frame's draw preparation.
         self.material.tick(world, visuals);
         self.renderable.refresh_material_topology(world, visuals);
+        self.particles.prepare(world, visuals, render_assets, uploader);
+        self.tube_trails.prepare(world, visuals, render_assets, uploader);
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);

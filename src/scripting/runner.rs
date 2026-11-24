@@ -917,6 +917,9 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
         Some(crate::engine::ecs::EventSignal::XrGamepadLocomotion { active }) => {
             Value::Map(HashMap::from([("active".into(), Value::Bool(*active))]))
         }
+        Some(crate::engine::ecs::EventSignal::XrGamepadFlightChanged { flying }) => {
+            Value::Map(HashMap::from([("flying".into(), Value::Bool(*flying))]))
+        }
         Some(crate::engine::ecs::EventSignal::TextInputChanged { text, caret, .. }) => {
             Value::Map(HashMap::from([
                 ("text".to_string(), Value::String(text.clone())),

@@ -45,6 +45,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "translation"
                 | "trs"
                 | "local_bounds"
+                | "set_particle_emission"
+                | "set_tube_trail"
         ))
         || (component_type == "TransformWorld" && method == "trs")
         || (matches!(component_type, "TOP" | "TransformOperator" | "transform_operator")
@@ -146,6 +148,22 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("T" | "Transform" | "transform", "set_tube_trail") => {
+            let config = tube_trail(world, args)?.map(Box::new);
+            emit_intent(IntentValue::SetTubeTrail {
+                component_id: id,
+                config,
+            });
+            Ok(Value::Null)
+        }
+        ("T" | "Transform" | "transform", "set_particle_emission") => {
+            let config = particle_emission(world, args)?.map(Box::new);
+            emit_intent(IntentValue::SetParticleEmission {
+                component_id: id,
+                config,
+            });
+            Ok(Value::Null)
+        }
         (_, "is_alive") if args.is_empty() => {
             Ok(Value::Bool(world.get_component_record(id).is_some()))
         }
@@ -1252,6 +1270,159 @@ pub(crate) fn invoke_component_method(
             component_type, method
         )),
     }
+}
+
+fn tube_trail(
+    world: &World,
+    args: &[Value],
+) -> Result<Option<crate::engine::ecs::system::tube_trail_system::TubeTrail>, String> {
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::ecs::system::tube_trail_system::TubeTrail;
+
+    let (material, options) = match args {
+        [] => return Ok(None),
+        [Value::ComponentObject { id, .. }] => (*id, None),
+        [Value::ComponentObject { id, .. }, Value::Map(options)] => (*id, Some(options)),
+        _ => {
+            return Err(
+                "set_tube_trail(): expected no arguments or a material and optional options".into(),
+            );
+        }
+    };
+    if world
+        .get_component_by_id_as::<MaterialComponent>(material)
+        .is_none()
+    {
+        return Err("set_tube_trail(): expected a Material".into());
+    }
+    let mut config = TubeTrail {
+        material,
+        offset: [0.0; 3],
+        speed: 1.0,
+        lifetime: 0.48,
+        source_radius: 0.06,
+        tail_radius: 0.25,
+        opacity: 0.6,
+        edge_wobble: 0.0,
+        flow_wavelength: None,
+        stop_fade: 0.30,
+    };
+    for (key, value) in options.into_iter().flatten() {
+        let number = |min: f64, max: f64| match value {
+            Value::Number(n) if *n >= min && *n <= max => Ok(*n as f32),
+            _ => Err(format!(
+                "set_tube_trail(): {key} must be between {min} and {max}"
+            )),
+        };
+        match key.as_str() {
+            "offset" => {
+                config.offset = value_as_f32_array::<3>(value)?;
+                if config.offset.iter().any(|n| !n.is_finite()) {
+                    return Err("set_tube_trail(): offset requires finite values".into());
+                }
+            }
+            "speed" => config.speed = number(0.01, 100.0)?,
+            "lifetime" => config.lifetime = number(0.05, 2.0)?,
+            "source_radius" => config.source_radius = number(0.001, 10.0)?,
+            "tail_radius" => config.tail_radius = number(0.001, 10.0)?,
+            "opacity" => config.opacity = number(0.0, 0.98)?,
+            "edge_wobble" => config.edge_wobble = number(0.0, 0.5)?,
+            "flow_wavelength" => config.flow_wavelength = Some(number(0.01, 10.0)?),
+            "stop_fade" => config.stop_fade = number(0.01, 2.0)?,
+            _ => return Err(format!("set_tube_trail(): unknown option {key}")),
+        }
+    }
+    Ok(Some(config))
+}
+
+fn particle_emission(
+    world: &World,
+    args: &[Value],
+) -> Result<Option<crate::engine::ecs::system::particle_system::ParticleEmission>, String> {
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::ecs::system::particle_system::ParticleEmission;
+    let (material, options) =
+        match args {
+            [] => return Ok(None),
+            [Value::ComponentObject { id, .. }] => (*id, None),
+            [Value::ComponentObject { id, .. }, Value::Map(options)] => (*id, Some(options)),
+            _ => return Err(
+                "set_particle_emission(): expected no arguments or a material and optional options"
+                    .into(),
+            ),
+        };
+    if world
+        .get_component_by_id_as::<MaterialComponent>(material)
+        .is_none()
+    {
+        return Err("set_particle_emission(): expected a Material".into());
+    }
+    let mut config = ParticleEmission {
+        material,
+        ..Default::default()
+    };
+    if let Some(options) = options {
+        for (key, value) in options {
+            let vector = |value| {
+                let vector = value_as_f32_array::<3>(value)?;
+                if vector.iter().any(|value| !value.is_finite()) {
+                    return Err(format!(
+                        "set_particle_emission(): {key} requires finite values"
+                    ));
+                }
+                Ok(vector)
+            };
+            let number = |min: f64, max: f64| match value {
+                Value::Number(number) if (*number >= min && *number <= max) => Ok(*number as f32),
+                _ => Err(format!(
+                    "set_particle_emission(): {key} must be between {min} and {max}"
+                )),
+            };
+            match key.as_str() {
+                "capacity" => {
+                    let capacity = number(1.0, 64.0)?;
+                    if capacity.fract() != 0.0 {
+                        return Err("set_particle_emission(): capacity must be an integer".into());
+                    }
+                    config.capacity = capacity as usize;
+                }
+                "interval" => config.interval = number(0.005, 10.0)?,
+                "lifetime" => config.lifetime = number(0.01, 20.0)?,
+                "diameter" => config.diameter = number(0.0001, 10.0)?,
+                "growth" => config.growth = number(0.01, 20.0)?,
+                "opacity" => config.opacity = number(0.0, 0.98)?,
+                "fade_start" => config.fade_start = number(0.0, 0.99)?,
+                "spread" => config.spread = number(0.0, 100.0)?,
+                "offset" => config.offset = vector(value)?,
+                "velocity" => config.velocity = vector(value)?,
+                "acceleration" => config.acceleration = vector(value)?,
+                "color_times" => {
+                    let [middle, end] = value_as_f32_array::<2>(value)?;
+                    if !(0.0 < middle && middle < end && end <= 1.0) {
+                        return Err("set_particle_emission(): color_times must satisfy 0 < middle < end <= 1".into());
+                    }
+                    config.color_times = [middle, end];
+                }
+                "colors" => {
+                    let Value::Array(colors) = value else {
+                        return Err(
+                            "set_particle_emission(): colors must contain three RGB arrays".into(),
+                        );
+                    };
+                    if colors.len() != 3 {
+                        return Err(
+                            "set_particle_emission(): colors must contain three RGB arrays".into(),
+                        );
+                    }
+                    for (color, value) in config.colors.iter_mut().zip(colors) {
+                        *color = vector(value)?;
+                    }
+                }
+                _ => return Err(format!("set_particle_emission(): unknown option {key}")),
+            }
+        }
+    }
+    Ok(Some(config))
 }
 
 fn require_live_component(world: &World, id: ComponentId, context: &str) -> Result<(), String> {

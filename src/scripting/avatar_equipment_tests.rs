@@ -195,32 +195,67 @@ fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
 
     let mut frame = ExternalXrFrame::default();
     frame.gamepad.active = true;
-    let flames = |scene: &Universe| {
-        [first, second].map(|round| {
+    let mut uploader = Uploader::default();
+    let mut exhaust = |scene: &mut Universe| {
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut uploader,
+            &mut scene.command_queue,
+        );
+        let flames = [first, second].map(|round| {
             scene
                 .world
-                .find_component(round, "#sta_rocket_thrust_flame")
-                .is_some()
-        })
+                .find_component(round, "#sta_rocket_thrust_flame renderable")
+        });
+        let mut longest_flame = 0.0_f32;
+        let mut trails = Vec::new();
+        for instance in
+            scene.visuals.instances().iter().filter(|instance| {
+                instance.material_instance.is_some() && instance.color[3] > 0.001
+            })
+        {
+            if flames.contains(&Some(instance.component)) {
+                let axis = instance.transform.matrix_world[2];
+                longest_flame =
+                    longest_flame.max(crate::utils::math::vec3_len([axis[0], axis[1], axis[2]]));
+            } else if instance.component == ComponentId::default() {
+                assert!(instance.bones_count > 2, "each plume is one skinned mesh");
+                let palette = scene.visuals.bones_palette();
+                let tail = palette[(instance.bones_base + instance.bones_count - 1) as usize][3];
+                trails.push(crate::utils::math::vec3_len([tail[0], tail[1], tail[2]]));
+            }
+        }
+        (longest_flame, trails)
+    };
+    let frame_tick = |scene: &Universe| {
+        scene
+            .systems
+            .rx
+            .has_global_handlers(crate::engine::ecs::SignalKind::FrameTick)
     };
     frame.gamepad.hands[0].thumbstick = Some([0.5, 0.0]);
     scene.systems.xr.set_external_frame(Some(frame));
     scene.update(0.04, &Default::default());
-    assert_eq!(flames(&scene), [false, false], "walking with rockets");
+    assert_eq!(
+        exhaust(&mut scene),
+        (0.0, Vec::new()),
+        "walking with rockets"
+    );
+    assert!(!frame_tick(&scene));
     for down in [true, false, true, false] {
         frame.gamepad.hands[1].button_b = Some((down, if down { 1.0 } else { 0.0 }));
         scene.systems.xr.set_external_frame(Some(frame));
         scene.update(0.04, &Default::default());
     }
     assert_eq!(flight(&scene), (true, true));
-    assert_eq!(flames(&scene), [true, true], "stick held across takeoff");
-    let section = named(&scene, "sta_rocket_thrust_smoke_section_0");
+    let (boost_flame, boost_trails) = exhaust(&mut scene);
     assert!(
-        TransformSystem::world_trs(&scene.world, section)
-            .unwrap()
-            .scale[0]
-            > 0.01
+        boost_flame > 0.4 && boost_trails.len() == 2,
+        "stick held across takeoff"
     );
+    assert!(!frame_tick(&scene), "no script updates while emitting");
     let override_id = VelocitySystem::gravity_provider(&scene.world, velocity).unwrap();
     assert_eq!(
         scene
@@ -235,23 +270,30 @@ fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
     frame.gamepad.hands[1].thumbstick = Some([0.7, 0.0]);
     scene.systems.xr.set_external_frame(Some(frame));
     scene.update(0.04, &Default::default());
-    assert_eq!(flames(&scene), [false, false], "deadzone and turn-only input");
+    let (hover_flame, _) = exhaust(&mut scene);
     assert!(
-        scene.world.get_component_record(section).is_some(),
-        "smoke lingers"
+        hover_flame > 0.0 && hover_flame < boost_flame,
+        "turning keeps hover exhaust"
     );
-    for _ in 0..14 {
+    for _ in 0..18 {
         scene.update(0.04, &Default::default());
     }
+    let (_, hover_trails) = exhaust(&mut scene);
+    assert_eq!(hover_trails.len(), 2, "hover keeps both tubes");
     assert!(
-        scene.world.get_component_record(section).is_none(),
-        "pool retired"
+        hover_trails
+            .iter()
+            .all(|len| *len > 0.2 && *len < boost_trails[0])
     );
+    assert!(!frame_tick(&scene));
 
     frame.gamepad.hands[1].button_a = Some((true, 1.0));
     scene.systems.xr.set_external_frame(Some(frame));
     scene.update(0.04, &Default::default());
-    assert_eq!(flames(&scene), [true, true], "vertical movement");
+    assert!(
+        exhaust(&mut scene).0 > 0.4,
+        "vertical movement boosts exhaust"
+    );
     frame.gamepad.active = false;
     scene.systems.xr.set_external_frame(Some(frame));
     scene.update(0.04, &Default::default());
@@ -260,29 +302,25 @@ fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
         (true, true),
         "input loss leaves flight hovering"
     );
-    assert_eq!(
-        flames(&scene),
-        [false, false],
-        "input loss shuts off exhaust"
+    assert!(
+        exhaust(&mut scene).0 < boost_flame,
+        "input loss returns exhaust to hover"
     );
     frame.gamepad.active = true;
     frame.gamepad.hands[0].thumbstick = None;
     frame.gamepad.hands[1].button_a = Some((false, 0.0));
     scene.systems.xr.set_external_frame(Some(frame));
     scene.update(0.04, &Default::default());
-    assert_eq!(
-        flames(&scene),
-        [true, true],
+    assert!(
+        exhaust(&mut scene).0 > 0.4,
         "native fallback movement stick"
     );
 
     grab(&mut scene, second);
     assert_eq!(flight(&scene), (false, false));
-    assert_eq!(
-        flames(&scene),
-        [false, false],
-        "pickup shuts off both rockets"
-    );
+    let (glow, tail) = exhaust(&mut scene);
+    assert_eq!(glow, 0.0, "pickup shuts off both flames");
+    assert!(!tail.is_empty(), "existing smoke remains to fade");
     assert_eq!(
         VelocitySystem::gravity_provider(&scene.world, velocity),
         Some(authored_gravity)
@@ -297,7 +335,7 @@ fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
         scene.systems.xr.set_external_frame(Some(frame));
         scene.update(0.04, &Default::default());
     }
-    assert_eq!(flames(&scene), [true, true]);
+    assert!(exhaust(&mut scene).0 > 0.4);
     scene.command_queue.push_intent_now(
         first,
         IntentValue::RemoveSubtree {
@@ -306,19 +344,14 @@ fn thigh_rockets_unlock_xr_flight_until_one_leaves_equipment() {
     );
     step(&mut scene);
     assert_eq!(flight(&scene), (false, false));
-    assert_eq!(
-        flames(&scene),
-        [false, false],
-        "deletion shuts off both rockets"
-    );
-    for _ in 0..14 {
+    assert_eq!(exhaust(&mut scene).0, 0.0, "deletion shuts off both flames");
+    for _ in 0..4 {
         scene.update(0.04, &Default::default());
     }
-    assert!(
-        !scene
-            .world
-            .all_components()
-            .any(|id| scene.world.component_label(id) == Some("sta_rocket_thrust_smoke_pool"))
+    assert_eq!(
+        exhaust(&mut scene),
+        (0.0, Vec::new()),
+        "native visuals retired after fading"
     );
 }
 

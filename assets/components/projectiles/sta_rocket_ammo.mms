@@ -33,10 +33,10 @@ export fn sta_rocket_ammo(name) {
     }
     round.attach(probe)
     round.align_to_equipment_slot = true
-    round.activate = fn() {
+    round.activate = fn(mode) {
         if state.claimed { return }
         if !state.exhaust { state.exhaust = loose_rocket_exhaust(round) }
-        state.exhaust.activate()
+        state.exhaust.activate(mode)
     }
     round.deactivate = fn() {
         if state.exhaust { state.exhaust.deactivate() }

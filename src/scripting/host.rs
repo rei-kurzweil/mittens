@@ -997,6 +997,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "XrButtonChanged" => SignalKind::XrButtonChanged,
         "XrAxisChanged" => SignalKind::XrAxisChanged,
         "XrGamepadLocomotion" => SignalKind::XrGamepadLocomotion,
+        "XrGamepadFlightChanged" => SignalKind::XrGamepadFlightChanged,
         "HttpRequest" => SignalKind::HttpRequest,
         "HttpResponse" => SignalKind::HttpResponse,
         "HttpError" => SignalKind::HttpError,

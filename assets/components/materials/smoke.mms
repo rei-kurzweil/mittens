@@ -13,6 +13,7 @@ let definition = MaterialDefinition(MaterialBase())
         shade_threshold: f32
         band_softness: f32
         density: f32
+        edge_softness: f32
     })
 
 export fn smoke_material() {
@@ -23,5 +24,6 @@ export fn smoke_material() {
         shade_threshold = 0.12
         band_softness = 0.025
         density = 1.0
+        edge_softness = 0.0
     })
 }

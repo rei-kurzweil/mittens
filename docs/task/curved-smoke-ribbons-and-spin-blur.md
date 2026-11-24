@@ -1,8 +1,8 @@
-# Curved smoke ribbons and spin blur
+# Curved smoke tubes and spin blur
 
-Follow-ups to the straight rocket exhaust ribbon
-([STA rocket launcher](sta-rocket-launcher.md)). Two independent effects:
-ribbons that bend and lag (cigarette smoke, drifting trails), and a
+Follow-ups to the straight rocket exhaust capsule
+([STA rocket launcher](sta-rocket-launcher.md)). The two effects are
+tubes that bend and lag (cigarette smoke, drifting trails), and a
 speed-dependent swap from a spinning mesh to a blurred disc (propellers,
 tires).
 
@@ -11,56 +11,56 @@ material definitions only, no legacy pipelines, no new intermediate targets.
 Anything needing a custom vertex stage or a new renderer feature is an
 explicit scope change and must be approved before implementation.
 
-## 1. Curved smoke ribbon (skinned)
+## 1. Curved smoke tube (skinned)
 
-A ribbon mesh along a bone chain. Secondary motion moves the bones; the
-existing toon-exhaust style fragment draws the smoke along UV y (0 at the
-source, 1 at the tail). The rocket ribbon needs none of this because it is
-straight.
+The leg rockets use one connected, skinned tube each. The previous
+soft-edged sphere emitter gave each particle its own silhouette and opacity
+falloff. The desktop transparent pipeline depth-tests against the scene with
+depth writes disabled.
 
-### Proposed shape
+### Geometry and rig
 
-- Strip mesh: N segments (8–16) along one axis, two or three crossed strips
-  (or a camera-facing strip if a vertex stage becomes available), UV y running
-  root → tail, each ring weighted to its nearest one or two bones.
-- Bone chain driven as a lagged follow chain: root pinned to the source tip
-  (cigarette ember, exhaust nozzle); each following bone eases toward its
-  predecessor's previous position plus upward drift (buoyancy) and noise. This
-  is a spring/verlet chain, not physics collision.
-- Width/opacity growth toward the tail in the shader, as in the rocket ribbon.
-- One shared material definition; per-instance inputs only where needed.
+- A cylinder with axial edge loops supplies one connected surface. The
+  existing `R.helix_tube(0, radius, height, 0, 0, segments, sides)` gives an
+  open straight tube with any required number of rings. The ordinary
+  `R.cylinder` puts its side vertices at the two ends.
+- Use the gohei's authored `Joint` chain and
+  `Armature.joints(root).give_automatic_weights()` for a straight-tube
+  proof. Its cold-path binder weights the geometry once. The live tube binds
+  each ring to its matching joint. The faces between rings interpolate the
+  shape, keeping the rings coherent as the tube grows wider.
+- Shape the taper and rounded end with the joint palette. Use UVs with one coordinate
+  along the full trail and one around the ring. The existing straight-tube
+  generator uses U along the length. The launched capsule's shader uses V
+  along the length, so match the coordinates when adapting the shader.
+- Use a custom surface material with one transparent surface. Preserve the
+  two-tone side view and blend to a soft radial profile when seen end-on.
+  Apply one longitudinal fade to both views so the wider tail goes
+  translucent. For a tube that doubles back, test the overlap from both
+  eyes before changing depth policy.
 
-### Open questions
+### Motion
 
-- [ ] Can a `MaterialDefinition(MaterialBase())` custom fragment be used on a
-      skinned mesh today? Check `cached-skinned-toon-mesh.vert`, the
-      deformation cache (`src/engine/graphics/deformation.rs`) and how custom
-      programs pick their vertex stage. If not, decide whether skinned custom
-      materials are an approved scope change.
-- [ ] Where does the follow chain run? Native component (preferred: no MMS
-      FrameTick per ribbon, matches the rocket flight design) vs. an MMS
-      prototype calling bone pose updates each frame.
-- [ ] Does an existing secondary-motion / spring-bone system exist that can
-      drive arbitrary bone chains? Reuse it rather than adding another.
-- [ ] Alternative if skinning is blocked: CPU-rebuilt strip mesh each frame.
-      Rejected by default for Android/XR2 (per-frame upload); record measurements
-      if reconsidered.
-- [ ] Transparency: crossed strips self-overlap and double opacity at the
-      intersection. Acceptable for toon smoke? Compare against one strip.
+The gohei's `SecondaryMotion` with `SpringBone` makes a chain lag behind a
+moving mount and settle. The live trail instead samples a bounded world-space
+nozzle history after IK. Each ring corresponds to a different sample age, so
+the older end stays behind when the nozzle turns. The engine updates the
+existing skin palette without per-frame MMS callbacks or mesh uploads.
 
-### Checklist
+### Validation
 
-- [ ] Answer skinned-custom-material question; record the decision here.
-- [ ] Generate the strip mesh + armature (script under `assets/models/`, like
-      `generate-smoke-rounded-box.py`).
-- [ ] Follow-chain driver with source pin, drift, noise, damping.
-- [ ] Smoke ribbon fragment (reuse/generalize `toon-rocket-exhaust.frag`;
-      world-phase waves, tail fade). Consider sampling
-      `assets/textures/noise/perlin-*.dds` for breakup.
-- [ ] Cigarette integration: pin to the burning tip, coexist with or replace the
-      rounded-cube `smoke.mms` pool.
-- [ ] Validate: teleport/reset, fast hand motion, cleanup, stereo look on
-      headset, GPU timing.
+- A headless rigging fixture combines the subdivided tube, the gohei's
+  automatic binding path, and the translucent smoke material. It checks
+  the selected deformed program and CPU deformation of the tail and seam.
+  Headset validation covers the rendered silhouette, end-on softness, UV
+  seam, tight turns, and transparency where the tube folds across itself.
+- Test hover-to-thrust length changes, teleport/reset, and fade on stop.
+  Compare GPU timing against the sphere emitter in the same scene and pose.
+- If the rigging test file grows, move procedural surface and custom
+  material deformation cases into a fixture separate from paper craft and
+  attachment lifecycle tests. Share the headless uploader and compare
+  material routing, joint palettes, and transient mesh release before and
+  after a split.
 
 ## 2. Spin blur (propellers, tires)
 
@@ -101,18 +101,17 @@ whose shader draws the blur. Tire texture is pending (user is authoring one).
 
 ## Android notes (from the 2026-11-20 renderer audit)
 
-- Android culls back faces on non-background surfaces; desktop culls none. The
-  rocket's crossed single-sided planes each vanish from one side on Android.
-  Doubling the planes back-to-back would double opacity on desktop. This needs
-  a material-level cull choice or one consistent policy across renderers.
+- Android culls back faces on non-background surfaces. A crossed-plane
+  prototype would need to account for the two renderers' cull policies.
 - The rocket explosion (`MaterialDefinition.toon()` + `Emissive`) and the GLB
   body's imported materials are rejected by the Android renderer, which fails
   the whole frame. The rocket is desktop-only until those have custom materials.
 - New shaders/textures must be added to `android/src/demo_assets.rs`.
-- Skinning/deformation is rejected on Android, so the skinned smoke ribbon
+- Skinning/deformation is rejected on Android, so the skinned smoke tube
   needs the Android renderer to support it first (scope change).
 
 ## Work log
 
-- Created tracker. Rocket straight ribbon landed first (see the rocket task's
-  work log); nothing here is implemented yet.
+- The launched rocket uses a straight capsule with a view-dependent smoke
+  shader. The leg rockets use the same wave structure on a native skinned
+  tube. Both use generic surface materials.
