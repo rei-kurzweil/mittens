@@ -1,6 +1,9 @@
 # Damage integrity, removed volume, and operability
 
-Status: proposed, 2026-11-24. Not started.
+Status: proposed, 2026-11-24. Not started. Depends on
+[damage impacts without ECS churn](damage-impacts-without-ecs-churn.md): damage
+must arrive as a queued engine signal, not a temporary component per hit,
+before anything else consumes it.
 
 Related: [collision contexts and vehicle carry](collision-contexts-and-vehicle-carry.md),
 `assets/components/fire.mms` / `smoke.mms`, `destroyable_system.rs`.
@@ -24,6 +27,24 @@ stops driving; a mostly destroyed prop despawns with an explosion.
 - No damage or cut events reach MMS.
 - Fire and smoke: `fire.mms` (a burning material plus a bounded smoke pool,
   updated by the caller) and the rocket exhaust materials.
+
+## Delivery: one damage queue, no components
+
+Today each `Damage.at(...)` spawns and removes a `DamageComponent`, which
+changes the world's query revision and makes the next collision-index sync
+revisit every collidable, once per hit. The prerequisite ticket replaces that
+with a damage intent into a reusable queue drained once per frame. Integrity
+reads that same queue (or the destruction system forwards per-target results
+from it); it never adds its own damage path or per-hit components.
+
+## Who owns the state
+
+The damage itself lives where it lands: a Destroyable surface's sparse damage
+map (its per-cell damage) is already the record for cuttable parts, and a
+per-part hit counter is the same thing for parts that can't be cut. What that
+damage *means* (smoking, a dead wheel, a wrecked engine) is owned by the
+vehicle: a vehicle-level damage state that reads its parts' maps and keeps
+operability, rather than a separate operability component per part.
 
 ## Two measures, one component
 
@@ -78,12 +99,15 @@ with whatever uses the part, not in the destruction system:
 
 ## Plan
 
+0. Prerequisite: damage impacts as a queued signal (no components).
 1. `Integrity` component: max/current, thresholds, MMS reads and events;
-   fed by `Damage` overlapping its zones (not only Destroyable surfaces).
+   fed from the damage queue for anything overlapping its zones (not only
+   Destroyable surfaces).
 2. Destroyable volume accounting: starting volume at partition, per-cut
    volume deltas, `Integrity.from_volume()` binding.
-3. Pickup: engine block integrity with smoking/burning/wrecked; wheels with
-   volume-based inoperable thresholds.
+3. Pickup: a vehicle damage state that owns operability, reading its parts:
+   engine block integrity (smoking/burning/wrecked) and wheels' volume-based
+   inoperable thresholds.
 4. Drive: per-wheel operable flag; wrecked stops the drive and ejects riders.
 5. Smoke and fire attachments on thresholds; explosion and despawn on
    wrecked (reuse `player_death`'s burst for the explosion).
