@@ -54,6 +54,10 @@ export fn burst_rocket_weapon_controller(options) {
     let bps = 2.0
     if options["beats_per_second"] != null { bps = options.beats_per_second }
     let state = { busy = false bursts = 0 shot = 0 }
+    // Each rocket plays the launcher's sound from the first muzzle.
+    let launch_sound = AudioClip.wav("assets/audio/rocket_launcher.wav") { name = name + "_launch_sound" }
+    let launch_output = AudioOutput { launch_sound }
+    muzzles[0].attach(launch_output)
 
     // Keyframes run after the loop that built them, so each one takes the
     // next shot from a counter rather than capturing its loop index.
@@ -71,6 +75,7 @@ export fn burst_rocket_weapon_controller(options) {
         }
         let user = null
         if options["user"] != null { user = options.user() }
+        launch_sound.play()
         rocket({
             pose = { translation = pose.translation rotation_quat_xyzw = rotation scale = [1.0, 1.0, 1.0] }
             source_tool = options["source_tool"] source_user = user

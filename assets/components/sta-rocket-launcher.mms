@@ -77,7 +77,11 @@ export fn sta_rocket_launcher(options) {
     fn closed() {
         return hinge.axis_angle().angle <= Math.pi / 90.0
     }
-    let muzzle = T.position(0.00031, 0.12039, -0.18366) { name = label + "_muzzle" }
+    let launch_sound = AudioClip.wav("assets/audio/rocket_launcher.wav") { name = label + "_launch_sound" }
+    let muzzle = T.position(0.00031, 0.12039, -0.18366) {
+        name = label + "_muzzle"
+        AudioOutput { launch_sound }
+    }
     let events = T { name = label + "_events" }
     // Animation time is in beats at the default two beats per second.
     let launch_sequence = Animation.paused().length(0.2) {
@@ -100,6 +104,7 @@ export fn sta_rocket_launcher(options) {
             if !state.round || !closed() || (can_fire && !can_fire(state.user)) { return }
             let round = state.round
             state.round = null
+            launch_sound.play()
             launch_rocket(round, { pose = muzzle.world_trs() source_tool = root source_user = state.user impact = impact on_hit = on_hit })
             if on_ammo { on_ammo(0) }
             if options["on_launch"] != null {
