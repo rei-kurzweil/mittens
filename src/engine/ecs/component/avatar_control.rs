@@ -322,6 +322,9 @@ pub struct AvatarControlComponent {
     /// Publish attached cameras from a view offset from the movement root.
     pub third_person: bool,
     pub(crate) camera_follow_root: Option<ComponentId>,
+    /// Where the third-person camera orbits (runtime; reset on each switch).
+    pub(crate) third_person_orbit:
+        crate::engine::ecs::system::avatar_control_system::camera_view::ThirdPersonOrbit,
     /// Collision fidelity; see `CollisionDetail`.
     pub collision_detail: CollisionDetail,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
@@ -755,6 +758,7 @@ impl Default for AvatarControlComponent {
             posture: BodyPosture::Vertical,
             third_person: false,
             camera_follow_root: None,
+            third_person_orbit: Default::default(),
             collision_detail: CollisionDetail::Simple,
             crouch_enabled: true,
             crouch_sole_offsets: None,

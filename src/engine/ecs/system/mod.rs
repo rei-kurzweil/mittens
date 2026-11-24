@@ -122,6 +122,7 @@ pub mod xr_settings_system;
 pub mod avatar_settings_system;
 pub mod input_settings_system;
 pub mod zone_query;
+pub(crate) mod world_raycast;
 pub mod zone_visualization_system;
 pub(crate) mod particle_system;
 pub(crate) mod tube_trail_system;

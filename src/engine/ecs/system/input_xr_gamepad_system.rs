@@ -2,6 +2,8 @@ use crate::engine::ecs::component::{
     ControllerHand, InputXRComponent, InputXRGamepadComponent, TransformComponent, XrAxisControl,
     XrButtonControl, XrHandPreference, XrStickMode,
 };
+use crate::engine::ecs::component::CameraXRComponent;
+use crate::engine::ecs::system::avatar_control_system::camera_view;
 use crate::engine::ecs::system::{System, TransformSystem, XrGamepadState, XrSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::{CameraTarget, VisualWorld};
@@ -146,6 +148,10 @@ impl InputXRGamepadSystem {
         }
         self.xr_active_last_frame = true;
 
+        // In third person the turning stick orbits the camera instead, once
+        // per frame, whether or not the rig can walk (a seated driver too).
+        let orbit_owner = third_person_view_owner(world, visuals);
+        let mut orbited = false;
         let components: Vec<_> = self.components.iter().copied().collect();
         for cid in components {
             let Some(mut cfg) = world
@@ -191,6 +197,13 @@ impl InputXRGamepadSystem {
             let mut next = ComponentEventState::default();
             emit_axis_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
             emit_button_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
+            if let Some(owner) = orbit_owner
+                && !orbited
+            {
+                orbited = true;
+                let stick = orbit_stick(&cfg, &xr_state);
+                camera_view::orbit_third_person(world, owner, stick, cfg.turn_speed * dt_sec);
+            }
             let mut movement = None;
             if cfg.locomotion {
                 let moved = apply_locomotion(
@@ -199,6 +212,7 @@ impl InputXRGamepadSystem {
                     input_xr_owner,
                     &cfg,
                     &xr_state,
+                    orbit_owner.is_some(),
                     emit,
                     dt_sec,
                 );
@@ -415,6 +429,7 @@ fn apply_locomotion(
     input_xr_owner: ComponentId,
     cfg: &InputXRGamepadComponent,
     xr: &XrGamepadState,
+    orbiting: bool,
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
 ) -> Option<bool> {
@@ -428,6 +443,7 @@ fn apply_locomotion(
     }
     let [dx, dz] = radial_deadzone([stick[0], -stick[1]], cfg.deadzone);
     let turn = match cfg.stick_mode {
+        _ if orbiting => 0.,
         XrStickMode::Strafe => 0.,
         // The opposite hand's stick turns; only its X axis is read, with its
         // own deadzone so a slightly diagonal push does not creep the view.
@@ -543,6 +559,29 @@ fn apply_locomotion(
         },
     );
     Some(delta_world.iter().any(|axis| axis.abs() > f32::EPSILON))
+}
+
+/// The avatar whose third-person view the active XR camera shows.
+fn third_person_view_owner(world: &World, visuals: &VisualWorld) -> Option<ComponentId> {
+    let camera = visuals.active_xr_camera()?;
+    let owner = world
+        .get_component_by_id_as::<CameraXRComponent>(camera)?
+        .avatar_view_owner;
+    camera_view::third_person_owner(world, owner)
+}
+
+/// The stick opposite the walking one (the right stick by default), with the
+/// usual deadzone.
+fn orbit_stick(cfg: &InputXRGamepadComponent, xr: &XrGamepadState) -> [f32; 2] {
+    let move_hand = resolve_locomotion_stick(cfg.hand, xr).map_or(ControllerHand::Left, |(hand, _)| hand);
+    let hand = match move_hand {
+        ControllerHand::Left => 1,
+        ControllerHand::Right => 0,
+    };
+    xr.hands[hand]
+        .thumbstick
+        .filter(|v| v[0].is_finite() && v[1].is_finite())
+        .map_or([0.; 2], |v| radial_deadzone(v, cfg.deadzone))
 }
 
 fn radial_deadzone(v: [f32; 2], deadzone: f32) -> [f32; 2] {

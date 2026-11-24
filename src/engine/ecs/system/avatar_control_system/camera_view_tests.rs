@@ -224,3 +224,34 @@ fn third_person_xr_frames_a_scaled_rig_at_its_own_scale() {
         "{tiny_distance} vs {full_distance}"
     );
 }
+
+#[test]
+fn third_person_camera_pulls_in_before_a_wall_but_not_the_players_own_collider() {
+    use crate::engine::ecs::component::{
+        CollidableComponent, CollisionShape, TransformComponent, ZoneComponent,
+    };
+    fn solid(world: &mut World, parent: Option<ComponentId>, position: [f32; 3], half: f32) {
+        let frame = world.add_component(
+            TransformComponent::new().with_position(position[0], position[1], position[2]),
+        );
+        let t = world.get_component_by_id_as_mut::<TransformComponent>(frame).unwrap();
+        t.transform.matrix_world = t.transform.model;
+        let zone = world.add_component(ZoneComponent::new(CollisionShape::cube_half_extents([half; 3])));
+        let collidable = world.add_component(CollidableComponent::static_());
+        world.add_child(frame, zone).unwrap();
+        world.add_child(zone, collidable).unwrap();
+        if let Some(parent) = parent {
+            world.add_child(parent, frame).unwrap();
+        }
+    }
+    let mut world = World::default();
+    let root = world.add_component(TransformComponent::new());
+    // The player's own body box, a metre behind the focus, under its root.
+    solid(&mut world, Some(root), [0.0, 0.0, 1.0], 0.3);
+    let open = super::unblocked_distance(&world, root, [0.0; 3], [0.0, 0.0, 1.0], 4.0, 1.0);
+    assert!((open - 4.0).abs() < 1e-4, "own collider ignored: {open}");
+    // A wall whose near face is 2.5 m behind.
+    solid(&mut world, None, [0.0, 0.0, 3.0], 0.5);
+    let blocked = super::unblocked_distance(&world, root, [0.0; 3], [0.0, 0.0, 1.0], 4.0, 1.0);
+    assert!((blocked - 2.25).abs() < 1e-3, "sphere stops short of the wall: {blocked}");
+}

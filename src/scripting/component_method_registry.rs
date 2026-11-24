@@ -239,6 +239,8 @@ pub(crate) fn invoke_component_method(
                 .get_component_by_id_as_mut::<AvatarControlComponent>(id)
                 .ok_or("set_third_person(): expected an AvatarControl component")?;
             avatar.third_person = *enabled;
+            // Each switch to third person starts behind the player.
+            avatar.third_person_orbit = Default::default();
             Ok(Value::Null)
         }
         ("Mirror" | "mirror", "set_enabled") => super::mirror_binding::set_enabled(world,id,args,emit_intent),
