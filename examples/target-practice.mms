@@ -107,13 +107,37 @@ let local = make_rooftop_player({
     camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
     opaque_bucket = "near" show_health = true shield_mount = true
 })
-let player = practice_health(local.health, local.shield_mount, { on_damage = sounds.damage })
+// Kills: yours count the NPC going down, the NPC's count you going down.
+let kills = { player = 0 npc = 0 }
+let player_kills = Text { name = "practice_player_kills" "PLAYER\n0" C.rgba(0.30, 0.85, 1.0, 1.0) Unlit {} }
+let npc_kills = Text { name = "practice_npc_kills" "NPC\n0" C.rgba(1.0, 0.45, 0.62, 1.0) Unlit {} }
+// Off the left side of the range, raised and turned to face across it.
+T.position(-17.0, 3.2, -8.0).rotation(0.0, Math.pi / 2.0, 0.0) {
+    name = "practice_kill_board"
+    Raycastable.disabled()
+    T.position(0.0, 0.0, -0.06).scale(6.4, 2.2, 0.1) {
+        R.cube() { hardware C.rgba(0.10, 0.11, 0.16, 1.0) }
+    }
+    T.position(-2.6, 0.55, 0.02).scale(0.5, 0.5, 0.5) { player_kills }
+    T.position(0.6, 0.55, 0.02).scale(0.5, 0.5, 0.5) { npc_kills }
+}
+let player = practice_health(local.health, local.shield_mount, {
+    on_damage = sounds.damage
+    on_death = fn() {
+        kills.npc = kills.npc + 1
+        npc_kills.set_text("NPC\n" + kills.npc)
+    }
+})
 fn can_fire(user) { return player.alive() }
 
 let target = practice_target({
     prefix = "npc" avatar = "mitten" use_xr = use_xr use_desktop = use_desktop
     position = [0.0, 0.0, -8.0] yaw = Math.pi health_view = local.health_view
     on_damage = sounds.damage physics = true
+    on_down = fn() {
+        kills.player = kills.player + 1
+        player_kills.set_text("PLAYER\n" + kills.player)
+    }
     // It turns to you every five seconds and fires; step aside to dodge.
     player = local.shield_mount
     on_player_hit = fn(points) { player.damage(points, 1.0) }

@@ -2,6 +2,7 @@ import { make_rooftop_player } from "./characters/rooftop_player.mms"
 import { energy_shield } from "./energy_sheild.mms"
 import { player_death } from "./player_death.mms"
 import { ship_machine_pistol } from "./weapons/ship_machine_pistol.mms"
+import { pistol_grip } from "./poses/bisket/pistol_grip.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -36,6 +37,13 @@ let AUTO_POINTS = 0.5
 // laser_machine_pistol's auto cadence.
 let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
 let SHOT_HALF_WIDTH = 0.35
+// The NPC's right hand, in head-target space: it pivots on the shoulder,
+// a little short of full reach so the elbow bends down, and yaws a quarter
+// turn so the palm faces left around the pistol grip.
+let SHOULDER = [0.18, -0.24, -0.05]
+let HAND_REACH = 0.40
+let HAND_DROP = 0.05
+let HAND_YAW = Math.pi / 2.0
 // The physics NPC's wander: kick strength (m/s per sqrt second), leak back
 // toward a stop (per second) and a speed cap (m/s). Typical speed is about
 // WANDER_KICK / sqrt(2 * WANDER_LEAK), here ~0.8 m/s.
@@ -121,6 +129,7 @@ export fn practice_health(bar, center, options) {
 //                a machine pistol held in its right hand, alternating 30 s
 //                of single shots every 5 s with 30 s of 1.5 s auto bursts
 //   on_player_hit(points)  called for each shot that lands on the player
+//   on_down()    called each time the NPC goes down
 //   health_view (the bar faces it), on_damage(cue)
 export fn practice_target(options) {
     let physics = options["physics"] == true
@@ -137,7 +146,7 @@ export fn practice_target(options) {
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
     let player = options["player"]
-    let state = { shield = null time = 0.0 yaw = options.yaw steps = 0 walk_x = 0.0 walk_z = 0.0 }
+    let state = { shield = null time = 0.0 yaw = options.yaw pitch = 0.0 steps = 0 walk_x = 0.0 walk_z = 0.0 }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -155,6 +164,7 @@ export fn practice_target(options) {
         on_death = fn() {
             drop_shield()
             if hooks.death { hooks.death() }
+            if options["on_down"] { options.on_down() }
         }
         on_respawn = fn() {
             wear_shield()
@@ -200,42 +210,72 @@ export fn practice_target(options) {
         npc.head.update_transform(npc.head.trs().translation, [0.0, yaw, 0.0], [1.0, 1.0, 1.0])
     }
     face(options.yaw)
+    // Up/down aim: the right hand swings on the shoulder by `pitch` (positive
+    // is up) and tilts with it, tweened like the turn.
+    let raise = Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() }
+    npc.right.attach(raise)
+    fn aim_hand(pitch) {
+        state.pitch = pitch
+        let translation = [
+            SHOULDER[0],
+            SHOULDER[1] + Math.sin(pitch) * HAND_REACH - HAND_DROP,
+            SHOULDER[2] - Math.cos(pitch) * HAND_REACH,
+        ]
+        // Pitch about the head's X after the palm-left yaw: qx(pitch) * qy(yaw).
+        let sa = Math.sin(pitch / 2.0)
+        let ca = Math.cos(pitch / 2.0)
+        let sb = Math.sin(HAND_YAW / 2.0)
+        let cb = Math.cos(HAND_YAW / 2.0)
+        npc.right.trs({
+            translation = translation
+            rotation_quat_xyzw = [sa * cb, ca * sb, sa * sb, ca * cb]
+            scale = [1.0, 1.0, 1.0]
+        })
+    }
 
     // The right arm is held out with the pistol; the left arm relaxes.
     let gun = null
     if player {
         npc.left_driver.set_pose_valid(false)
         npc.right_driver.set_pose_valid(true)
-        npc.right.update_transform([0.2, -0.25, -0.45], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        aim_hand(0.0)
+        on(npc.model, "GLTFInitialized", fn(event) { pistol_grip(event.gltf, "Right") })
         gun = ship_machine_pistol(options.prefix + "_pistol", {
             opaque_bucket = "near" ammunition = 1000000 can_fire = fn(user) { return health.alive() }
         })
         // The player can't take it out of the NPC's hand.
         for grab in gun.grip.query_all("grabbable") { grab.remove_subtree() }
-        // The grip's axes are a quarter turn off the hand target's: yaw the
-        // pistol left so it points where the NPC faces.
-        let gun_mount = T.position(0.0, 0.0, -0.105).rotation(0.0, Math.pi / 2.0, 0.0) {
+        let gun_mount = T.position(0.0, 0.0, -0.105) {
             name = options.prefix + "_gun_mount"
             gun
         }
         npc.right.attach(gun_mount)
     }
-    fn heading_to_player() {
+    // Shots leave from about shoulder height under the head.
+    fn shoulder_world() {
         let h = npc.head.world_trs().translation
-        let p = player.world_trs().translation
-        return Math.atan2(-(p[0] - h[0]), -(p[2] - h[2]))
+        return [h[0], h[1] + SHOULDER[1], h[2]]
     }
-    // A shot along the aimed heading lands if the player is still near it.
-    fn shot_lands() {
-        let h = npc.head.world_trs().translation
+    // Turn and raise the pistol toward the player, once per aim.
+    fn aim_at_player() {
+        let s = shoulder_world()
         let p = player.world_trs().translation
-        let dx = p[0] - h[0]
-        let dz = p[2] - h[2]
-        let fx = -Math.sin(state.yaw)
-        let fz = -Math.cos(state.yaw)
-        let along = dx * fx + dz * fz
-        let lateral = Math.abs(dx * fz - dz * fx)
-        return along > 0.0 && lateral < SHOT_HALF_WIDTH
+        let dx = p[0] - s[0]
+        let dz = p[2] - s[2]
+        face(Math.atan2(-dx, -dz))
+        aim_hand(Math.atan2(p[1] - s[1], Math.sqrt(dx * dx + dz * dz)))
+    }
+    // A shot along the aimed line lands if the player is still near it.
+    fn shot_lands() {
+        let s = shoulder_world()
+        let p = player.world_trs().translation
+        let d = [p[0] - s[0], p[1] - s[1], p[2] - s[2]]
+        let c = Math.cos(state.pitch)
+        let f = [-Math.sin(state.yaw) * c, Math.sin(state.pitch), -Math.cos(state.yaw) * c]
+        let along = d[0] * f[0] + d[1] * f[1] + d[2] * f[2]
+        let off = [d[0] - f[0] * along, d[1] - f[1] * along, d[2] - f[2] * along]
+        let miss = Math.sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2])
+        return along > 0.0 && miss < SHOT_HALF_WIDTH
     }
 
     // Combat activity state machine, timed by animations (no per-frame
@@ -303,7 +343,7 @@ export fn practice_target(options) {
             timers.wait[combat.mode].play()
         }
         if activity == "aim" {
-            face(heading_to_player())
+            aim_at_player()
             combat.next = "fire"
             timers.aim.play()
         }
