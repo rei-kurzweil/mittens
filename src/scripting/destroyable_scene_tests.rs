@@ -13,10 +13,11 @@ fn destruction_bindings_validate_and_sakura_cans_remain_indestructible() {
     );
     super::tests::start_settings_scene("T { Destroyable.threshold(4).cell_size(0.1).chunk_size(0.8) R.cube() } Damage.at(1,2,3,0.28,1)","examples/_destruction_test.mms",&mut world,&mut rx,Some(&mut assets),&mut queue).unwrap();
     assert_eq!(world.destroyable_ids().count(), 1);
-    let damage = world
-        .get_component_by_id_as::<DamageComponent>(world.damage_ids().next().unwrap())
-        .unwrap();
-    assert_eq!(damage.position, [1., 2., 3.]);
+    // Damage.at queues an impact; it creates no component.
+    assert_eq!(world.damage_ids().count(), 0);
+    let queued: Vec<DamageComponent> = world.take_queued_damage();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].position, [1., 2., 3.]);
     for (source, path) in [
         (
             include_str!("../../examples/sakura-drone-conversion.mms"),

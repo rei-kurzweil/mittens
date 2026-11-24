@@ -132,6 +132,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             "enable" | "disable" | "set_stick_mode" | "set_flight_enabled" | "flight_enabled" | "flying"
         ))
         || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
+        || (matches!(component_type, "Integrity" | "integrity")
+            && matches!(method, "fraction" | "repair"))
         || (matches!(component_type, "Rider" | "rider")
             && matches!(method, "set_locomotion_enabled" | "locomotion_enabled" | "set_enabled"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
@@ -660,6 +662,20 @@ pub(crate) fn invoke_component_method(
                 {
                     input.locomotion = *enabled;
                 }
+            }
+            Ok(Value::Null)
+        }
+        ("Integrity" | "integrity", "fraction") => {
+            let integrity = world
+                .get_component_by_id_as::<crate::engine::ecs::component::IntegrityComponent>(id)
+                .ok_or_else(|| format!("{method}(): not an Integrity"))?;
+            Ok(Value::Number(integrity.fraction() as f64))
+        }
+        ("Integrity" | "integrity", "repair") => {
+            if let Some(integrity) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::IntegrityComponent>(id)
+            {
+                integrity.repair();
             }
             Ok(Value::Null)
         }

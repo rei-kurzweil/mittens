@@ -69,6 +69,46 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         }
     }
 
+    /// `Damage.at(x, y, z, radius, amount)` queues an impact on the world
+    /// instead of creating a temporary component, so a hit changes no
+    /// topology and never forces a collision-index refresh. The returned
+    /// value is inert, like a phase-gated expression.
+    fn queue_damage(
+        &mut self,
+        tree: &mms::MaterializedCE,
+        operation: &str,
+    ) -> Result<mms::HostResponse, mms::HostError> {
+        let numbers: Vec<f32> = tree
+            .constructor
+            .arguments
+            .iter()
+            .filter_map(|value| match value {
+                mms::Value::Number(number) => Some(*number as f32),
+                _ => None,
+            })
+            .collect();
+        let valid = tree.constructor.name.as_deref() == Some("at")
+            && tree.constructor.arguments.len() == 5
+            && numbers.len() == 5
+            && tree.initializer_calls.is_empty()
+            && numbers.iter().all(|v| v.is_finite())
+            && numbers[3] > 0.0
+            && numbers[4] > 0.0;
+        if !valid {
+            return Err(mms::HostError::failure(
+                operation,
+                "Damage requires .at(x,y,z,radius,amount) with finite coordinates and positive radius/amount",
+            ));
+        }
+        self.world
+            .queue_damage(crate::engine::ecs::component::DamageComponent {
+                position: [numbers[0], numbers[1], numbers[2]],
+                radius: numbers[3],
+                amount: numbers[4],
+            });
+        Ok(Self::inert_component("Damage".into()))
+    }
+
     pub fn legacy_component_fallbacks(&self) -> usize {
         self.legacy_component_fallbacks
     }
@@ -306,6 +346,9 @@ impl mms::Host for MittensHost<'_, '_> {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
                 }
+                if tree.component_type == "Damage" {
+                    return self.queue_damage(&tree, "spawn");
+                }
                 let mut tree = tree;
                 super::rigging_binding::materialize_descendants(self, &mut tree)?;
                 if let Some(bindings) = self.bindings {
@@ -350,6 +393,9 @@ impl mms::Host for MittensHost<'_, '_> {
             R::Register { tree } => {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
+                }
+                if tree.component_type == "Damage" {
+                    return self.queue_damage(&tree, "register");
                 }
                 let mut tree = tree;
                 super::rigging_binding::materialize_descendants(self, &mut tree)?;

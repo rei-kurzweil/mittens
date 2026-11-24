@@ -19,6 +19,9 @@ impl SystemWorld {
         self.rigging.flush_retired(render_assets, uploader);
         let mut destruction = std::mem::take(&mut self.destroyable);
         destruction.prepare(self, world, visuals, render_assets, uploader);
+        // The same impacts lower Integrity on any part they reach, cut or not.
+        let impacts = destruction.take_impacts();
+        crate::engine::ecs::system::integrity_system::apply_damage(world, &impacts, queue);
         self.destroyable = destruction;
 
         // MMS callbacks are serviced after simulation tick. Publish their

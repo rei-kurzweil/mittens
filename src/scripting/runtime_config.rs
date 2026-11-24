@@ -965,6 +965,16 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         method(vec![mms::ValueType::Bool], mms::ValueType::Null),
                     );
                 }
+                "Integrity" => {
+                    component
+                        .constructor("max", floats(1))
+                        .builder_call("max", floats(1))
+                        .builder_call("reach", floats(1))
+                        .builder_call("threshold", any(2))
+                        .builder_call("enabled", booleans(1));
+                    host_method(component, canonical, "fraction", method(vec![], mms::ValueType::F32));
+                    host_method(component, canonical, "repair", method(vec![], mms::ValueType::Null));
+                }
                 "CollisionContext" => {
                     component
                         .constructor("passthrough", booleans(1))

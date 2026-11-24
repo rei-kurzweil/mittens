@@ -54,6 +54,20 @@ sum per-cell damage; uncuttable parts count hits from the same queue), and
 crossing a named threshold emits one event. Removed volume stays a later
 option for parts that need "how much is physically left".
 
+## Implemented (2026-11-24, pending a build)
+
+- `Damage.at(...)` from scripts queues an impact on the world
+  (`World::queue_damage`) and returns an inert value: no component, no
+  topology or query-revision change, so no collision-index refresh per hit.
+  Damage components nested in authored trees still work as before.
+- `Integrity.max(n).reach(m).threshold(name, fraction)`: after the
+  destruction system drains the frame's impacts, `integrity_system` lowers
+  every enabled Integrity whose parent transform is within `reach` (plus the
+  impact radius), and emits one `DataEvent` named after each threshold it
+  crosses, on the Integrity component. MMS: `fraction()`, `repair()`.
+- Damage has no kind yet; shields and health stay MMS rules. An optional
+  kind tag on `Damage.at` (energy, explosive) could let parts weigh hits.
+
 ## Two measures, one component
 
 1. **Hit integrity** for anything: an `Integrity` component (working name)

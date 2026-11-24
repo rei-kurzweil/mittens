@@ -74,6 +74,7 @@ pub mod mirror;
 pub mod morph_target;
 pub mod mountable;
 pub mod collision_context;
+pub mod integrity;
 pub mod multiplayer_session;
 pub mod music_note;
 pub mod normal_visualisation;
@@ -319,6 +320,7 @@ pub use morph_target::{
 };
 pub use mountable::MountableComponent;
 pub use collision_context::CollisionContextComponent;
+pub use integrity::IntegrityComponent;
 pub use multiplayer_session::{
     MULTIPLAYER_DEFAULT_PORT, MultiplayerRole, MultiplayerSessionComponent,
 };

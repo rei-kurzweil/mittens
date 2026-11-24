@@ -190,6 +190,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Mirror",
     "Mountable",
     "CollisionContext",
+    "Integrity",
     "MusicNote",
     "NormalVis",
     "ObserverRouter",
@@ -2257,6 +2258,14 @@ fn create_component(
             )?)),
             _ => add!(RiderComponent::new()),
         },
+        "Integrity" => {
+            let mut integrity = crate::engine::ecs::component::IntegrityComponent::new();
+            if ctor == Some("max") {
+                integrity.max = arg_f32(args, 0)?.max(0.0);
+                integrity.current = integrity.max;
+            }
+            add!(integrity)
+        }
         "CollisionContext" => match ctor {
             Some("passthrough") => add!(
                 crate::engine::ecs::component::CollisionContextComponent::new()
@@ -3591,6 +3600,25 @@ fn apply_call(
         *world
             .get_component_by_id_as_mut::<RiderComponent>(id)
             .expect("checked rider") = updated;
+        return Ok(());
+    }
+    if let Some(integrity) =
+        world.get_component_by_id_as_mut::<crate::engine::ecs::component::IntegrityComponent>(id)
+    {
+        match method {
+            "max" => {
+                integrity.max = arg_f32(args, 0)?.max(0.0);
+                integrity.current = integrity.max;
+            }
+            "reach" => integrity.reach = arg_f32(args, 0)?.max(0.0),
+            "threshold" => {
+                let name = arg_str(args, 0)?.to_string();
+                let fraction = arg_f32(args, 1)?.clamp(0.0, 1.0);
+                integrity.thresholds.push((name, fraction, false));
+            }
+            "enabled" => integrity.enabled = arg_bool(args, 0)?,
+            _ => return Err(format!("Integrity: unknown builder '{method}'")),
+        }
         return Ok(());
     }
     if let Some(context) = world

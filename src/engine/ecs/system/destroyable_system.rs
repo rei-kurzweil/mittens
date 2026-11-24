@@ -83,8 +83,13 @@ pub struct DestroyableSystem {
     last_tick: Option<Instant>,
     pub cuts: u64,
     pub last_cut_time: std::time::Duration,
+    /// This frame's valid impacts, for the integrity pass after destruction.
+    impacts: Vec<DamageComponent>,
 }
 impl DestroyableSystem {
+    pub(crate) fn take_impacts(&mut self) -> Vec<DamageComponent> {
+        std::mem::take(&mut self.impacts)
+    }
     pub fn prepare(
         &mut self,
         systems: &mut SystemWorld,
@@ -493,7 +498,7 @@ impl DestroyableSystem {
             }
             self.debris.push_back(d);
         }
-        let mut events: Vec<_> = world
+        let mut components: Vec<_> = world
             .damage_ids()
             .filter_map(|id| {
                 world
@@ -502,9 +507,17 @@ impl DestroyableSystem {
                     .map(|e| (id, e))
             })
             .collect();
-        events.sort_unstable_by_key(|(id, _)| *id);
-        for (id, event) in events {
+        components.sort_unstable_by_key(|(id, _)| *id);
+        // Damage components (nested in authored trees) are consumed as before;
+        // queued impacts (`Damage.at` from scripts) arrive without components.
+        let mut events = Vec::with_capacity(components.len());
+        for (id, event) in components {
             let _ = world.remove_component_subtree(id);
+            events.push(event);
+        }
+        events.extend(world.take_queued_damage());
+        self.impacts.clear();
+        for event in events {
             if event.radius <= 0.
                 || event.amount <= 0.
                 || !event
@@ -515,6 +528,7 @@ impl DestroyableSystem {
             {
                 continue;
             }
+            self.impacts.push(event);
             let owners: Vec<_> = world
                 .destroyable_ids()
                 .filter(|&id| {
