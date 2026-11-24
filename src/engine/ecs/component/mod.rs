@@ -383,8 +383,8 @@ pub use velocity::VelocityComponent;
 pub use xr::XrComponent;
 pub use xr_eye_tracking::{
     EyeRotationLimits, EyeTrackingSource, HTCEyeTrackingComponent, HeadRotationCompensation,
-    MediaPipeEyeTrackingComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
-    XREyeTrackingHtcComponent, combined_eye_rotation_limits,
+    MediaPipeEyeTrackingComponent, OpenXREyeTrackingComponent, VRChatOSCEyeTrackingComponent,
+    XREyeTrackingComponent, XREyeTrackingHtcComponent, combined_eye_rotation_limits,
 };
 pub use zone::ZoneComponent;
 pub type XRHandComponent = ControllerXRComponent;

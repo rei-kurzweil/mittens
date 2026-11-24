@@ -389,6 +389,7 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
+        self.xr_eye_tracking.set_native_eyes(self.xr.native_eyes());
         self.xr_eye_tracking
             .tick_with_udp(world, &mut self.rx, &self.udp);
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
