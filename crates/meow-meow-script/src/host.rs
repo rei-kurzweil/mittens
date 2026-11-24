@@ -79,6 +79,23 @@ pub enum KeyframeEffectProfile {
     Unknown,
 }
 
+/// Which pass of a keyframe callback is running. A keyframe runs once ahead
+/// of time for audio (so sounds can be scheduled on the beat) and once on
+/// time for everything else. Each top-level statement of the callback runs in
+/// exactly one of them: audio statements (MusicNote, or a call straight on an
+/// audio component such as `clip.play()`) in the audio pass, every other
+/// statement in the visual pass. Script state therefore changes once.
+/// Functions called from a keyframe run whole in the visual pass, so a sound
+/// played inside one starts on time rather than scheduled ahead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackPhase {
+    Audio,
+    Visual,
+    /// The visual pass when the audio pass didn't run for this keyframe
+    /// (manual stepping, a missed look-ahead): every statement runs.
+    All,
+}
+
 impl KeyframeEffectProfile {
     pub const fn runs_in_audio_phase(self) -> bool {
         matches!(self, Self::AudioOnly | Self::Mixed | Self::Unknown)

@@ -66,7 +66,7 @@ impl From<&BlockEffectAnalysis> for KeyframeEffectProfile {
     }
 }
 
-fn classify_statement(stmt: &Statement) -> EffectKind {
+pub(crate) fn classify_statement(stmt: &Statement) -> EffectKind {
     match stmt {
         Statement::Expression(expr) => classify_expr(expr),
         Statement::Block(block) => summarize(block.statements.iter().map(classify_statement)),

@@ -547,8 +547,9 @@ impl mms::Host for MittensHost<'_, '_> {
                     *component_type,
                     "AudioOscillator" | "AudioClip" | "AudioGain"
                 );
+                // The visual pass only runs non-audio statements, so audio here comes
+                // from a called function and plays now.
                 if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
-                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
                 {
                     return Ok(S::Value(mms::Value::Null));
                 }
@@ -830,8 +831,9 @@ impl mms::Host for MittensHost<'_, '_> {
                     component_type.as_str(),
                     "AudioOscillator" | "AudioClip" | "AudioGain"
                 );
+                // The visual pass only runs non-audio statements, so audio here comes
+                // from a called function and plays now.
                 if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
-                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
                 {
                     return Ok(S::Value(mms::Value::Null));
                 }

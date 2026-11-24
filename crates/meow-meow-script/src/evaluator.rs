@@ -1702,6 +1702,94 @@ impl<'a, H: Host> Evaluator<'a, H> {
         }
     }
 
+    /// Invoke a keyframe callback for one pass (see `CallbackPhase`): its
+    /// top-level statements are split between the audio and visual passes,
+    /// so each runs exactly once across the two.
+    pub(crate) fn invoke_value_in_phase(
+        &mut self,
+        callback: Value,
+        args: Vec<Value>,
+        phase: crate::CallbackPhase,
+    ) -> Result<Value, EvalError> {
+        let Value::Function {
+            params,
+            body,
+            captured_env,
+            ..
+        } = callback
+        else {
+            return Err(EvalError::Runtime("callback is not callable".into()));
+        };
+        self.scopes.push((*captured_env).clone());
+        self.scopes.push(
+            params
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| (p, args.get(i).cloned().unwrap_or(Value::Null)))
+                .collect(),
+        );
+        // Decide every statement's pass before any of them runs, so a local
+        // bound in the visual pass can't move a later statement out of both.
+        let runs: Vec<bool> = body
+            .statements
+            .iter()
+            .map(|statement| match phase {
+                crate::CallbackPhase::Audio => self.is_audio_statement(statement),
+                crate::CallbackPhase::Visual => !self.is_audio_statement(statement),
+                crate::CallbackPhase::All => true,
+            })
+            .collect();
+        self.scopes.push(HashMap::new());
+        let result = (|| {
+            for (statement, runs) in body.statements.iter().zip(runs) {
+                if !runs {
+                    continue;
+                }
+                let flow = self.eval_statement(statement)?;
+                if !matches!(flow, Flow::Continue) {
+                    return Ok(flow);
+                }
+            }
+            Ok(Flow::Continue)
+        })();
+        self.scopes.pop();
+        self.scopes.pop();
+        self.scopes.pop();
+        match result? {
+            Flow::Return(value) => self.register_live_component_value(value),
+            _ => Ok(Value::Null),
+        }
+    }
+
+    /// A statement for the audio pass: statically audio (MusicNote), or a
+    /// call made directly on a variable holding an audio component. Reading
+    /// that variable changes nothing.
+    fn is_audio_statement(&self, statement: &Statement) -> bool {
+        use crate::block_effect_analyzer::{EffectKind, classify_statement};
+        if classify_statement(statement) == EffectKind::Audio {
+            return true;
+        }
+        let Statement::Expression(Expression::Call(call)) = statement else {
+            return false;
+        };
+        let Expression::BinaryOp {
+            op: BinOpKind::Dot,
+            lhs,
+            ..
+        } = call.callee.as_ref()
+        else {
+            return false;
+        };
+        let Expression::Identifier(name) = lhs.as_ref() else {
+            return false;
+        };
+        matches!(
+            self.lookup(&name.0),
+            Some(Value::ComponentObject { component_type, .. })
+                if matches!(component_type.as_str(), "AudioClip" | "AudioOscillator" | "AudioGain")
+        )
+    }
+
     fn lookup(&self, name: &str) -> Option<&Value> {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }

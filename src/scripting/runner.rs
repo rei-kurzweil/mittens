@@ -41,6 +41,9 @@ pub(crate) struct RuntimeSpecSession {
 pub enum DeferredCallbackMode {
     AudioOnly { beat_context: f64 },
     VisualOnly,
+    /// The visual pass of a keyframe whose audio pass didn't run: its audio
+    /// statements run here too.
+    VisualWithAudio,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +149,7 @@ impl RuntimeSpecSession {
         let permitted = match mode {
             DeferredCallbackMode::AudioOnly { .. } => effect_profile.runs_in_audio_phase(),
             DeferredCallbackMode::VisualOnly => effect_profile.runs_in_visual_phase(),
+            DeferredCallbackMode::VisualWithAudio => effect_profile != mms::KeyframeEffectProfile::None,
         };
         if !permitted {
             return Ok(());
@@ -172,6 +176,7 @@ impl RuntimeSpecSession {
         let permitted = match mode {
             DeferredCallbackMode::AudioOnly { .. } => effect_profile.runs_in_audio_phase(),
             DeferredCallbackMode::VisualOnly => effect_profile.runs_in_visual_phase(),
+            DeferredCallbackMode::VisualWithAudio => effect_profile != mms::KeyframeEffectProfile::None,
         };
         if !permitted {
             return Ok(Vec::new());
@@ -328,21 +333,14 @@ impl RuntimeSpecSession {
             return Err(DeferredCallbackError::ForeignSession);
         }
 
-        let host_phase = match mode {
-            DeferredCallbackMode::AudioOnly { .. } => {
-                crate::scripting::host::DeferredCallbackHostPhase::Audio
-            }
-            DeferredCallbackMode::VisualOnly => {
-                crate::scripting::host::DeferredCallbackHostPhase::Visual
-            }
-        };
+        let (host_phase, phase) = callback_phases(mode);
         let host = host
             .with_bindings(self.configured.bindings())
             .with_callback_invocations(Arc::clone(&self.callback_invocations))
             .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled))
             .with_deferred_callback_phase(host_phase);
         let (idle, result) = idle.with_host(host, |session| {
-            session.invoke_callback(callback_ref.callback, Vec::new())
+            session.invoke_callback_in_phase(callback_ref.callback, Vec::new(), phase)
         });
         self.session = Some(idle);
         result.map(|_| ()).map_err(|error| match error {
@@ -375,14 +373,7 @@ impl RuntimeSpecSession {
         }
 
         let mut intents = Vec::new();
-        let host_phase = match mode {
-            DeferredCallbackMode::AudioOnly { .. } => {
-                crate::scripting::host::DeferredCallbackHostPhase::Audio
-            }
-            DeferredCallbackMode::VisualOnly => {
-                crate::scripting::host::DeferredCallbackHostPhase::Visual
-            }
-        };
+        let (host_phase, phase) = callback_phases(mode);
         let mut host = crate::scripting::host::MittensHost::new(world, emit, &mut intents)
             .with_rx(rx)
             .with_bindings(self.configured.bindings())
@@ -393,7 +384,7 @@ impl RuntimeSpecSession {
             host = host.with_render_assets(render_assets);
         }
         let (idle, result) = idle.with_host(host, |session| {
-            session.invoke_callback(callback_ref.callback, Vec::new())
+            session.invoke_callback_in_phase(callback_ref.callback, Vec::new(), phase)
         });
         self.session = Some(idle);
         result.map_err(|error| match error {
@@ -418,11 +409,9 @@ impl RuntimeSpecSession {
                 }
                 _ => false,
             },
-            DeferredCallbackMode::VisualOnly => !matches!(
-                intent,
-                IntentValue::AudioSchedulePlay { .. }
-                    | IntentValue::OscillatorScheduleSetPitch { .. }
-            ),
+            // Audio from the visual pass (sounds inside called functions)
+            // plays now.
+            DeferredCallbackMode::VisualOnly | DeferredCallbackMode::VisualWithAudio => true,
         });
         Ok(intents)
     }
@@ -2285,3 +2274,15 @@ mod runtime_spec_session_tests {
 
 #[path = "runtime_callback_delivery.rs"]
 mod callback_delivery;
+
+/// The host gate and the evaluator's statement split for one keyframe pass.
+fn callback_phases(
+    mode: DeferredCallbackMode,
+) -> (crate::scripting::host::DeferredCallbackHostPhase, mms::CallbackPhase) {
+    use crate::scripting::host::DeferredCallbackHostPhase as Host;
+    match mode {
+        DeferredCallbackMode::AudioOnly { .. } => (Host::Audio, mms::CallbackPhase::Audio),
+        DeferredCallbackMode::VisualOnly => (Host::Visual, mms::CallbackPhase::Visual),
+        DeferredCallbackMode::VisualWithAudio => (Host::Visual, mms::CallbackPhase::All),
+    }
+}
