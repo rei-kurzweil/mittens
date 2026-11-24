@@ -259,6 +259,15 @@ impl SystemWorld {
             queue.flush(world, self, visuals, render_assets);
             #[cfg(test)]
             cpu_profile.mark(Phase::VelocityFlush);
+            // Riders on a moving deck follow this step's deck motion before
+            // contacts resolve against the deck (see attachment_carry.rs).
+            let step_sec = crate::engine::ecs::system::velocity_system::STEP_SEC as f32;
+            for root in self.attachment.step_carries(world, queue, step_sec) {
+                self.transform_changed(world, visuals, root);
+            }
+            for change in self.attachment.take_carry_contacts() {
+                self.static_contact.apply_carry(change);
+            }
             self.prepare_avatar_capsule_contact(world, visuals);
             for target in self.static_contact.tick_substep(world, &self.attachment) {
                 self.transform_changed(world, visuals, target);

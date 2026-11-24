@@ -53,7 +53,16 @@ pub struct AttachmentSystem {
     mounted_avatar_revision: Option<u64>,
     riders: HashSet<ComponentId>,
     mountables: HashSet<ComponentId>,
+    /// Riders standing on a carry mountable's deck (see attachment_carry.rs).
+    carries: HashMap<ComponentId, carry::ActiveCarry>,
+    /// Each carry mountable's frame world matrix at the previous fixed step.
+    carrier_frames: HashMap<ComponentId, [[f32; 4]; 4]>,
+    carry_contacts: Vec<carry::CarryContact>,
 }
+
+#[path = "attachment_carry.rs"]
+mod carry;
+pub(crate) use carry::CarryContact;
 
 impl AttachmentSystem {
     pub fn mounted_relationship(
@@ -150,6 +159,9 @@ impl AttachmentSystem {
         }
         // Builder calls may set the auto-mount zone after registration.
         self.mountables.insert(mountable);
+        if component.carry {
+            return;
+        }
         let Some(owner) = world.parent_of(mountable).filter(|id| {
             world
                 .get_component_by_id_as::<TransformComponent>(*id)
@@ -258,7 +270,9 @@ impl AttachmentSystem {
         };
         let Some(mountable) = world
             .get_component_by_id_as::<MountableComponent>(mountable_id)
-            .filter(|component| component.enabled && (component.on_grip || !by_grip))
+            .filter(|component| {
+                component.enabled && !component.carry && (component.on_grip || !by_grip)
+            })
             .cloned()
         else {
             return false;
@@ -446,6 +460,11 @@ impl AttachmentSystem {
                 .iter()
                 .copied()
                 .filter(|seat| !self.rider_by_mountable.contains_key(seat))
+                .filter(|seat| {
+                    world
+                        .get_component_by_id_as::<MountableComponent>(*seat)
+                        .is_some_and(|mountable| !mountable.carry)
+                })
                 .collect();
             for seat in seats {
                 let inside = world

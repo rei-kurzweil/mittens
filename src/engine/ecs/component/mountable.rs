@@ -12,6 +12,13 @@ pub struct MountableComponent {
     pub auto_mount_zone: Option<ComponentRef>,
     pub on_grip: bool,
     pub enabled: bool,
+    /// A deck rather than a seat: riders whose movement root enters
+    /// `auto_mount_zone` follow this mountable's frame (translation and yaw)
+    /// while it stays inside `entry_zone`, keeping their own walking,
+    /// velocity and offset. No occupant limit, no snapping, no grip.
+    pub carry: bool,
+    /// The CollisionContext carried riders collide with while aboard.
+    pub context: Option<ComponentRef>,
 }
 
 impl Default for MountableComponent {
@@ -29,7 +36,20 @@ impl MountableComponent {
             auto_mount_zone: None,
             on_grip: true,
             enabled: true,
+            carry: false,
+            context: None,
         }
+    }
+
+    pub fn carry(mut self) -> Self {
+        self.carry = true;
+        self.on_grip = false;
+        self
+    }
+
+    pub fn context(mut self, value: ComponentRef) -> Self {
+        self.context = Some(value);
+        self
     }
 
     pub fn entry_zone(mut self, value: ComponentRef) -> Self {
@@ -111,6 +131,12 @@ impl Component for MountableComponent {
         }
         if let Some(value) = &self.auto_mount_zone {
             expression = expression.with_call("auto_mount_zone", vec![reference(value)]);
+        }
+        if self.carry {
+            expression = expression.with_call("carry", vec![]);
+        }
+        if let Some(value) = &self.context {
+            expression = expression.with_call("context", vec![reference(value)]);
         }
         if self.on_grip {
             expression = expression.with_call("on_grip", vec![]);

@@ -201,7 +201,19 @@ until phase 3 adds contexts there).
     deck and the world but not the hull; a rocket hits interior geometry; the
     hull ignores its riders.
 
-**Phase 3: carry**
+**Phase 3: carry**. First slice implemented 2026-11-24, pending a build, as
+platform-style carry rather than re-parenting (`attachment_carry.rs`): each
+fixed step, after velocities integrate and before contacts, a carried root
+moves with its deck frame (translation of the point it stands on, yaw only)
+and its velocity turns with the deck. Nothing is re-parented, so velocity,
+gravity, AVC, cameras and the body solver are untouched, and carried riders
+are not "mounted" (no contact skip, no seated posture). `Mountable.carry()`
+boards on `auto_mount_zone` and ends on leaving `entry_zone`;
+`.context(deck)` sets the rider's outbound CollisionContext; boarding
+subtracts and leaving adds the deck's velocity; the vehicle's own movers
+ignore its riders' zones. A carry needs a CollisionContext for its deck
+floor. Test: `vehicle_carry_tests.rs`. Remaining: lower-body floor support
+on context decks, and vehicles that pitch steeply (the rider stays upright).
 11. `Mountable.carry()`: offset preserved, follow channels, no control
     hand-off, no occupant limit.
 12. Zone-driven boarding and leaving with hysteresis.

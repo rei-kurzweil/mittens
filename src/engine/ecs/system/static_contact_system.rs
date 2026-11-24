@@ -86,6 +86,9 @@ pub struct StaticContactSystem {
     broad_phase: CollidableBvh,
     /// Outbound collision context per movement target (a rider's root).
     outbound: HashMap<ComponentId, ComponentId>,
+    /// Carried rider roots by the vehicle (movement target) carrying them; a
+    /// vehicle's own movers never collide with its riders.
+    riders: HashMap<ComponentId, Vec<ComponentId>>,
     traversal: Vec<usize>,
     found: Vec<usize>,
     candidates: Vec<(usize, usize)>,
@@ -129,6 +132,19 @@ impl StaticContactSystem {
 
     pub fn outbound_context(&self, target: ComponentId) -> Option<ComponentId> {
         self.outbound.get(&target).copied()
+    }
+
+    /// Apply a carry starting or ending: the rider's outbound context, and
+    /// whether the vehicle's movers should ignore the rider's zones.
+    pub(crate) fn apply_carry(&mut self, change: super::CarryContact) {
+        self.set_outbound_context(change.root, change.context);
+        for roots in self.riders.values_mut() {
+            roots.retain(|&root| root != change.root);
+        }
+        self.riders.retain(|_, roots| !roots.is_empty());
+        if let Some(vehicle) = change.vehicle {
+            self.riders.entry(vehicle).or_default().push(change.root);
+        }
     }
 
     /// The spaces a mover driving `target` queries, outbound first.
@@ -279,6 +295,8 @@ impl StaticContactSystem {
             let center = std::array::from_fn(|i| cached_center[i] + offset[i]);
             let spaces = self.spaces(world, target);
             let home = spaces[0].expect("outbound space");
+            let carried = self.riders.get(&target).cloned();
+            let carried = carried.as_deref();
             // The previous center was stored relative to the outbound space, so
             // a vehicle's own motion this frame is not part of the sweep.
             let previous = match self
@@ -314,6 +332,9 @@ impl StaticContactSystem {
                         || space
                             .exclude
                             .is_some_and(|root| is_body_part(world, surface.zone, root))
+                        || carried.is_some_and(|roots| {
+                            roots.iter().any(|&r| is_body_part(world, surface.zone, r))
+                        })
                     {
                         continue;
                     }
@@ -422,6 +443,9 @@ impl StaticContactSystem {
                     || space
                         .exclude
                         .is_some_and(|root| is_body_part(world, surface.zone, root))
+                    || carried.is_some_and(|roots| {
+                        roots.iter().any(|&r| is_body_part(world, surface.zone, r))
+                    })
                 {
                     continue;
                 }

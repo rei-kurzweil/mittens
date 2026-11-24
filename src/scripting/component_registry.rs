@@ -680,6 +680,7 @@ fn collect_referenced_guids_filtered(
                 mountable.mount_anchor.as_ref(),
                 mountable.dismount_anchor.as_ref(),
                 mountable.auto_mount_zone.as_ref(),
+                mountable.context.as_ref(),
             ]
             .into_iter()
             .flatten()
@@ -880,6 +881,7 @@ fn collect_referenced_guids_limited(
             mountable.mount_anchor.as_ref(),
             mountable.dismount_anchor.as_ref(),
             mountable.auto_mount_zone.as_ref(),
+            mountable.context.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -3613,6 +3615,8 @@ fn apply_call(
             "mount_anchor" => current.mount_anchor(arg_component_ref(world, args, 0)?),
             "dismount_anchor" => current.dismount_anchor(arg_component_ref(world, args, 0)?),
             "auto_mount_zone" => current.auto_mount_zone(arg_component_ref(world, args, 0)?),
+            "carry" => current.carry(),
+            "context" => current.context(arg_component_ref(world, args, 0)?),
             "on_grip" => current.on_grip(),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             _ => return Err(format!("Mountable: unknown builder '{method}'")),

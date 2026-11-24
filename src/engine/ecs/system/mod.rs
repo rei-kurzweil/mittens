@@ -130,6 +130,7 @@ pub use animation_system::AnimationSystem;
 pub use armature_visualization_system::ArmatureVisualizationSystem;
 pub use asset_system::AssetSystem;
 pub use attachment_system::{AttachmentSystem, MountedRelationship};
+pub(crate) use attachment_system::CarryContact;
 pub use audio_input_system::AudioInputSystem;
 pub use audio_system::AudioSystem;
 pub use avatar_body_yaw_system::AvatarBodyYawSystem;
