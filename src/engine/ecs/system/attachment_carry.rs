@@ -5,8 +5,11 @@
 //! a carried root moves with its deck's frame: the full translation of the
 //! point it stands on, and yaw only, so the rider stays upright. Its velocity
 //! turns with the deck, so walking stays deck-relative and the vehicle's own
-//! acceleration, braking and turning never jostle it. Boarding subtracts the
-//! deck's velocity and stepping off adds it back.
+//! acceleration, braking and turning never jostle it. In effect the rider's
+//! velocity is parented to the deck's: boarding subtracts the deck's velocity
+//! at the rider's position (its linear velocity plus its turning, w x r) and
+//! stepping off adds it back, as re-parenting a transform converts between
+//! local and world.
 use super::*;
 use crate::engine::ecs::component::VelocityComponent;
 use crate::engine::ecs::system::static_contact_system::world_to_local;
@@ -39,9 +42,15 @@ struct DeckMotion {
 }
 
 impl DeckMotion {
-    /// World velocity of the deck's origin over the last step.
-    fn velocity(&self, step_sec: f32) -> [f32; 3] {
-        std::array::from_fn(|i| (self.now[3][i] - self.previous[3][i]) / step_sec)
+    /// World velocity, over the last step, of the deck point at `point`:
+    /// the deck's linear velocity plus its turning there.
+    fn velocity_at(&self, point: [f32; 3], step_sec: f32) -> [f32; 3] {
+        let Some(inverse) = mat4_inverse(self.previous) else {
+            return [0.0; 3];
+        };
+        let step = mat4_mul(self.now, inverse);
+        let moved = mat4_mul_vec4(step, [point[0], point[1], point[2], 1.0]);
+        std::array::from_fn(|i| (moved[i] - point[i]) / step_sec)
     }
 }
 
@@ -127,7 +136,7 @@ impl AttachmentSystem {
                 };
                 changed.push(carry.root);
                 if !deck_zone_holds(world, carry.mountable, false, position) {
-                    self.end_carry(world, rider, carry, Some(deck), step_sec, emit);
+                    self.end_carry(world, rider, carry, Some((deck, position)), step_sec, emit);
                 }
                 continue;
             }
@@ -145,7 +154,7 @@ impl AttachmentSystem {
                     continue;
                 };
                 if deck_zone_holds(world, deck, true, position) {
-                    self.start_carry(world, rider, deck, root, motion, step_sec, emit);
+                    self.start_carry(world, rider, deck, root, position, motion, step_sec, emit);
                     break;
                 }
             }
@@ -160,12 +169,13 @@ impl AttachmentSystem {
         rider: ComponentId,
         mountable: ComponentId,
         root: ComponentId,
+        position: [f32; 3],
         deck: DeckMotion,
         step_sec: f32,
         emit: &mut dyn SignalEmitter,
     ) {
         // Keep the rider's motion relative to the deck from here on.
-        let deck_velocity = deck.velocity(step_sec);
+        let deck_velocity = deck.velocity_at(position, step_sec);
         add_world_velocity(world, root, deck_velocity.map(|v| -v));
         let context = world
             .get_component_by_id_as::<MountableComponent>(mountable)
@@ -185,13 +195,13 @@ impl AttachmentSystem {
         world: &mut World,
         rider: ComponentId,
         carry: ActiveCarry,
-        deck: Option<DeckMotion>,
+        leaving: Option<(DeckMotion, [f32; 3])>,
         step_sec: f32,
         emit: &mut dyn SignalEmitter,
     ) {
-        // Stepping off keeps the deck's speed.
-        if let Some(deck) = deck {
-            add_world_velocity(world, carry.root, deck.velocity(step_sec));
+        // Stepping off keeps the deck's speed where the rider left it.
+        if let Some((deck, position)) = leaving {
+            add_world_velocity(world, carry.root, deck.velocity_at(position, step_sec));
         }
         self.carries.remove(&rider);
         self.carry_contacts.push(CarryContact {
