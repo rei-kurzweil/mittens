@@ -16,13 +16,13 @@ let BEACON_OFF = 0.08
 let BEACON_ON = 1.4
 let FALL_SECONDS = 15.0
 
-fn wire(from, to) {
-    let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]]
+fn wire(base, tip) {
+    let d = [tip[0] - base[0], tip[1] - base[1], tip[2] - base[2]]
     let horizontal = Math.sqrt(d[0] * d[0] + d[2] * d[2])
     let length = Math.sqrt(horizontal * horizontal + d[1] * d[1])
     let yaw = Math.atan2(d[0], d[2])
     let elevation = Math.atan2(d[1], horizontal)
-    return T.position((from[0] + to[0]) / 2.0, (from[1] + to[1]) / 2.0, (from[2] + to[2]) / 2.0)
+    return T.position((base[0] + tip[0]) / 2.0, (base[1] + tip[1]) / 2.0, (base[2] + tip[2]) / 2.0)
         .rotation(0.0, yaw, 0.0) {
         T.rotation(-elevation, 0.0, 0.0).scale(0.025, 0.025, length) {
             R.cube() { C.rgba(0.55, 0.56, 0.60, 1.0) }
