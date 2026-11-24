@@ -192,7 +192,7 @@ ED.active() {
     })
 
     // The prefab owns the car mesh, entry volume, mount/dismount points, and
-    // mounted desktop driving plus its dashboard rocket burst (Space also fires).
+    // mounted desktop driving, its laser (Space) and dashboard rocket burst (R).
     let car_root = display_car_desktop(
         "left_display_car",
         [-19.0, -0.75, -1.5],

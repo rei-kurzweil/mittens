@@ -141,16 +141,17 @@ fn xr_vehicle_input_handlers_exist_only_while_powered_and_occupied() {
     "#,
     );
     let check = |f: &Fixture, active| {
-        for kind in [SignalKind::XrAxisChanged, SignalKind::FrameTick] {
+        for kind in [
+            SignalKind::XrButtonDown,
+            SignalKind::XrButtonUp,
+            SignalKind::XrAxisChanged,
+            SignalKind::FrameTick,
+        ] {
             assert_eq!(
                 f.systems.rx.has_global_handlers(kind),
                 active,
                 "unexpected handler registration for {kind:?}"
             );
-        }
-        // Rockets fire from the dashboard button, so no controller buttons bind.
-        for kind in [SignalKind::XrButtonDown, SignalKind::XrButtonUp] {
-            assert!(!f.systems.rx.has_global_handlers(kind), "{kind:?}");
         }
     };
     check(&f, false);
