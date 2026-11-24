@@ -1,6 +1,6 @@
 use super::rocket_motion_tests::{TestClock, Uploader, advance};
 use crate::engine::Universe;
-use crate::engine::ecs::component::{TextComponent, TransformComponent};
+use crate::engine::ecs::component::{GLTFComponent, TextComponent, TransformComponent};
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use std::sync::Arc;
 
@@ -24,13 +24,19 @@ fn load(source: &str, path: &str) -> (Universe, Arc<TestClock>) {
     let mut scene = Universe::new(World::default());
     scene.systems.clock.set_driver(clock.clone());
     scene.load_mms_source_at_path(source, path).unwrap();
-    scene.systems.prepare_render(
-        &mut scene.world,
-        &mut scene.visuals,
-        &mut scene.render_assets,
-        &mut Uploader::default(),
-        &mut scene.command_queue,
-    );
+    // A few render preparations import and spawn the avatars' meshes, so
+    // pistol shots meet the real (tagged) body rather than only the proxy.
+    let mut uploader = Uploader::default();
+    for _ in 0..4 {
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut uploader,
+            &mut scene.command_queue,
+        );
+        advance(&mut scene, &clock);
+    }
     (scene, clock)
 }
 
@@ -137,8 +143,18 @@ fn practice_target_shield_takes_pistol_hits_and_splash_takes_health() {
     assert_eq!(report(&scene), "0");
     assert!(has_label(&scene, "npc_shield"));
 
-    // A third takes the rest; the NPC drops its shield.
-    event(&mut scene, "Splash");
+    // With the shield broken, a pistol shot reaches the tagged body and
+    // takes the rest; the NPC drops its shield.
+    assert!(
+        scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(named(&scene, "npc_model"))
+            .unwrap()
+            .spawned,
+        "the NPC body should be spawned so the shot meets its meshes"
+    );
+    event(&mut scene, "Pistol");
+    step(&mut scene, &clock, 12);
     step(&mut scene, &clock, 2);
     assert!(fill(&scene, "npc_health_overhead").abs() < 1e-5);
     assert!(!has_label(&scene, "npc_shield"));
