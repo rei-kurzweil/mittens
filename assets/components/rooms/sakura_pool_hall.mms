@@ -5,8 +5,8 @@ import { indoor_pool } from "./indoor-pool.mms"
 // 8.9 m hall fits under a two-storey roof. The street side is +Z. The closed
 // shell, stair hallway and excavation walls always exist; the hall itself
 // (tiles, slide, lights and the reflective water with its material) is built
-// when the player reaches the top of the stairs and removed when they step
-// back out of the street door. Pass this footprint to sakura_twilight_street
+// when the player comes within about 3 m of the building, however they
+// arrive, and removed once they are more than about 6 m away. Pass this footprint to sakura_twilight_street
 // as a ground hole: the hall's floor is below the terrain.
 //
 // Hallway: the door at x = -5.5 opens onto a landing, stairs run down along
@@ -110,8 +110,8 @@ fn light(position) {
     }
 }
 
-fn player_zone(zone, player_probe, action) {
-    on(zone, "ZoneEntered", fn(event) {
+fn player_zone(zone, signal, player_probe, action) {
+    on(zone, signal, fn(event) {
         if event.other_zone == player_probe { action() }
     })
 }
@@ -144,16 +144,18 @@ export fn sakura_pool_hall(label, origin, tiles, trim_color, player_probe) {
         state.stop_water = null
     }
 
-    // Load at the head of the stairs; unload just outside the street door.
-    // The landing between them is a deadband.
-    let load_zone = Zone.cube([0.25, 1.4, (CORRIDOR.z1 - CORRIDOR.z0) / 2.0]).enable_events() {
+    // Streaming is gated on getting close, however the player arrives (door,
+    // roof, a hole in a wall): entering a box about 3 m around the building
+    // loads the hall; leaving a box about 6 m around it unloads it. The gap
+    // between them is a deadband.
+    let load_zone = Zone.cube([WIDTH / 2.0 + 3.0, 6.5, DEPTH / 2.0 + 3.0]).enable_events() {
         name = label + "_load_zone"
     }
-    let unload_zone = Zone.cube([DOOR.width / 2.0 + 0.2, 1.4, 0.25]).enable_events() {
+    let unload_zone = Zone.cube([WIDTH / 2.0 + 6.0, 8.0, DEPTH / 2.0 + 6.0]).enable_events() {
         name = label + "_unload_zone"
     }
-    player_zone(load_zone, player_probe, load)
-    player_zone(unload_zone, player_probe, unload)
+    player_zone(load_zone, "ZoneEntered", player_probe, load)
+    player_zone(unload_zone, "ZoneExited", player_probe, unload)
 
     let root = T.position(origin[0], origin[1], origin[2]) {
         name = label
@@ -164,8 +166,8 @@ export fn sakura_pool_hall(label, origin, tiles, trim_color, player_probe) {
             building_collisions(label + "_hallway", hallway)
         }
         mount
-        T.position(STAIRS_X - 0.3, LANDING_Y + 1.4, (CORRIDOR.z0 + CORRIDOR.z1) / 2.0) { load_zone }
-        T.position(DOOR.center, LANDING_Y + 1.4, DEPTH / 2.0 + 0.6) { unload_zone }
+        T.position(0.0, 1.0, 0.0) { load_zone }
+        T.position(0.0, 1.0, 0.0) { unload_zone }
     }
     root.load_interior = load
     root.unload_interior = unload

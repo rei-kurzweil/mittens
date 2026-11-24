@@ -6,7 +6,7 @@ export fn arena_shields(socket, rank, mounts, local, remote, positions, can_equi
     let remote_slot = 103 - rank
     mounts.register(local_slot, local.shield_mount)
     mounts.register(remote_slot, remote.shield_mount)
-    let state = { items = [] }
+    let state = { items = [] count = len(positions) }
     let wear_pose = { translation = [0.0, 0.0, 0.0] rotation_quat_xyzw = [0.0, 0.0, 0.0, 1.0] scale = [1.0, 1.0, 1.0] }
 
     fn equipped(slot) {
@@ -22,10 +22,18 @@ export fn arena_shields(socket, rank, mounts, local, remote, positions, can_equi
             socket = socket rank = rank name = "arena.shield." + id target = shield mounts = mounts
             on_mount = fn(slot) { shield.set_worn(slot == local_slot || slot == remote_slot, slot == remote_slot) }
         })
-        shield.wear_key = fn() { return id + 2 * grab.state.revision }
+        shield.wear_key = fn() { return id + state.count * grab.state.revision }
         return grab
     }
-    state.items = [make(1, positions[0]), make(2, positions[1])]
+    // Two to four pickups, at the given positions.
+    if state.count == 2 { state.items = [make(1, positions[0]), make(2, positions[1])] }
+    if state.count == 3 {
+        state.items = [make(1, positions[0]), make(2, positions[1]), make(3, positions[2])]
+    }
+    if state.count >= 4 {
+        state.count = 4
+        state.items = [make(1, positions[0]), make(2, positions[1]), make(3, positions[2]), make(4, positions[3])]
+    }
     let root = T {
         name = "arena_shields"
         for item in state.items { item.root }

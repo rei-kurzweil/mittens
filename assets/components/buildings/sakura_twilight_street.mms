@@ -91,6 +91,30 @@ fn corner_grass(label, outline, x, y, z) {
     }
 }
 
+fn shack_box(position, size, material, color) {
+    return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
+        Destroyable.threshold(3.0)
+        R.cube() { Raycastable.enabled() material C.rgba(color[0], color[1], color[2], 1.0) }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+    }
+}
+
+// A small equipment shack (3 x 2.6 x 3 m, door on its -Z side), destroyable.
+fn shack(material) {
+    let wall = [0.62, 0.60, 0.56]
+    let roof = [0.30, 0.30, 0.34]
+    return T {
+        name = "sakura_twilight_tower_shack"
+        shack_box([0.0, 1.3, 1.45], [3.0, 2.6, 0.1], material, wall)
+        for side in [-1.0, 1.0] {
+            shack_box([side * 1.45, 1.3, 0.0], [0.1, 2.6, 3.0], material, wall)
+            shack_box([side * 0.95, 1.3, -1.45], [1.1, 2.6, 0.1], material, wall)
+        }
+        shack_box([0.0, 2.3, -1.45], [0.8, 0.6, 0.1], material, wall)
+        shack_box([0.0, 2.65, 0.0], [3.3, 0.1, 3.3], material, roof)
+    }
+}
+
 fn add_region(out, x0, x1, z0, z1) {
     if x1 - x0 > 0.001 && z1 - z0 > 0.001 {
         let items = out.items
@@ -204,6 +228,8 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
         }
         T.position(road_x1 - 36.0, ground_y, road_z - 10.0) {
             radio_tower("sakura_twilight_radio_tower_1", rail_material)
+            // Between the guy wires, six metres out, door toward the tower.
+            T.position(5.8, 0.0, -1.4).rotation(0.0, 1.8 + Math.pi, 0.0) { shack(rail_material) }
         }
         if !single_tower {
             T.position(road_x1 - 22.0, ground_y, road_z + 11.0) {

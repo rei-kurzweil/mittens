@@ -62,7 +62,9 @@ import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/comp
 // you're let out of any seat or truck bed and put back on your spawn spot on
 // the main rooftop; choose an avatar from its Panels dock to heal (a fresh
 // avatar) and fire again.
-// Grab and release a cyan shield pickup to wear it. It drops at zero health.
+// Grab and release a cyan shield pickup to wear it (two on the main roof, one
+// in the women's washroom, one down the road toward the radio tower). It
+// drops at zero health.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
 // left stick between strafing and turning. Collapse it from its title bar,
@@ -310,8 +312,11 @@ combat_health.bind_death(fn(is_local) {
         respawn_delay.play()
     }
 })
+// Shield pickups: two on the main roof, one in the women's washroom, and one
+// down the road toward the radio tower.
 let shields = arena_shields(socket, grab_rank, mounts, local, remote,
-    [[roof_x - 0.85, roof_height + 0.24, -1.35], [roof_x + 0.85, roof_height + 0.24, -1.35]],
+    [[roof_x - 0.85, roof_height + 0.24, -1.35], [roof_x + 0.85, roof_height + 0.24, -1.35],
+        [19.0, 1.0, -28.5], [130.0, 0.8, -15.0]],
     combat_health.can_fire)
 shields.root
 combat_health.bind_shields(shields)

@@ -214,7 +214,7 @@ fn move_player(scene: &mut Universe, player: ComponentId, translation: [f32; 3])
     );
 }
 
-/// The pool hall exists only between the head of its stairs and its door.
+/// The pool hall exists only while the player is close to its building.
 fn check_pool_hall(scene: &mut Universe) {
     let count = |scene: &Universe, label: &str| {
         scene
@@ -226,39 +226,31 @@ fn check_pool_hall(scene: &mut Universe) {
     let player = named(scene, "local_root");
     assert!(has_label(scene, "sakura_twilight_pool_hall_shell"));
     assert!(has_label(scene, "sakura_twilight_pool_hall_hallway_white"));
-    assert_eq!(count(scene, "indoor_pool"), 0);
 
-    // From the street, through the door, along the landing: still nothing.
-    let street = [0.5, -0.22, -18.0];
-    let door = [0.5, -0.22, -19.4];
-    let landing = [0.5, -0.22, -21.5];
-    let stair_head = [1.7, -0.22, -21.48];
+    // Far across the road (more than 6 m out): nothing.
+    let far = [0.5, -0.22, -5.0];
+    // On the street 2 m from the facade (within 3 m of the building).
+    let near = [0.5, -0.22, -18.0];
     let deck = [9.0, -3.10, -30.5];
-    move_player(scene, player, street);
-    move_player(scene, player, door);
-    move_player(scene, player, landing);
+    move_player(scene, player, far);
     assert_eq!(count(scene, "indoor_pool"), 0);
 
-    // The head of the stairs builds the hall once, water included, and its
-    // deck holds the player 3.1 m below the street.
-    move_player(scene, player, stair_head);
+    // Coming close builds the hall once, water included; its deck holds the
+    // player 3.1 m below the street.
+    move_player(scene, player, near);
     assert_eq!(count(scene, "indoor_pool"), 1);
     assert_eq!(count(scene, "pool_water_surface"), 1);
-    move_player(scene, player, landing);
-    move_player(scene, player, stair_head);
-    assert_eq!(count(scene, "indoor_pool"), 1);
     move_player(scene, player, deck);
-    move_player(scene, player, landing);
+    move_player(scene, player, near);
     assert_eq!(count(scene, "indoor_pool"), 1);
 
-    // Stepping out of the door removes it; coming back builds it again.
-    move_player(scene, player, door);
+    // Walking well away removes it; coming back builds it again.
+    move_player(scene, player, far);
     assert_eq!(count(scene, "indoor_pool"), 0);
     assert_eq!(count(scene, "pool_water_surface"), 0);
-    move_player(scene, player, landing);
-    move_player(scene, player, stair_head);
+    move_player(scene, player, near);
     assert_eq!(count(scene, "indoor_pool"), 1);
-    move_player(scene, player, street);
+    move_player(scene, player, far);
 }
 
 #[test]
