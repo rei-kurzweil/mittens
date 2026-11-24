@@ -91,7 +91,46 @@ fn corner_grass(label, outline, x, y, z) {
     }
 }
 
-export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, road_material, rail_material, single_tower) {
+fn add_region(out, x0, x1, z0, z1) {
+    if x1 - x0 > 0.001 && z1 - z0 > 0.001 {
+        let items = out.items
+        items["" + out.count] = [x0, x1, z0, z1]
+        out.count = out.count + 1
+    }
+}
+
+// Up to four rectangles around a hole: full-width strips before and after it
+// in Z, then the pieces to either side of it in X.
+fn cut_hole(out, r, h) {
+    if h[0] >= r[1] || h[1] <= r[0] || h[2] >= r[3] || h[3] <= r[2] {
+        add_region(out, r[0], r[1], r[2], r[3])
+        return
+    }
+    let hz0 = Math.clamp(h[2], r[2], r[3])
+    let hz1 = Math.clamp(h[3], r[2], r[3])
+    add_region(out, r[0], r[1], r[2], hz0)
+    add_region(out, r[0], r[1], hz1, r[3])
+    add_region(out, r[0], Math.clamp(h[0], r[0], r[1]), hz0, hz1)
+    add_region(out, Math.clamp(h[1], r[0], r[1]), r[1], hz0, hz1)
+}
+
+// Regions are [x0, x1, z0, z1]; holes punch rectangles out of all of them.
+fn subtract_holes(regions, holes) {
+    let current = { items = {} count = 0 }
+    for r in regions { add_region(current, r[0], r[1], r[2], r[3]) }
+    if holes {
+        for h in holes {
+            let next = { items = {} count = 0 }
+            for index in range(current.count) { cut_hole(next, current.items["" + index], h) }
+            current = next
+        }
+    }
+    return current
+}
+
+// ground_holes: optional [x0, x1, z0, z1] footprints (a sunken building) with
+// neither grass nor ground collision, so nothing draws under their floors.
+export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, road_material, rail_material, single_tower, ground_holes) {
     let road_z = -13.0
     let road_width = 9.0
     let road_x0 = -100.0
@@ -129,14 +168,20 @@ export fn sakura_twilight_street(roof_x, roof_height, ramp_z, ground_material, r
         [landing_end_x + outer_radius, ground_x1, turn_end_z, ramp_z + ramp_width / 2.0],
         [ground_x0, ground_x1, ramp_z + ramp_width / 2.0, ground_z1],
     ]
+    let grass = subtract_holes(grass_regions, ground_holes)
+    let solid = subtract_holes([[ground_x0, ground_x1, ground_z0, ground_z1]], ground_holes)
     return T {
         T { name = "sakura_twilight_ground"
             ground_material
-            T.position((ground_x0 + ground_x1) / 2.0, ground_y - 0.25, road_z)
-                .scale(ground_x1 - ground_x0, 0.50, ground_z1 - ground_z0) {
-                Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+            for index in range(solid.count) {
+                let region = solid.items["" + index]
+                T.position((region[0] + region[1]) / 2.0, ground_y - 0.25, (region[2] + region[3]) / 2.0)
+                    .scale(region[1] - region[0], 0.50, region[3] - region[2]) {
+                    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+                }
             }
-            for region in grass_regions {
+            for index in range(grass.count) {
+                let region = grass.items["" + index]
                 grass_region(region[0], region[1], region[2], region[3], surface_y)
             }
             // Use the same angular subdivisions as the road arc at both seams.

@@ -29,11 +29,11 @@ export fn destroyable_ceramic_box(position, size, color, material) {
 
 // Keep visual meshes separate from collision topology: CombineMesh may collapse
 // its source transforms without deleting the building's physical walls/floors.
-fn ceramic_parts(base_y) {
+export fn ceramic_parts(base_y) {
     return { base_y = base_y white = {} trim = {} white_count = 0 trim_count = 0 }
 }
 
-fn building_box(data, position, size, trim) {
+export fn building_box(data, position, size, trim) {
     let part = { position = [position[0], position[1] - data.base_y, position[2]] size = size }
     if trim {
         let parts = data.trim
@@ -46,7 +46,7 @@ fn building_box(data, position, size, trim) {
     }
 }
 
-fn combined_ceramic(label, parts, count, color, material) {
+export fn combined_ceramic(label, parts, count, color, material) {
     return CombineMesh.keep_transforms() {
         name = label
         // Retained boxes remain BVH ray targets; only the combined mesh draws.
@@ -129,7 +129,7 @@ fn building_columns(data, y, height, width, depth, openings, floor) {
     }
 }
 
-fn building_collisions(label, data) {
+export fn building_collisions(label, data) {
     return T {
         name = label + "_collisions"
         for group in [{ parts = data.white count = data.white_count }, { parts = data.trim count = data.trim_count }] {
@@ -146,7 +146,7 @@ fn building_collisions(label, data) {
 
 // Destroyable manages retained primitives as one floor. Both material batches
 // stay combined until a successful cut activates this section.
-fn destroyable_section(label, data, white, trim_color, tiles) {
+export fn destroyable_section(label, data, white, trim_color, tiles) {
     return T.position(0.0, data.base_y, 0.0) {
         name = label
         Destroyable.threshold(3.0)

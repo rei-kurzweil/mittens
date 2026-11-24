@@ -30,6 +30,7 @@ import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, pool_washroom_building } from "../assets/components/buildings/pool_building.mms"
 import { ship_washroom_suite } from "../assets/components/rooms/ship_washroom_suite.mms"
+import { sakura_pool_hall, sakura_pool_hall_hole } from "../assets/components/rooms/sakura_pool_hall.mms"
 import { sakura_twilight_street } from "../assets/components/buildings/sakura_twilight_street.mms"
 import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
@@ -143,10 +144,14 @@ pool_building_with_stairs("sakura_twilight_main", [roof_x, 0.0, 0.0], [storey_he
     { side = 1.0 center = ramp_entry_z width = 5.0 })
 roof_tree([roof_x, 0.0, 0.0], roof_height)
 
-sakura_twilight_street(roof_x, roof_height, ramp_entry_z, ground_material, road_material, hardware, true)
-
 // Each street side (+Z) faces the road from the same 14 x 12 m footprint.
 let row_z = -26.0
+// The pool hall beside the washroom is sunk below the street; the ground has
+// a hole under it instead of drawing grass beneath its floor.
+let pool_hall_origin = [6.0, 0.0, row_z]
+sakura_twilight_street(roof_x, roof_height, ramp_entry_z, ground_material, road_material, hardware, true,
+    [sakura_pool_hall_hole(pool_hall_origin)])
+
 // Detect the local player even when the selected avatar has collision disabled.
 let washroom_probe = Zone.sphere(0.18) {
     name = "sakura_twilight_washroom_probe"
@@ -156,7 +161,7 @@ let washroom_probe_frame = T.position(0.0, 1.0, 0.0) { washroom_probe }
 let row = [
     { name = "sakura_twilight_row_0" x = -26.0 color = white },
     { name = "sakura_twilight_row_1" x = -10.0 color = blue },
-    { name = "sakura_twilight_row_2" x = 6.0 color = white },
+    { name = "sakura_twilight_pool_hall" x = 6.0 color = white pool_hall = true },
     { name = "sakura_twilight_row_3" x = 22.0 color = blue washroom = true },
 ]
 for building in row {
@@ -165,6 +170,9 @@ for building in row {
         pool_washroom_building(building.name, origin, tiles, building.color)
         T.position(origin[0], origin[1], origin[2]) { ship_washroom_suite(washroom_probe) }
         roof_tree(origin, 5.2)
+    } else if building["pool_hall"] {
+        sakura_pool_hall(building.name, origin, tiles, building.color, washroom_probe)
+        roof_tree(origin, 6.4)
     } else {
         pool_building(building.name, origin, 1, 1.0, false, tiles, building.color, true, true)
         roof_tree(origin, storey_height)
