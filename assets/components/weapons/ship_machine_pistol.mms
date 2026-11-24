@@ -180,6 +180,7 @@ export fn ship_machine_pistol(label, options) {
     // a keyframe shortly after the press, so release a moment later.
     assembly.fire_start = fn() { return tool.use_start({ user = null }) }
     assembly.fire_end = fn() { tool.use_end() }
+    assembly.set_mode = fn(mode) { tool.set_mode(mode) }
     if sharing.socket {
         assembly.bind_pointer = sharing.grab.bind_pointer
         assembly.connect = fn(group, address) {

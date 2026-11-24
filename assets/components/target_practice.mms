@@ -11,13 +11,30 @@ import { ship_machine_pistol } from "./weapons/ship_machine_pistol.mms"
 let FULL = 10.0
 let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
 let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
+// Animations run in beats; the scenes' Clock.bpm(120) is 2 beats a second.
+let BEATS_PER_SECOND = 2.0
 // The death burst (player_death at 2 beats per second) lasts six seconds.
 let RESPAWN_SECONDS = 6.0
-// The NPC turns to the player every AIM_PERIOD_SECONDS, taking
-// AIM_TURN_SECONDS, then fires; it hits if the player is still within
-// SHOT_HALF_WIDTH of the aimed line.
-let AIM_PERIOD_SECONDS = 5.0
+// The NPC alternates PHASE_SECONDS of semi-auto and of full auto. Each
+// cycle it turns to the player (AIM_TURN_SECONDS), then pulls the trigger:
+//   semi: one shot every SEMI_PERIOD_SECONDS, SEMI_POINTS if it lands
+//   auto: AUTO_HOLD_SECONDS bursts AUTO_WAIT_SECONDS apart, AUTO_POINTS per
+//         landed shot at the pistol's auto cadence
+// A shot lands if the player is still within SHOT_HALF_WIDTH of the aimed
+// line (the NPC does not track during a burst).
+let PHASE_SECONDS = 30.0
 let AIM_TURN_SECONDS = 0.6
+// The turn plus a beat before the trigger.
+let AIM_SECONDS = AIM_TURN_SECONDS + 0.1
+let SEMI_PERIOD_SECONDS = 5.0
+// Semi fires on a keyframe shortly after the press; release after this.
+let SEMI_HOLD_SECONDS = 0.3
+let SEMI_POINTS = 1.0
+let AUTO_HOLD_SECONDS = 1.5
+let AUTO_WAIT_SECONDS = 6.0
+let AUTO_POINTS = 0.5
+// laser_machine_pistol's auto cadence.
+let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
 let SHOT_HALF_WIDTH = 0.35
 // The physics NPC's wander: kick strength (m/s per sqrt second), leak back
 // toward a stop (per second) and a speed cap (m/s). Typical speed is about
@@ -25,6 +42,18 @@ let SHOT_HALF_WIDTH = 0.35
 let WANDER_KICK = 1.0
 let WANDER_LEAK = 0.8
 let WANDER_MAX_SPEED = 1.5
+
+// A paused one-shot timer: play() it, and `seconds` later it emits `name`
+// as a DataEvent on `events`. Timing runs natively, not in per-frame script.
+fn after_seconds(events, seconds, name) {
+    let beats = seconds * BEATS_PER_SECOND
+    let timer = Animation.paused().length(beats) {
+        // Animation time is relative to its earliest keyframe.
+        Keyframe.at(0.0) {}
+        Keyframe.at(beats) { emit_data(events, name) }
+    }
+    return timer
+}
 
 fn noise(value) {
     let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
@@ -34,8 +63,12 @@ fn noise(value) {
 // bar: a health_bar. center: the transform splash distance is measured from.
 // on_damage(cue), on_death() and on_respawn() are optional.
 export fn practice_health(bar, center, options) {
-    let state = { points = FULL down = 0.0 }
+    let state = { points = FULL }
     fn callback(name) { if options { return options[name] } return null }
+    let events = T {}
+    let revive = after_seconds(events, RESPAWN_SECONDS, "Revive")
+    let timers = T { events revive }
+    timers
     fn alive() { return state.points > 0.0 }
     fn damage(amount, cue) {
         if !alive() || amount <= 0.0 { return }
@@ -46,7 +79,7 @@ export fn practice_health(bar, center, options) {
         let on_damage = callback("on_damage")
         if on_damage { on_damage(cue) }
         if state.points == 0.0 {
-            state.down = RESPAWN_SECONDS
+            revive.play()
             player_death(center.world_trs().translation, 2.0)
             let on_death = callback("on_death")
             if on_death { on_death() }
@@ -64,10 +97,8 @@ export fn practice_health(bar, center, options) {
         if d2 <= OUTER_BLAST.radius * OUTER_BLAST.radius { return OUTER_BLAST }
         return null
     }
-    on_global("FrameTick", fn(event) {
-        if state.down <= 0.0 { return }
-        state.down = state.down - event.dt_sec
-        if state.down > 0.0 { return }
+    on(events, "DataEvent", fn(event) {
+        if event != "Revive" { return }
         state.points = FULL
         bar.set_health(1.0)
         let on_respawn = callback("on_respawn")
@@ -86,9 +117,10 @@ export fn practice_health(bar, center, options) {
 //                brown-noise pattern; it may wander off the edge (default false)
 //   strafe       without physics: metres either side of position (default 2.5)
 //   speed        without physics: radians per second of the sweep (default 1.2)
-//   player       a transform to aim at: every 5 s the NPC turns to face it
-//                and fires a machine pistol held in its right hand
-//   on_player_hit()  called when a shot lands within 0.35 m of the player
+//   player       a transform to aim at: the NPC turns to face it and fires
+//                a machine pistol held in its right hand, alternating 30 s
+//                of single shots every 5 s with 30 s of 1.5 s auto bursts
+//   on_player_hit(points)  called for each shot that lands on the player
 //   health_view (the bar faces it), on_damage(cue)
 export fn practice_target(options) {
     let physics = options["physics"] == true
@@ -105,8 +137,7 @@ export fn practice_target(options) {
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
     let player = options["player"]
-    let state = { shield = null time = 0.0 yaw = options.yaw cycle = 0.0 firing = false
-        steps = 0 walk_x = 0.0 walk_z = 0.0 }
+    let state = { shield = null time = 0.0 yaw = options.yaw steps = 0 walk_x = 0.0 walk_z = 0.0 }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -118,8 +149,17 @@ export fn practice_target(options) {
         shield.set_worn(true, true)
         state.shield = shield
     }
+    let hooks = { death = null respawn = null }
     let health = practice_health(npc.health, npc.shield_mount, {
-        on_damage = on_damage on_death = drop_shield on_respawn = wear_shield
+        on_damage = on_damage
+        on_death = fn() {
+            drop_shield()
+            if hooks.death { hooks.death() }
+        }
+        on_respawn = fn() {
+            wear_shield()
+            if hooks.respawn { hooks.respawn() }
+        }
     })
     wear_shield()
 
@@ -198,10 +238,104 @@ export fn practice_target(options) {
         return along > 0.0 && lateral < SHOT_HALF_WIDTH
     }
 
+    // Combat activity state machine, timed by animations (no per-frame
+    // script): each activity's timer emits a DataEvent when it ends and the
+    // machine enters `next`:
+    //   wait -> aim -> fire -> wait ...    (down while the NPC is dead)
+    // Entering an activity performs its one action: aim turns to the player,
+    // fire presses the trigger, leaving fire releases it. A looping 30 s
+    // phase animation flips semi/auto; the flip applies when a wait begins,
+    // never mid-burst.
+    let combat = { activity = "down" next = "wait" mode = "semi" flip = false }
+    let events = T {}
+    let timers = { wait = null aim = null fire = null }
+    let clocks = null
+    if gun {
+        timers.wait = {
+            semi = after_seconds(events, SEMI_PERIOD_SECONDS - AIM_SECONDS - SEMI_HOLD_SECONDS, "WaitDone")
+            auto = after_seconds(events, AUTO_WAIT_SECONDS, "WaitDone")
+        }
+        timers.aim = after_seconds(events, AIM_SECONDS, "AimDone")
+        timers.fire = { semi = after_seconds(events, SEMI_HOLD_SECONDS, "FireDone") }
+        // An auto burst checks each shot at the pistol's cadence.
+        let burst_beats = AUTO_HOLD_SECONDS * BEATS_PER_SECOND
+        let shot_beats = AUTO_SHOT_SECONDS * BEATS_PER_SECOND
+        let burst = Animation.paused().length(burst_beats) {
+            Keyframe.at(0.0) {}
+            for shot in range(Math.floor(AUTO_HOLD_SECONDS / AUTO_SHOT_SECONDS)) {
+                Keyframe.at((shot + 1) * shot_beats) { emit_data(events, "Shot") }
+            }
+            Keyframe.at(burst_beats) { emit_data(events, "FireDone") }
+        }
+        timers.fire.auto = burst
+        let phase = Animation.looping().length(PHASE_SECONDS * BEATS_PER_SECOND) {
+            Keyframe.at(0.0) {}
+            Keyframe.at(PHASE_SECONDS * BEATS_PER_SECOND) { emit_data(events, "PhaseFlip") }
+        }
+        let timer_root = T {
+            name = options.prefix + "_combat_timers"
+            events timers.wait.semi timers.wait.auto timers.aim timers.fire.semi burst phase
+        }
+        clocks = timer_root
+    }
+    fn check_shot() {
+        let points = SEMI_POINTS
+        if combat.mode == "auto" { points = AUTO_POINTS }
+        if shot_lands() && options["on_player_hit"] { options.on_player_hit(points) }
+    }
+    fn stop_timers() {
+        timers.wait.semi.pause()
+        timers.wait.auto.pause()
+        timers.aim.pause()
+        timers.fire.semi.pause()
+        timers.fire.auto.pause()
+    }
+    fn enter(activity) {
+        if combat.activity == "fire" { gun.fire_end() }
+        combat.activity = activity
+        if activity == "wait" {
+            if combat.flip {
+                combat.flip = false
+                if combat.mode == "semi" { combat.mode = "auto" } else { combat.mode = "semi" }
+                gun.set_mode(combat.mode)
+            }
+            combat.next = "aim"
+            timers.wait[combat.mode].play()
+        }
+        if activity == "aim" {
+            face(heading_to_player())
+            combat.next = "fire"
+            timers.aim.play()
+        }
+        if activity == "fire" {
+            gun.fire_start()
+            combat.next = "wait"
+            // The first shot leaves with the press; auto keyframes check the rest.
+            check_shot()
+            timers.fire[combat.mode].play()
+        }
+        if activity == "down" {
+            stop_timers()
+            combat.next = "wait"
+        }
+    }
+    on(events, "DataEvent", fn(event) {
+        if combat.activity == "down" { return }
+        if event == "PhaseFlip" { combat.flip = true }
+        if event == "Shot" && combat.activity == "fire" { check_shot() }
+        if event == "WaitDone" || event == "AimDone" || event == "FireDone" { enter(combat.next) }
+    })
+    if gun {
+        hooks.death = fn() { enter("down") }
+        hooks.respawn = fn() { enter("wait") }
+        enter("wait")
+    }
+
     let p = options.position
     let frame = T.position(p[0], p[1], p[2]) {
         name = options.prefix + "_frame"
         npc.locomotion
+        if clocks { clocks }
     }
     on_global("FrameTick", fn(event) {
         let dt = event.dt_sec
@@ -234,30 +368,6 @@ export fn practice_target(options) {
             // Strafe back and forth along X.
             state.time = state.time + dt
             npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])
-        }
-        // Every five seconds: turn to the player, then fire once.
-        if !gun { return }
-        if !alive {
-            state.cycle = 0.0
-            if state.firing { gun.fire_end() state.firing = false }
-            return
-        }
-        let previous = state.cycle
-        state.cycle = state.cycle + dt
-        if previous < AIM_PERIOD_SECONDS && state.cycle >= AIM_PERIOD_SECONDS {
-            state.cycle = 0.0
-            face(heading_to_player())
-            return
-        }
-        let fire_at = AIM_TURN_SECONDS + 0.1
-        if previous < fire_at && state.cycle >= fire_at {
-            gun.fire_start()
-            state.firing = true
-            if shot_lands() && options["on_player_hit"] { options.on_player_hit() }
-        }
-        if state.firing && state.cycle >= fire_at + 0.3 {
-            gun.fire_end()
-            state.firing = false
         }
     })
     return {

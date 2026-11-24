@@ -24,14 +24,17 @@ import { destroyable_ceramic_box } from "../assets/components/buildings/pool_bui
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
 
 // Target practice: Sakura Twilight Simpler's weapons and combat rules
-// against a Mitten NPC, with no multiplayer. The NPC strafes left and right
-// in front of the spawn under gravity, wearing an energy shield. Every five
-// seconds it turns to you and fires its machine pistol (10% if it lands;
-// sidestep while it turns). The grass floor and back wall are destroyable. Pistol hits break the
-// shield first (10 per hit), then take 10% health. Rocket splash within 2 m
-// takes 49% health and 50 shield; out to 6 m it takes 25 shield only. At
-// zero the NPC bursts, drops its shield and comes back full after six
-// seconds. Your own rockets can splash you too.
+// against a Mitten NPC, with no multiplayer. The NPC wanders the range under
+// gravity (it may fall off; the catcher below puts it back), wearing an
+// energy shield and holding a machine pistol. It alternates 30 s of turning
+// to you and firing single shots every 5 s (10% if it lands) with 30 s of
+// 1.5 s full-auto bursts 6 s apart (5% per shot that lands). It aims once
+// per shot or burst, so sidestep while it turns.
+// Your pistol hits break its shield first (10 per hit), then take 10%
+// health. Rocket splash within 2 m takes 49% health and 50 shield; out to
+// 6 m it takes 25 shield only. At zero it bursts, drops its shield and comes
+// back full after six seconds. Your own rockets can splash you too. The
+// grass floor and back wall are destroyable.
 //
 //   cargo run --release -- load examples/target-practice.mms
 //
@@ -113,7 +116,7 @@ let target = practice_target({
     on_damage = sounds.damage physics = true
     // It turns to you every five seconds and fires; step aside to dodge.
     player = local.shield_mount
-    on_player_hit = fn() { player.damage(1.0, 1.0) }
+    on_player_hit = fn(points) { player.damage(points, 1.0) }
 })
 target.root
 

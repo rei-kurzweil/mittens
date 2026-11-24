@@ -203,7 +203,7 @@ fn target_practice_scene_loads_and_the_npc_wanders() {
 }
 
 #[test]
-fn practice_target_turns_to_the_player_every_five_seconds_and_fires() {
+fn practice_target_turns_to_the_player_and_fires() {
     let source = r#"
         import { practice_target } from "../assets/components/target_practice.mms"
         let me = T.position(0.0, 1.0, 0.0) { name = "practice_player" }
@@ -214,7 +214,7 @@ fn practice_target_turns_to_the_player_every_five_seconds_and_fires() {
         // Starts facing away (-Z) from the player at +Z.
         let target = practice_target({ prefix = "npc" avatar = "mitten" use_xr = false use_desktop = false
             position = [0.0, 0.0, -3.0] yaw = 0.0 strafe = 0.0 player = me
-            on_player_hit = fn() {
+            on_player_hit = fn(points) {
                 hits.count = hits.count + 1
                 report.set_text("" + hits.count)
             } })
@@ -233,13 +233,14 @@ fn practice_target_turns_to_the_player_every_five_seconds_and_fires() {
     assert!(head_yaw(&scene).abs() < 1e-3);
     assert!(has_label(&scene, "npc_pistol_grip"));
 
-    // Before the first five seconds it holds its heading and has not fired.
-    step(&mut scene, &clock, 4 * 120);
+    // During its first 4 s wait it holds its heading and has not fired.
+    step(&mut scene, &clock, 420);
     assert!(head_yaw(&scene).abs() < 1e-3);
     assert_eq!(report(&scene), "0");
 
-    // Then it turns half a revolution to face the player and fires once.
-    step(&mut scene, &clock, 2 * 120);
+    // Then it turns half a revolution to face the player (0.6 s), and 0.1 s
+    // later fires once.
+    step(&mut scene, &clock, 240);
     let yaw = head_yaw(&scene).abs();
     assert!((yaw - std::f32::consts::PI).abs() < 0.05, "{yaw}");
     assert_eq!(report(&scene), "1");
