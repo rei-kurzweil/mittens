@@ -132,9 +132,13 @@ mod truck_bed_tests;
 #[cfg(test)]
 mod avatar_picker_tests;
 #[cfg(test)]
+mod health_bar_tests;
+#[cfg(test)]
 mod miku_rig_report;
 #[cfg(test)]
 mod sakura_twilight_tests;
+#[cfg(test)]
+mod sakura_combat_tests;
 #[cfg(test)]
 mod sakura_environment_tests;
 

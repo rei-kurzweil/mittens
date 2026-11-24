@@ -4,6 +4,7 @@ import { mini_explosion } from "../mini-explosion.mms"
 import { emissive_surface } from "../materials/emissive_surface.mms"
 import { shared_grabbable } from "../network/shared_grabbable.mms"
 import { shared_impact } from "../network/shared_impact.mms"
+import { weapon_restock } from "./weapon_restock.mms"
 
 export fn apply_machine_pistol_impact(point, amount) {
     Damage.at(point[0], point[1], point[2], 0.28, amount)
@@ -16,6 +17,7 @@ export fn apply_machine_pistol_impact(point, amount) {
 // Unique labels keep rack instances' controls independent.
 // For a shared pistol pass { socket, weapon_id, rank, mounts? }, bind the local pointers
 // and connect/disconnect the assembly with the scene's peer lifecycle.
+// Optional can_fire(user) and on_hit(hit) supply the scene's gameplay rules.
 export fn ship_machine_pistol(label, options) {
     let scale = 0.085
     let hand_offset = 0.05
@@ -25,6 +27,8 @@ export fn ship_machine_pistol(label, options) {
     let material = ship_environment_material(bucket)
     let sharing = { grab = null socket = null id = label }
     let impacts = null
+    let fire_gate = null
+    let on_hit = null
     let ammunition = 75
     let left_pointer = "#ship_left_hand_pointer"
     let right_pointer = "#ship_right_hand_pointer"
@@ -32,6 +36,8 @@ export fn ship_machine_pistol(label, options) {
     if options {
         sharing.socket = options["socket"]
         impacts = options["shared_impacts"]
+        fire_gate = options["can_fire"]
+        on_hit = options["on_hit"]
         if options["ammunition"] != null {
             ammunition = Math.floor(options.ammunition)
             if ammunition < 0 { ammunition = 0 }
@@ -41,7 +47,8 @@ export fn ship_machine_pistol(label, options) {
         if options["right_pointer"] { right_pointer = options.right_pointer }
         if options["user"] { user = options.user }
     }
-    fn can_fire() { return !sharing.grab || sharing.grab.state.owner == options.rank }
+    fn locally_owned() { return !sharing.grab || sharing.grab.state.owner == options.rank }
+    fn can_fire(user) { return locally_owned() && (!fire_gate || fire_gate(user)) }
     let own_impacts = sharing.socket && !impacts
     if own_impacts {
         impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_machine_pistol_impact })
@@ -49,6 +56,7 @@ export fn ship_machine_pistol(label, options) {
     fn impact(hit) {
         if impacts { impacts.hit(hit.hit_point, hit.damage) }
         else { apply_machine_pistol_impact(hit.hit_point, hit.damage) }
+        if on_hit { on_hit(hit) }
     }
     let tool = laser_machine_pistol({
         name = label + "_laser" length = 60.0 flash_size = 0.22 beam_radius = 0.012
@@ -63,6 +71,12 @@ export fn ship_machine_pistol(label, options) {
         EM.on().intensity(3.0)
     }
     let ammo_display = { pending = false shown = ammunition }
+    let restock = { timer = null }
+    fn show_ammo(amount) {
+        if amount == ammo_display.shown { return }
+        ammo_count.set_text("" + amount)
+        ammo_display.shown = amount
+    }
     // Start once per dirty interval, without restarting on subsequent shots.
     // This trailing throttle updates during continuous fire and after release.
     let ammo_refresh = Animation.paused().length(2.0) {
@@ -73,12 +87,13 @@ export fn ship_machine_pistol(label, options) {
     }
     on(tool.completion,"DataEvent",fn(event) {
         if event == "AmmoRefreshDue" {
-            let remaining = tool.device_state.ammunition
-            if remaining != ammo_display.shown {
-                ammo_count.set_text("" + remaining)
-                ammo_display.shown = remaining
-            }
+            show_ammo(tool.device_state.ammunition)
             ammo_display.pending = false
+        }
+        if event == "ShotFired" && restock.timer {
+            let amount = tool.device_state.ammunition
+            sharing.grab.set_ammo(amount)
+            if amount == 0 { restock.timer.start() }
         }
         if event == "ShotFired" && !ammo_display.pending {
             ammo_display.pending = true
@@ -86,6 +101,18 @@ export fn ship_machine_pistol(label, options) {
         }
     })
     let held = { active = false hand = "" pointer = null }
+    fn apply_ammo(amount, returned) {
+        if returned {
+            held.active = false
+            held.pointer = null
+            tool.use_end()
+            ammo_refresh.pause()
+            ammo_display.pending = false
+            restock.timer.cancel()
+        }
+        tool.device_state.ammunition = amount
+        show_ammo(amount)
+    }
     let grip = T.rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = label + "_grip"
         Selectable.off()
@@ -120,7 +147,7 @@ export fn ship_machine_pistol(label, options) {
     })
     // Input is forwarded by the ship controller, never globally subscribed here.
     grip.ship_input=fn(kind,event) {
-        if !held.active || !can_fire() {return}
+        if !held.active || !locally_owned() {return}
         if kind=="XrButtonDown" || kind=="XrButtonUp" {
             if event.hand==held.hand && (event.control=="LeftTrigger" || event.control=="RightTrigger") {
                 if kind=="XrButtonDown" {tool.use_start({user=query(user)})}
@@ -134,13 +161,18 @@ export fn ship_machine_pistol(label, options) {
     }
     let grip_mount = grip
     if sharing.socket {
-        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank mounts = options["mounts"] })
+        let stock = null
+        let restock_rate = options["restock_beats_per_second"]
+        if restock_rate != null { stock = { capacity = ammunition apply = apply_ammo } }
+        let grab = shared_grabbable({ socket = sharing.socket name = sharing.id + ".grip" target = grip rank = options.rank mounts = options["mounts"] stock = stock })
         sharing.grab = grab
         grip_mount = grab.root
+        if stock { restock.timer = weapon_restock(label, restock_rate, grab.restock) }
     }
     let assembly = T {
         name = label + "_assembly"
         grip_mount
+        if restock.timer { restock.timer.root }
         for projectile in tool.projectiles { projectile }
     }
     assembly.grip = grip
@@ -156,6 +188,7 @@ export fn ship_machine_pistol(label, options) {
             sharing.grab.disconnect()
             tool.network.disconnect()
             if own_impacts { impacts.disconnect() }
+            if restock.timer && tool.device_state.ammunition == 0 { restock.timer.start() }
         }
     }
     return assembly

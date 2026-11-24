@@ -53,8 +53,9 @@ export fn laser_machine_pistol(options) {
     }
     let on_hit = default_impact
     if options["on_hit"] != null { on_hit = options.on_hit }
+    fn can_fire(user) { return !options["can_fire"] || options.can_fire(user) }
     fn emit_shot(projectile, aim, index) {
-        if options["can_fire"] && !options.can_fire() { return }
+        if !can_fire(device_state.user) { return }
         if !device_state.cancelled && (device_state.ammunition == null || device_state.ammunition > 0) {
             // Spend synchronously at the actual shot, including each burst keyframe.
             if device_state.ammunition != null { device_state.ammunition = device_state.ammunition - 1 }
@@ -98,6 +99,7 @@ export fn laser_machine_pistol(options) {
     }
     fn begin_fire() {
         if device_state.ammunition != null && device_state.ammunition <= 0 { return }
+        if !can_fire(device_state.requested_user) { return }
         device_state.user = device_state.requested_user
         device_state.firing = true
         device_state.cancelled = false
@@ -118,6 +120,13 @@ export fn laser_machine_pistol(options) {
             if device_state.trigger_held && device_state.mode == "auto" { begin_fire() }
         }
         if event == "AutoCycle" && device_state.firing && !device_state.cancelled && device_state.burst_mode == "auto" && (device_state.ammunition == null || device_state.ammunition > 0) {
+            if !can_fire(device_state.user) {
+                automatic.pause()
+                device_state.cancelled = true
+                device_state.firing = false
+                flash.stop()
+                return
+            }
             auto_sound.play()
             device_state.bursts_fired = device_state.bursts_fired + 1
         }
@@ -145,6 +154,7 @@ export fn laser_machine_pistol(options) {
     }
     device_state.tool = root
     fn use_start(context) {
+        if !can_fire(context.user) { return false }
         if device_state.ammunition != null && device_state.ammunition <= 0 { return false }
         if device_state.trigger_held { return false }
         device_state.trigger_held = true

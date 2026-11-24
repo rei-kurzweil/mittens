@@ -43,6 +43,12 @@ export fn sakura_pickup_fleet(socket, rank, mounts, ground_y, single_pickup) {
         slot.generation = generation
         if !slot.stage { slot.stage = "retire" }
     }
+    fn respawn() {
+        for slot in slots {
+            if !slot.stage { queue_respawn(slot, slot.generation + 1) }
+        }
+        state.repeats = 4
+    }
     fn check_bounds(slot) {
         if slot.stage || !slot.motion.owns_motion() { return }
         let y = slot.truck.world_trs().translation[1]
@@ -136,5 +142,5 @@ export fn sakura_pickup_fleet(socket, rank, mounts, ground_y, single_pickup) {
         T.position(44, lower - 100.0, -13) { low_box }
         T.position(44, upper + 100.0, -13) { high_box }
     }
-    return { root = fleet tick = tick connect = connect disconnect = disconnect }
+    return { root = fleet tick = tick connect = connect disconnect = disconnect respawn = respawn }
 }
