@@ -140,6 +140,25 @@ let patrol = vehicle_patrol(truck_motion, truck, {
 })
 patrol
 
+// Shoot the engine block (front of the truck) enough and it smokes, then
+// burns, then the truck is wrecked: it explodes and stops. Shot-out wheels
+// cost it traction. Twelve seconds after a wreck a repaired truck goes back
+// to its start.
+let wreck_events = T { name = "demo_truck_wreck_events" }
+wreck_events
+let wreck_delay = Animation.paused().length(24.0) {
+    Keyframe.at(0.0) {}
+    Keyframe.at(24.0) { emit_data(wreck_events, "TruckRebuilt") }
+}
+wreck_events.attach(wreck_delay)
+on(wreck_events, "DataEvent", fn(event) {
+    if event != "TruckRebuilt" { return }
+    truck.repair_damage()
+    truck_motion.reset()
+    truck.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+})
+truck.set_on_wrecked(fn() { wreck_delay.play() })
+
 let sounds = arena_audio()
 sounds.root
 

@@ -2,6 +2,7 @@ import { pickup_power_panel } from "./pickup_power_panel.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_passenger_seat, pickup_bed_deck } from "./pickup_ride_seats.mms"
+import { pickup_damage } from "./pickup_damage.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
 import { pickup_anime_material } from "../materials/pickup_anime.mms"
@@ -29,6 +30,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     if options && options["acceleration_drive"] {
         drive=Acceleration.drive() {name="pickup_drive_acceleration"}
     }
+    let damage=pickup_damage({})
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
         // Untextured body: the baked atlas replaces uv0 and paint colour stays
@@ -72,8 +74,8 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // open lower cabin intact; wheels and springs remain independent.
             for part_mesh in event.gltf.query_all("renderable") {
                 if part_mesh!=cabin {
-                    let damage=Destroyable.threshold(damage_threshold) {name="pickup_imported_part_damage"}
-                    part_mesh.attach(damage)
+                    let part_damage=Destroyable.threshold(damage_threshold) {name="pickup_imported_part_damage"}
+                    part_mesh.attach(part_damage)
                 }
             }
             // Physical panel collision is explicit. Decorative coils and tires
@@ -165,6 +167,10 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
         if input["throttle"]!=null {throttle=input.throttle}
         if input["steering"]!=null {steering=input.steering}
         if input["brake"]!=null {brake=input.brake==true}
+        // The truck's damage owns operability: dead wheels cost traction, and
+        // a wrecked engine leaves only the brake.
+        throttle=throttle*damage.traction()
+        if damage.wrecked() {throttle=0.0 brake=true}
         if drive {
             drive.set_drive(throttle,steering,brake)
             return
@@ -190,6 +196,11 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     // The passenger seat and the bed deck sit beside the driver's seat on the
     // truck root; see pickup_ride_seats. The bed's collision context rides the
     // chassis (so it tilts with the hydraulics) and excludes the whole truck.
+    // Engine and wheel integrity (see pickup_damage) ride the chassis.
+    body.attach(damage.parts)
+    truck.damage=damage
+    truck.repair_damage=damage.repair
+    truck.set_on_wrecked=damage.set_on_wrecked
     let passenger=pickup_passenger_seat()
     body.attach(passenger.frames)
     truck.attach(passenger.mountable)
