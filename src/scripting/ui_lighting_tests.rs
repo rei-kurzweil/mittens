@@ -1,5 +1,4 @@
 use crate::engine::Universe;
-use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
 use crate::engine::ecs::component::{RenderableComponent, TextComponent, UnlitComponent};
 use crate::engine::ecs::system::material_system::{MaterialSystem, SurfaceSource};
 use crate::engine::ecs::{ComponentId, World};
@@ -20,24 +19,12 @@ fn descendants(world: &World, root: ComponentId) -> Vec<ComponentId> {
     result
 }
 fn assert_unlit_panel(world: &World, root: ComponentId) {
-    // Panels own the shared custom UI material (not the legacy Unlit marker),
-    // so both the desktop and Android renderers draw them.
-    let material = world
-        .children_of(root)
-        .iter()
-        .copied()
-        .find(|&id| world.get_component_by_id_as::<MaterialComponent>(id).is_some())
-        .expect("panel must own its UI material scope");
-    let definition = world
-        .get_component_by_id_as::<MaterialComponent>(material)
-        .unwrap()
-        .definition;
-    assert_eq!(
+    assert!(
         world
-            .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
-            .unwrap()
-            .fragment_uri,
-        "assets/shaders/ui-unlit.frag"
+            .children_of(root)
+            .iter()
+            .any(|&id| world.get_component_by_id_as::<UnlitComponent>(id).is_some()),
+        "panel must own its unlit scope"
     );
     let renderables: Vec<_> = descendants(world, root)
         .into_iter()
@@ -54,8 +41,8 @@ fn assert_unlit_panel(world: &World, root: ComponentId) {
     for id in renderables {
         assert_eq!(
             MaterialSystem::resolve_surface(world, id),
-            Some(SurfaceSource::Material(material)),
-            "renderable {id:?} did not inherit the panel UI material"
+            Some(SurfaceSource::Unlit),
+            "renderable {id:?} did not inherit unlit shading"
         );
     }
 }

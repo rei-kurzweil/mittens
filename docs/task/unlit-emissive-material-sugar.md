@@ -84,9 +84,10 @@ definitions instead of built-in programs.
 - Android: `android/validation/renderer-smoke` (the sakura stage with
   EditorUI, the launcher dock) renders with no legacy-material rejections.
 
-## Done so far (unblock)
+## Attempted unblock (reverted)
 
-`accordion({ unlit = true })` now attaches `shared_ui_unlit_material()` (one
-shared `ui-unlit.frag` definition) instead of `Unlit {}`, unless the caller
-passes `material`. Editor panels, info panels and settings panels therefore
-draw on Android. Direct `Unlit {}` uses and `Emissive` are unchanged.
+Giving `accordion({ unlit = true })` a shared custom unlit material
+(`shared_ui_unlit_material()`, `ui-unlit.frag`) instead of `Unlit {}` works for
+scenes but breaks editor panels. Those are still evaluated by the legacy
+`world_evaluator.rs`, which cannot resolve `import { f32 } from "types"`. See
+[editor-ui-runtime-spec-evaluator-and-materials](./editor-ui-runtime-spec-evaluator-and-materials.md).
