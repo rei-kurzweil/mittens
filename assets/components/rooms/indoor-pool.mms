@@ -217,7 +217,7 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
             ambient_strength = 0.16
             shininess = 64.0
             rim_strength = 0.30
-            normal_sign = -1.0
+            normal_sign = 1.0
         })
         let slide_z = basin_end_z - 1.25
         let slide_radius = 1.62
@@ -236,7 +236,8 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
                     C.rgba(0.24, 0.67, 0.80, 1.0)
                     outer_plastic
                 }
-                R.helix_tube(slide_radius, 0.56, slide_height, 0.0, slide_sweep, 320, 32) {
+                // Reverse the liner's faces so they stay visible inside the tube.
+                R.helix_tube(slide_radius, 0.56, slide_height, 0.0, slide_sweep, 320, 32, true) {
                     name = "pool_helix_slide_inner"
                     C.rgba(0.24, 0.67, 0.80, 1.0)
                     inner_plastic

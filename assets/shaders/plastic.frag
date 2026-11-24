@@ -71,8 +71,7 @@ void main() {
     vec3 N=normalize(v_normal)*(plastic.normal_sign<0.0 ? -1.0 : 1.0);
     vec3 view_position=(ubo.view*vec4(v_world_pos,1.0)).xyz;
     vec3 V=normalize(transpose(mat3(ubo.view))*(-view_position));
-    // The common mesh pipeline is two-sided. Reject the unlit reverse surface
-    // so the outer wall cannot hide the separately shaded inward-facing liner.
+    // Reject back-facing lighting normals, including in two-sided pipelines.
     if(dot(N,V)<=0.0) discard;
     vec3 irradiance=vec3(0.0);
     vec3 specular=vec3(0.0);

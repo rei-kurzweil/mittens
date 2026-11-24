@@ -3,6 +3,12 @@
 Date: 2026-10-25
 Status: scene/material slice implemented; interactive headset review in progress.
 
+Follow-up split proposal: extract the slide shell, landing, access ladder and
+slide collision proxy from `indoor-pool.mms` into a slide component. Keep its
+placement and the room's water and deck in the pool component. Preserve mesh
+tessellation, batching, one-time construction and collision panel counts.
+Validate hall streaming, ladder grips and slide traversal after extraction.
+
 The same youtuber-room.mms now opens through its existing front doorway into a
 2 m hallway and a parameterized pool hall. The resized hall is 8.2 x 14 x 8.91 m
 (width/length/height); the water/basin opening is 3.5 x 9 m. The four size variables
@@ -99,13 +105,15 @@ The same bounded, frame-safe snapshot pool is retained.
 R.cylinder(radius, height, sides)
 R.torus(radius, tube_radius, segments, sides)
 R.helix(inner_radius, outer_radius, height, start_angle, sweep_angle, segments, wall_height)
-R.helix_tube(radius, tube_radius, height, start_angle, sweep_angle, segments, sides)
+R.helix_tube(radius, tube_radius, height, start_angle, sweep_angle, segments, sides, inward)
 ```
 
 All are about local +Y; angles are radians and height is total rise. Helix sweeps
 may exceed 2*pi in either direction. R.helix makes an open ribbon with optional
 vertical trough walls. R.helix_tube sweeps a round cross-section, also supporting
-zero-height arcs. Cylinders have end caps; helical tubes have open ends.
+zero-height arcs. The optional `inward` flag defaults to false and reverses
+triangle winding and normals when true. Cylinders have end caps; helical
+tubes have open ends.
 Dimensions/segment limits are checked and authored parameters serialize.
 The chrome pool ladder uses straight cylinders for rails/rungs and semicircular
 tube handles. The slide is a two-turn cyan tube with a dedicated plastic
@@ -143,11 +151,10 @@ adds above albedo. Diffuse and specular scales are independent named f32 inputs.
 Other inputs are ambient_strength, shininess, rim_strength and normal_sign.
 
 Two renderables follow the identical centreline: a 60 cm-radius exterior and a
-56 cm-radius liner (both doubled). Their material instances share one definition; exterior
-diffuse_scale/specular_scale are 1, interior scales are both 1/3. normal_sign=-1
-turns the liner's lighting normals inward. The shader discards reverse-facing
-fragments so the two-sided mesh pipeline does not let the exterior's backside
-hide the liner. Thin washer lips bridge the shell thickness at both open mouths.
+56 cm-radius liner with inward-facing triangles and normals. Back-face culling
+keeps the correct surface visible from either side of the shell. Their materials
+share one definition with diffuse and specular scales of 1 outside and 1/3
+inside. Thin washer lips bridge the shell thickness at both open mouths.
 Interior darkening is an authored occlusion approximation, not shadow tracing;
 ambient/rim are included in the diffuse scale, so they cannot bypass it.
 

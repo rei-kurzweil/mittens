@@ -107,6 +107,7 @@ pub(super) fn configure(component: &mut mms::ComponentBuilder<'_, MittensBinding
                     mms::ValueType::F32,
                     mms::ValueType::U32,
                     mms::ValueType::U32,
+                    mms::ValueType::Bool,
                 ],
                 0,
             ),
