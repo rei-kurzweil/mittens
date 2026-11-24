@@ -13476,6 +13476,12 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
             "{path}: gravity waits for model import"
         );
 
+        let has_car_studio = matches!(
+            path,
+            "examples/mittens-corp.mms"
+                | "examples/mittens-corp-desktop.mms"
+                | "examples/mittens-corp-agc.mms"
+        );
         let mut ground_surfaces = 0;
         for id in world.all_components() {
             let Some(label) = world.component_label(id) else {
@@ -13504,16 +13510,16 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
                 .unwrap_or_else(|| panic!("{path}: {label} needs a collidable zone"));
             assert_eq!(surface.mode, CollidableMode::Static, "{path}: {label}");
             assert_eq!(surface.friction, 0.8, "{path}: {label}");
-            // Only mittens-corp opts its studio into destruction.
+            // The corp scenes with the rocket car opt their studio into destruction.
             let destroyable = world.children_of(id).iter().any(|child| {
                 world
                     .get_component_by_id_as::<crate::engine::ecs::component::DestroyableComponent>(*child)
                     .is_some()
             });
-            assert_eq!(destroyable, path == "examples/mittens-corp.mms", "{path}: {label}");
+            assert_eq!(destroyable, has_car_studio, "{path}: {label}");
             ground_surfaces += 1;
         }
-        if path == "examples/mittens-corp.mms" {
+        if has_car_studio {
             let floor = world
                 .all_components()
                 .find(|&id| world.component_label(id) == Some("studio_floor"))

@@ -571,11 +571,11 @@ RenderGraph {
 
 // Keep the car example's studio stage so this tool also retains a stable
 // lighting and mirror reference while XR transforms and gizmos are exercised.
-studio_floor()
-studio_stage("mittens_corp_stage")
+studio_floor(true)
+studio_stage("mittens_corp_stage", null, true)
 // Pile bottoms rest on the stage deck at y=0.12.
-colored_box_pile("left_box_pile", [-12.0, 0.12, -2.8])
-colored_box_pile("right_box_pile", [-11.5, 0.12, 1.0])
+colored_box_pile("left_box_pile", [-12.0, 0.12, -2.8], true)
+colored_box_pile("right_box_pile", [-11.5, 0.12, 1.0], true)
 teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
@@ -592,7 +592,7 @@ T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
 // long X axis. Their ends meet to form one continuous suspended platform.
 for platform_index in range(3) {
     T.position(11.5, 4.0, (platform_index - 1) * 15.0) {
-        suspended_platform()
+        suspended_platform(true)
     }
 }
 

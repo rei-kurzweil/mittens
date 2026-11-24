@@ -3,7 +3,8 @@ import { pickup_power_panel } from "./pickup_power_panel.mms"
 
 // Input and heading callbacks exist only while powered and occupied. Native
 // force/velocity/contact integration continues while off or dismounted.
-// Two nose muzzles fire a three-rocket burst from the dashboard button.
+// Two nose muzzles fire a three-rocket burst from the dashboard button
+// (or Space on desktop).
 export fn display_car_controls(body, motion, input_mode, input_source, seated) {
     let state = { powered=false mounted=seated==true user=null axis=[0,0]
         w=false a=false s=false d=false }
@@ -63,12 +64,16 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         if input_mode=="desktop" {
             let down=on(world,"KeyDown",fn(event) {
                 if !state.powered || !state.mounted {return}
+                // Desktop shortcut for the dashboard's rocket button.
+                if event.code=="Space" {rockets.fire_burst()}
                 if event.code=="KeyW" {state.w=true} if event.code=="KeyA" {state.a=true}
                 if event.code=="KeyS" {state.s=true} if event.code=="KeyD" {state.d=true}
                 publish()
             })
             let up=on(world,"KeyUp",fn(event) {
                 if !state.powered || !state.mounted {return}
+                // Desktop shortcut for the dashboard's rocket button.
+                if event.code=="Space" {rockets.fire_burst()}
                 if event.code=="KeyW" {state.w=false} if event.code=="KeyA" {state.a=false}
                 if event.code=="KeyS" {state.s=false} if event.code=="KeyD" {state.d=false}
                 publish()
