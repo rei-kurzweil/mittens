@@ -161,7 +161,8 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             .get_component_by_id_as::<TransformComponent>(dismount_anchor)
             .unwrap()
             .translation(),
-        [0.0, 2.4, -4.6]
+        [0.0, 4.2, 1.2],
+        "leaving the seat stands the rider on the cockpit floor"
     );
 
     assert_eq!(

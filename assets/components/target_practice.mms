@@ -350,7 +350,9 @@ export fn practice_target(options) {
         timers.fire.auto = burst
         let phase = Animation.looping().length(PHASE_SECONDS * BEATS_PER_SECOND) {
             Keyframe.at(0.0) {}
-            Keyframe.at(PHASE_SECONDS * BEATS_PER_SECOND) { emit_data(events, "PhaseFlip") }
+            // Just inside the loop: a keyframe on a looping clip's very end may
+            // never fire.
+            Keyframe.at(PHASE_SECONDS * BEATS_PER_SECOND - 0.05) { emit_data(events, "PhaseFlip") }
         }
         let timer_root = T {
             name = options.prefix + "_combat_timers"
@@ -458,9 +460,10 @@ export fn practice_target(options) {
             npc.root.update_transform([here[0] + dx / d * step - base[0], 0.0, here[2] + dz / d * step - base[2]])
         }
         let walk_events = T { name = options.prefix + "_walk_events" }
+        // The event sits at the start of the loop: a keyframe on a looping
+        // clip's very end may never fire.
         let walking = Animation.looping().length(WALK_STEP_SECONDS * BEATS_PER_SECOND) {
-            Keyframe.at(0.0) {}
-            Keyframe.at(WALK_STEP_SECONDS * BEATS_PER_SECOND) { emit_data(walk_events, "Approach") }
+            Keyframe.at(0.0) { emit_data(walk_events, "Approach") }
         }
         ground.attach(walk_events)
         ground.attach(walking)

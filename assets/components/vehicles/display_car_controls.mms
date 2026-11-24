@@ -228,14 +228,14 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         state.powered=value==true
         reset_inputs() sync_controls() panel.show_power(state.powered)
     }
-    // Only the driver's seat takes the controls, not riders boarding the deck.
-    fn is_seat(event) { return body.seat == null || event.mountable == body.seat }
-    on(body,"MountStarted",fn(event) {
-        if !is_seat(event) {return}
+    // Only the driver's seat takes the controls, not riders boarding the
+    // deck: listen on the seat itself when the car names one.
+    let seat_events = body
+    if body.seat != null { seat_events = body.seat }
+    on(seat_events,"MountStarted",fn(event) {
         state.mounted=true state.user=event.rider reset_inputs() sync_controls()
     })
-    on(body,"MountEnded",fn(event) {
-        if !is_seat(event) {return}
+    on(seat_events,"MountEnded",fn(event) {
         state.mounted=false state.user=null reset_inputs() sync_controls()
     })
     sync_controls()
