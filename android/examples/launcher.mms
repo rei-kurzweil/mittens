@@ -50,7 +50,7 @@ let pushed = has_entry(".", "examples")
 let start = "android/examples"
 if pushed { start = "examples" }
 
-let state = { selected = "", source = "", browser = null, selection_view = null, source_view = null, scroll_right = 0, scroll_time = 0 }
+let state = { selected = "", browser = null, selection_view = null, scroll_right = 0, scroll_time = 0 }
 let status = Text { name = "launcher_status" "Select an MMS file, then press Launch." }
 if !pushed { status.set_text("Only the bundled launcher is here. Push a project with android/packaging/sync-project.sh.") }
 let previous_error = App.last_error()
@@ -61,9 +61,7 @@ let refresh = action("Refresh", "launcher_refresh")
 fn show_selection() {
     let selected = FileBrowser.selection(state.browser)
     state.selected = selected.path
-    state.source = selected.source
     if state.selection_view != null { state.selection_view.set_text(selected.path) }
-    if state.source_view != null { state.source_view.set_text(selected.source) }
 }
 fn build_browser() {
     let browser = FileBrowser.local(".", start)
@@ -72,26 +70,15 @@ fn build_browser() {
     return browser
 }
 fn close_browser() { state.browser = null }
-fn build_preview() {
-    let selection = Text { name = "launcher_selection" state.selected }
-    let source = Text { name = "launcher_source" state.source }
-    state.selection_view = selection
-    state.source_view = source
-    return T {
-        Style { display("block") width(100%) }
-        T { Style { margin_bottom(0.5) } caption("SELECTED SCRIPT") }
-        T { Style { height(2) margin_top(0.4) } selection }
-        T { Style { height(20) margin_top(0.8) padding(0.8) font_size(1.0) background_color([0.018, 0.016, 0.012, 1]) } source }
-        T { Style { margin_top(0.8) font_size(0.9) } caption("Scenes that need unsupported rendering features return here with the reason.") }
-    }
-}
-fn close_preview() { state.selection_view = null state.source_view = null }
-
-T.position(-1.89, 1.0, -2.6).scale(0.030, 0.030, 0.030) {
-    shell("mittens / launcher", "Open a scene from this headset", T {
+// Browser-only shell: the selected path and Launch sit directly above FILES.
+let selection = Text { name = "launcher_selection" "" }
+state.selection_view = selection
+T.position(-0.92, 0.55, -2.6).scale(0.030, 0.030, 0.030) {
+    shell("mittens / launcher", "Select an .mms file, then press Launch", T {
         launch refresh
-        T { Style { margin_top(0.7) height(3) font_size(0.85) } status }
-    }, { build = build_browser, close = close_browser }, { build = build_preview, close = close_preview },
+        T { Style { margin_top(0.7) height(2) } selection }
+        T { Style { margin_top(0.4) height(3) font_size(0.85) } status }
+    }, { build = build_browser, close = close_browser }, null,
     caption("Left stick moves. Right stick scrolls. Hold the left menu button in any scene to return here."), true, true)
 }
 

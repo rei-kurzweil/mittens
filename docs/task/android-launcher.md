@@ -15,7 +15,7 @@ still exists separately).
 |---|---|
 | `App.launch(path)`, `App.home()`, `App.last_error()` | `src/scripting/app_api.rs`, request slot in `src/engine/app_launch.rs`. Hosts that don't enable it (desktop) report the API as unavailable. |
 | `FileBrowser.selection(b).path` | Root-relative path of the selected file (`src/scripting/file_browser/model.rs`). |
-| Launcher scene | `android/examples/launcher.mms`: browser, Launch/Refresh, preview, and a dock with the Graphics panel. |
+| Launcher scene | `android/examples/launcher.mms`: a browser-only shell (no terminal pane) with Launch/Refresh, the selected path and status above FILES, and a dock with the Graphics panel. |
 | Project root and Home | `android/src/launcher.rs`: project folder, bundled fallback, menu-hold Home. |
 | Scene switching | `android/src/scene_runtime.rs` (`switch_scene`): new `Universe` and a new renderer per launch. |
 | Sync | `android/packaging/sync-project.sh [--launch]`. |
@@ -55,7 +55,7 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
 
 - [ ] Launcher appears; the log shows `launcher project_root=...`.
 - [ ] Browser lists `examples/`; Up stops at the project root; right stick scrolls.
-- [ ] Selecting an MMS file shows its path and preview; Launch opens it.
+- [ ] Selecting an MMS file shows its path above FILES; Launch (gold, top row) opens it.
       Try `android/examples/sakura-stage-lean.mms` first (known to render).
 - [ ] Holding the left menu button returns home; the log shows `LAUNCH scene=android/examples/launcher.mms`.
 - [ ] Launching a desktop-only example (for example one with bloom) returns
