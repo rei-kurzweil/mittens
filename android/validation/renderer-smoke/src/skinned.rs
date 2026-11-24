@@ -102,9 +102,19 @@ T.position(0.0, -0.85, -1.4).rotation(0.0, 3.14159265, 0.0) {
                 .draw(0, &mut universe.visuals, &cameras)
                 .unwrap_or_else(|error| panic!("skinned avatar draw: {error}"));
             first_jobs += stats.deformation_jobs;
+            // The first frames with registered renderables draw the bind pose:
+            // SkinnedMeshSystem applies palettes one update after the handles
+            // exist. Keep drawing until skinned instances own deformation ranges.
+            let skinned = universe
+                .visuals
+                .instances()
+                .iter()
+                .any(|instance| instance.deformed_count != 0);
             if stats.draws > 0 {
                 drawn = Some(stats);
-                break;
+                if skinned {
+                    break;
+                }
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -116,7 +126,16 @@ T.position(0.0, -0.85, -1.4).rotation(0.0, 3.14159265, 0.0) {
         .iter()
         .filter(|instance| instance.deformed_count != 0)
         .count();
-    assert!(skinned > 0, "no instance received a deformation range: {stats:?}");
+    let palettes = universe
+        .visuals
+        .instances()
+        .iter()
+        .filter(|instance| instance.bones_count != 0)
+        .count();
+    assert!(
+        skinned > 0,
+        "no instance received a deformation range after 600 frames (instances with bone palettes: {palettes}): {stats:?}"
+    );
     assert!(first_jobs > 0, "skinned instances drew without a dispatch: {stats:?}");
     let before = target.pixels();
     let distinct: std::collections::HashSet<_> =
