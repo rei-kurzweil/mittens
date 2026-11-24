@@ -262,6 +262,13 @@ and interiors without any extra step (this covers step 9).
     truck root on a ramp; `CollisionContext.exclude(truck)` keeps passthrough
     skipping the whole truck.
 18. A mech in the target practice range.
+19. `examples/truck-bed-demo.mms` (2026-11-24, pending a build): a pickup
+    driven by `vehicle_patrol` through the common vehicle input
+    `set_control_input({ throttle steering brake })` (the driver's stick uses
+    it too), seated Mitten firing from the driver's seat, crates up to a
+    bridge over the road to jump into the bed. Next: eject Mitten on death,
+    walk back to the driver's door and re-board while firing 4-shot bursts;
+    gravity for dropped weapons so they fall into the bed and ride along.
 
 **Phase 5: multiplayer**: latched `carried_by` + epoch on pose packets; the
 seated flag on the same state.

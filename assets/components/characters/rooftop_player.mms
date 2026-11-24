@@ -8,6 +8,7 @@ import { lumae_colliders } from "../characters/lumae/colliders.mms"
 import { lumae_secondary_motion } from "../characters/lumae/secondary_motion.mms"
 import { pose as lumae_relaxed_pose } from "../characters/lumae/poses/000-relaxed.pose.mms"
 import { pose as bisket_relaxed_pose } from "../poses/bisket/000-relaxed.pose.mms"
+import { pose as mitten_seated_pose } from "../poses/mitten/floor-seated.pose.mms"
 import { miku_twintails, miku_hand_colliders, prepare_miku_arms, install_miku_equipment } from "./tda_miku_rig.mms"
 import { detach_avatar_equipment, install_vroid_equipment } from "./avatar_equipment.mms"
 import { miku_humanoid_bone_map } from "../humanoid_bone_maps/tda_miku.mms"
@@ -41,10 +42,13 @@ let model_uris = {
     succubus = "assets/models/local/succubus.glb"
 }
 
-// relaxed: start untracked arms in the relaxed rest pose (Mitten only).
-fn make_mitten(model_name, track_hands, bucket, target_meters, relaxed) {
+// pose (Mitten only): "relaxed" starts untracked arms in the relaxed rest
+// pose; "seated" starts the whole body in the floor-seated pose, a stand-in
+// for sitting in a vehicle seat until a chair pose is captured.
+fn make_mitten(model_name, track_hands, bucket, target_meters, pose) {
     let children = null
-    if relaxed { children = [bisket_relaxed_pose()] }
+    if pose == "relaxed" { children = [bisket_relaxed_pose()] }
+    if pose == "seated" { children = [mitten_seated_pose()] }
     return mitten_model(model_name, { xr = track_hands tail_wag = "canine" material = bisket_anime_shading(bucket)
         target_height = target_meters children = children })
 }
@@ -108,8 +112,12 @@ export fn make_rooftop_player(options) {
     // A non-local player that walks under its own gravity and slides against
     // the world (an NPC), instead of following a peer's replicated root.
     let physical = !local_player && options["physics"] == true
-    // Mitten bodies start in the relaxed rest pose (arms down) when set.
-    let relaxed_pose = options["relaxed_pose"] == true
+    // Mitten bodies start in the relaxed rest pose (arms down), or seated
+    // (legs then keep the pose: no crouch or walking IK), when set.
+    let seated = options["seated_pose"] == true
+    let relaxed_pose = null
+    if options["relaxed_pose"] == true { relaxed_pose = "relaxed" }
+    if seated { relaxed_pose = "seated" }
     let view = { third_person = local_player && options["third_person"] == true }
     let initial_factory = factories[options.avatar]
     // Optional opaque depth bucket for every body this player wears.
@@ -145,7 +153,7 @@ export fn make_rooftop_player(options) {
             // Per-model sole landmarks with paper-craft's local gait.
             // Match camera-bearing and camera-free rigs' eye-to-head calibration.
             eye_offset([0.0, 0.08, 0.12])
-            crouch_enabled(true)
+            crouch_enabled(!seated)
             // Get low enough and crouching gives way to hands and knees.
             posture("auto")
             third_person(view.third_person)
@@ -165,7 +173,7 @@ export fn make_rooftop_player(options) {
                 crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
             }
-            WalkingIK { step_scale(1.3) }
+            WalkingIK { enabled(!seated) step_scale(1.3) }
             if !local_player && !physical { collision_response("read_only") }
             if local_player && choice != "miku" {
                 mouth_open_from_amplitude(voice_level)

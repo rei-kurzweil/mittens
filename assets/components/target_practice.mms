@@ -131,6 +131,11 @@ export fn practice_health(bar, center, options) {
 //   on_player_hit(points)  called for each shot that lands on the player
 //   on_down()    called each time the NPC goes down
 //   health_view (the bar faces it), on_damage(cue)
+//   seated       sit (Mitten's floor-seated pose, no leg IK) instead of
+//                standing, e.g. in a vehicle seat; position is then the root
+//                in the seat's parent space
+// The NPC's root may ride a moving, turned parent (a truck's chassis): it
+// aims in world space and turns relative to that parent.
 export fn practice_target(options) {
     let physics = options["physics"] == true
     let npc = make_rooftop_player({
@@ -138,7 +143,7 @@ export fn practice_target(options) {
         use_xr = options.use_xr use_desktop = options.use_desktop opaque_bucket = "near"
         show_health = true health_view = options["health_view"] shield_mount = true
         // The untracked left arm rests in the relaxed pose.
-        physics = physics relaxed_pose = true
+        physics = physics relaxed_pose = true seated_pose = options["seated"] == true
     })
     let strafe = 2.5
     if options["strafe"] != null { strafe = options.strafe }
@@ -146,7 +151,11 @@ export fn practice_target(options) {
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
     let player = options["player"]
-    let state = { shield = null time = 0.0 yaw = options.yaw pitch = 0.0 steps = 0 walk_x = 0.0 walk_z = 0.0 }
+    // yaw is the head's heading relative to the NPC's parent; aim_yaw is the
+    // world heading of the last aim, for the shot check; frame is the NPC's
+    // root frame once built, whose parent may turn.
+    let state = { shield = null time = 0.0 yaw = options.yaw aim_yaw = options.yaw pitch = 0.0 steps = 0
+        walk_x = 0.0 walk_z = 0.0 frame = null }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -256,13 +265,20 @@ export fn practice_target(options) {
         let h = npc.head.world_trs().translation
         return [h[0], h[1] + SHOULDER[1], h[2]]
     }
+    // The heading of the NPC's frame in the world (its parent's turn).
+    fn frame_yaw() {
+        if !state.frame { return 0.0 }
+        let q = state.frame.world_trs().rotation_quat_xyzw
+        return 2.0 * Math.atan2(q[1], q[3])
+    }
     // Turn and raise the pistol toward the player, once per aim.
     fn aim_at_player() {
         let s = shoulder_world()
         let p = player.world_trs().translation
         let dx = p[0] - s[0]
         let dz = p[2] - s[2]
-        face(Math.atan2(-dx, -dz))
+        state.aim_yaw = Math.atan2(-dx, -dz)
+        face(state.aim_yaw - frame_yaw())
         aim_hand(Math.atan2(p[1] - s[1], Math.sqrt(dx * dx + dz * dz)))
     }
     // A shot along the aimed line lands if the player is still near it.
@@ -271,7 +287,7 @@ export fn practice_target(options) {
         let p = player.world_trs().translation
         let d = [p[0] - s[0], p[1] - s[1], p[2] - s[2]]
         let c = Math.cos(state.pitch)
-        let f = [-Math.sin(state.yaw) * c, Math.sin(state.pitch), -Math.cos(state.yaw) * c]
+        let f = [-Math.sin(state.aim_yaw) * c, Math.sin(state.pitch), -Math.cos(state.aim_yaw) * c]
         let along = d[0] * f[0] + d[1] * f[1] + d[2] * f[2]
         let off = [d[0] - f[0] * along, d[1] - f[1] * along, d[2] - f[2] * along]
         let miss = Math.sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2])
@@ -377,6 +393,7 @@ export fn practice_target(options) {
         npc.locomotion
         if clocks { clocks }
     }
+    state.frame = frame
     on_global("FrameTick", fn(event) {
         let dt = event.dt_sec
         let alive = health.alive()

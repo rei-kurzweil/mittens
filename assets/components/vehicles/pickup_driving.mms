@@ -9,13 +9,6 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acc
     let exit=T.position(-1.95,1.65,-0.25) { name="pickup_dismount_anchor" }
     let attachment={mountable=null}
     let state={powered=false mounted=false axis=[0,0] w=false a=false s=false d=false brake=false last_throttle=0 last_steering=0 last_brake=false}
-    fn clear_drive_motion() {
-        // The vehicle's motion frame stays upright. Preserve gravity/contact
-        // velocity on Y when applying powered throttle, steering or brake input.
-        let vertical=motion.linear()[1]
-        motion.reset()
-        motion.translate([0,vertical,0])
-    }
     fn publish(refresh) {
         let throttle=state.axis[1] let steering=state.axis[0]
         if state.w { throttle=1 } if state.s { throttle=-1 }
@@ -24,19 +17,12 @@ export fn pickup_driving(truck,motion,driver_eye,power_changed,mount_changed,acc
         if Math.abs(steering)<0.16 { steering=0 }
         if !refresh && throttle==state.last_throttle && steering==state.last_steering && state.brake==state.last_brake {return}
         state.last_throttle=throttle state.last_steering=steering state.last_brake=state.brake
-        if acceleration {
-            acceleration.set_drive(throttle,steering,state.brake)
-            return
-        }
-        clear_drive_motion()
-        if !state.brake {
-            motion.translate([0,0,-throttle*5.0])
-            motion.rotate([0,-steering*throttle*1.2,0])
-        }
+        // The stick goes through the truck's common vehicle input.
+        truck.set_control_input({throttle=throttle steering=steering brake=state.brake})
     }
     // Clear input latches without changing existing physical velocity.
     fn reset_inputs() {
-        if acceleration {acceleration.set_drive(0,0,false)}
+        if acceleration {truck.set_control_input({})}
         state.axis=[0,0] state.w=false state.a=false state.s=false state.d=false state.brake=false
         state.last_throttle=0 state.last_steering=0 state.last_brake=false
     }

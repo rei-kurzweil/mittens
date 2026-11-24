@@ -245,3 +245,40 @@ fn practice_target_turns_to_the_player_and_fires() {
     assert!((yaw - std::f32::consts::PI).abs() < 0.05, "{yaw}");
     assert_eq!(report(&scene), "1");
 }
+
+#[test]
+fn truck_bed_demo_drives_the_pickup_with_seated_mitten_aboard() {
+    let path = "examples/truck-bed-demo.mms";
+    let source = std::fs::read_to_string(path)
+        .unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
+    let (mut scene, clock) = load(&source, path);
+    step(&mut scene, &clock, 4);
+    let world = |scene: &Universe, label: &str| {
+        TransformSystem::world_position(&scene.world, named(scene, label)).unwrap()
+    };
+    // Mitten rides the chassis, shielded; nothing drives but the script.
+    assert!(has_label(&scene, "npc_shield"));
+    assert!(has_label(&scene, "demo_truck_patrol"));
+    assert_eq!(
+        scene.world.parent_of(named(&scene, "npc_frame")),
+        Some(named(&scene, "pickup_chassis_frame"))
+    );
+    let start = world(&scene, "pickup_truck");
+
+    // Four seconds of driving along the road (x), staying on it (z).
+    step(&mut scene, &clock, 4 * 120);
+    let moved = world(&scene, "pickup_truck");
+    assert!(
+        (moved[0] - start[0]).abs() > 3.0 && (moved[2] - start[2]).abs() < 1.0,
+        "the truck drives along the road: {start:?} -> {moved:?}"
+    );
+    // Mitten's head stays in the cab, a little above the driver's seat.
+    let head = world(&scene, "npc_head_target");
+    let truck = world(&scene, "pickup_truck");
+    assert!(
+        (head[0] - truck[0]).abs() < 1.5 && (1.2..2.4).contains(&(head[1] - truck[1])),
+        "head {head:?} in the truck at {truck:?}"
+    );
+}

@@ -156,6 +156,30 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let gravity=Gravity.enabled(gravity_enabled!=false) {name="pickup_gravity"}
     motion.attach(gravity)
     if drive {motion.attach(drive)}
+    // The common vehicle input: { throttle steering brake } from any source,
+    // a mounted player's stick, a control script or events. Throttle and
+    // steering are -1 to 1. With the native drive (acceleration_drive) the
+    // values hold until the next call; without it, each call sets velocity.
+    fn set_control_input(input) {
+        let throttle=0.0 let steering=0.0 let brake=false
+        if input["throttle"]!=null {throttle=input.throttle}
+        if input["steering"]!=null {steering=input.steering}
+        if input["brake"]!=null {brake=input.brake==true}
+        if drive {
+            drive.set_drive(throttle,steering,brake)
+            return
+        }
+        // The motion frame stays upright: keep gravity/contact velocity on Y.
+        let vertical=motion.linear()[1]
+        motion.reset()
+        motion.translate([0,vertical,0])
+        if !brake {
+            motion.translate([0,0,-throttle*5.0])
+            motion.rotate([0,-steering*throttle*1.2,0])
+        }
+    }
+    truck.set_control_input=set_control_input
+    motion.set_control_input=set_control_input
     truck.attach(pickup_sliding_colliders(truck))
     let power=pickup_power_panel(fn() {if can_control() {truck.set_powered(!truck.powered())}})
     fn mount_changed(occupied) {
