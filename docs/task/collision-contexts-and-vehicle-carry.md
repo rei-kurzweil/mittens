@@ -1,0 +1,193 @@
+# Collision contexts and vehicle carry
+
+Status: planned, 2026-11-24. Phase 1 (input out of `AttachmentSystem`) in progress.
+
+Related: [separate mounting from movement authority](attachment-movement-authority-and-input-routing.md),
+[attachment valence and Grabbable unification](attachment-valence-and-grabbable-unification.md),
+[AVC crouch IK](avc-foot-penetration-crouch-ik.md), [transitionable avatar pose layers](avatar-pose-transition-layers.md).
+
+## Outcome
+
+A player can walk, crouch and kneel on a moving vehicle (the `car.glb` mech's
+floor, wings and roof; the pickup's bed), colliding with its interior while
+sharing the vehicle's basis of motion: accelerating, braking and turning never
+jostle them, and stepping off leaves at the vehicle's speed. The vehicle's
+exterior hull does not collide with its own riders, but the rest of the world
+still does (a low bridge knocks a rider off a wing). Interior collision costs
+nothing until someone boards. Cab seats remain snapped seats, later with a
+seated lower body.
+
+## Requirements
+
+| Case | Rule |
+| --- | --- |
+| Pedestrian | everything solid in the world |
+| Carried on the car's wing / truck bed | the vehicle's interior + the world, minus this vehicle's exterior |
+| Enclosed cockpit | the vehicle's interior only |
+| NPC capsule | everything minus its own hitbox (already handled by the own-movement-root rule) |
+| Rocket fired from a vehicle | everything minus the firing vehicle's exterior, at least just after launch |
+| Sensors | players only (washroom probe, fall catcher) |
+
+So the design needs: category whitelists and blacklists; instance-scoped
+exceptions ("my vehicle", "myself"); runtime changes on boarding and leaving;
+zero cost for movers with no special rules; nothing to replicate.
+
+## Approaches considered
+
+- **A. Category/mask bits** (Box2D/PhysX). One AND per pair, and BVH nodes can
+  carry the OR of their children's bits to prune subtrees. No instance scope:
+  "this car's exterior" would need a bit per car. Right for categories only.
+- **B. Group index** (negative groups never collide). Handles "myself", not
+  "my car's exterior but not its interior". Too blunt.
+- **C. Scoped rules on each mover** (`include/exclude {categories, scope}`).
+  Expresses every case, but every rider carries the vehicle's rules and each
+  candidate is checked against them.
+- **D. Separate collision spaces.** A speed-up rather than a rule: moving
+  geometry in its own coordinates never needs refitting, and can be skipped.
+- (Per-pair MMS callbacks: too slow per contact; rejected.)
+
+## Chosen design: outbound and incoming, vehicle-built contexts
+
+Every collidable has two independent memberships:
+
+- **Outbound**: the context a mover queries and reacts to (pushed by, raises
+  contact events against). Switching it is a pointer swap on the mover.
+- **Incoming**: the context where a collidable can be found (by rockets,
+  sensors, other movers). It changes only when an object should really leave
+  the world's view, which costs one BVH remove and insert.
+
+A rider switches only its **outbound** context to the vehicle's; its hitbox
+and probe stay incoming in the world, so rockets and sensors still find it.
+
+A vehicle builds its own context as a live component tree:
+
+```text
+let deck = CollisionContext.passthrough(true) {     // parent context too, minus this vehicle
+    name = "car_deck_context"
+    T.position(0, 2.1, 0.4).scale(6.0, 0.2, 3.2) {
+        Zone.cube([0.5,0.5,0.5]) { Collidable.static().friction(0.85) {} }
+    }
+}
+body.attach(deck)                                     // moves with the vehicle
+let carry = Mountable.carry().entry_zone(deck_entry).context(deck) {}
+```
+
+- **Membership is the subtree.** A `CollisionContext` is the home (incoming)
+  context of everything beneath it. Zones added later join automatically:
+  destroyable cut pieces, cargo re-parented into the bed, parts the vehicle
+  attaches. The world BVH never contains them; in the world the context
+  appears as one bounding box.
+- **Local lookup structure, built lazily.** Each context's BVH is in its own
+  coordinates, so it is never refit while the vehicle drives. The contact
+  system builds it when the first rider enters and drops it after the last
+  leaves. Zones are cheap ECS components and stay resident; MMS never needs a
+  factory (native code cannot call MMS anyway). A vehicle that streams heavy
+  visuals (as the pool hall does) keeps its collision tree resident.
+- **Sweeps in context coordinates.** A rider sweeps relative to the vehicle,
+  so vehicle motion can't drag the capsule through the deck. That replaces
+  the world-space sweep from `previous_centers`.
+- **Passthrough.** `passthrough(true)` also queries the parent context (the
+  world, or an outer carrier), excluding the vehicle's own subtree. That is
+  the "everything except my vehicle's exterior" rule, stated once by the
+  vehicle instead of on every rider. An enclosed cockpit uses `false`.
+- **Nesting.** A truck parked on a carrier deck has its context's parent set
+  to the carrier's context.
+- **Rays and projectiles** crossing a context's world bounds also query it in
+  its coordinates (one box test in the common case).
+- **The vehicle's own hull vs its riders.** While carried, a rider's root is
+  under the vehicle, so the existing rule that a mover ignores zones under its
+  own movement root (`own_zone` in `static_contact_system.rs`) already skips
+  the rider's hitbox. Needs a test, not new code.
+- **Category bits** stay available as an optional filter *within* a context
+  (sensors vs solids, projectile blockers); vehicles don't need them.
+- `carry.set_context(other)` swaps a vehicle's context (folding wings);
+  current riders move in the same step.
+
+## Carry connection
+
+`Mountable.carry()` is a mount that:
+
+- keeps the rider's offset (no snap to an eye point) and follows position and
+  yaw by default (full follow as an option, for a vehicle that banks);
+- leaves velocity and walking on, and converts velocity on the boundary:
+  world minus vehicle becomes local on boarding, local plus vehicle becomes
+  world on leaving, so a jump onto a moving deck lands softly and stepping off
+  carries the vehicle's speed;
+- starts when the rider's feet enter the carry zone, ends when they leave a
+  slightly larger one (no flicker at the edge), and has no occupant limit;
+- switches the rider's outbound context atomically with the connection.
+
+Gravity stays world-down when following yaw only. With full follow, decide
+whether "down" stays world-down inside the vehicle-relative velocity or tilts
+with the deck.
+
+## Control: vehicle scripts, not the attachment system
+
+The attachment system makes and removes connections and emits `MountStarted`
+/ `MountEnded`. It no longer touches input. A vehicle's script decides whether
+the rider can walk: `event.rider.set_locomotion_enabled(false)` on mount and
+restore on dismount. A forced unwind still emits `MountEnded`, so the script
+restores walking. Snapped seats still freeze velocity in the attachment system,
+since that belongs to the connection's follow policy, not to control. The
+full control-layer stack in the movement-authority ticket can wait for real
+nesting; "whoever turned it off turns it back on" suffices for now.
+
+## Multiplayer
+
+- Latched per-player state `carried_by = { vehicle, kind: carry | seat, epoch }`,
+  sent reliably on change and in the join snapshot, never per frame.
+- Pose packets carry the epoch byte. While carried, the position is sent
+  relative to the vehicle; a packet whose epoch does not match the latest
+  latched state holds the last good pose instead of snapping.
+- The seated flag uses the same latched state.
+
+## Plan
+
+**Phase 1: input out of the attachment system**
+1. Remove `snapshot_input` / `suspend_input` / `restore_input` from
+   `attachment_system.rs`; a Rider no longer needs an input to mount, and
+   removing its input no longer unwinds a mount. Velocity freezing stays for
+   snapped seats.
+2. MMS: `Rider.set_locomotion_enabled(bool)` and `Rider.locomotion_enabled()`
+   act on the rider's own input (`Input` translation or `InputXRGamepad`
+   locomotion); no-ops when the rider or its input is gone.
+3. A shared MMS helper turns walking off on `MountStarted` and restores the
+   previous value on `MountEnded`; every current Mountable uses it (pickup
+   driver, passenger and bed seats, display car, boxcar).
+4. Tests: mounting with no input component; the attachment leaves input alone;
+   the helper disables and restores walking, including after a forced unwind.
+
+**Phase 2: collision contexts** (`static_contact_system.rs`, `CollidableBvh`)
+5. `CollisionContext` component; subtree membership; excluded from the world BVH.
+6. Local BVH per context, lazily built and dropped.
+7. Outbound context per mover; sweeps in context coordinates.
+8. Passthrough to the parent excluding the vehicle's subtree.
+9. Rays and projectiles entering contexts.
+10. Tests: pedestrians never touch context zones; a rider collides with the
+    deck and the world but not the hull; a rocket hits interior geometry; the
+    hull ignores its riders.
+
+**Phase 3: carry**
+11. `Mountable.carry()`: offset preserved, follow channels, no control
+    hand-off, no occupant limit.
+12. Zone-driven boarding and leaving with hysteresis.
+13. Velocity conversion on the boundary.
+14. Outbound context switch with the connection.
+15. Acceptance: a player on a deck that accelerates, brakes and turns stays
+    within a few cm of their spot, never snags, leaves at the deck's speed,
+    and can crouch and kneel there (lower-body IK on a moving support frame).
+
+**Phase 4: vehicles**
+16. Car: deck context (interior floor, wing tops, roof), bigger carry zone,
+    grab-the-controls driving instead of the driver mount.
+17. Pickup: the bed becomes a carry with its own context; drop the bench
+    auto-mount; cab seats stay snapped seats.
+18. A mech in the target practice range.
+
+**Phase 5: multiplayer**: latched `carried_by` + epoch on pose packets; the
+seated flag on the same state.
+
+**Phase 6: seated cab (later)**: `Mountable.seated(hip, feet)`, a body-solver
+`Seated` mode with procedural seated legs, a head-height re-centre policy
+(continuous, or set on entry plus a button), and an authored seated pose once
+pose layers exist.
