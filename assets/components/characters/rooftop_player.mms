@@ -154,6 +154,7 @@ export fn make_rooftop_player(options) {
             // Match camera-bearing and camera-free rigs' eye-to-head calibration.
             eye_offset([0.0, 0.08, 0.12])
             crouch_enabled(!seated)
+            walking_enabled(!seated)
             // Get low enough and crouching gives way to hands and knees.
             posture("auto")
             third_person(view.third_person)
@@ -173,7 +174,7 @@ export fn make_rooftop_player(options) {
                 crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
             }
-            WalkingIK { enabled(!seated) step_scale(1.3) }
+            WalkingIK { step_scale(1.3) }
             if !local_player && !physical { collision_response("read_only") }
             if local_player && choice != "miku" {
                 mouth_open_from_amplitude(voice_level)
@@ -515,6 +516,8 @@ export fn make_rooftop_player(options) {
         apply_desired_height = apply_desired_height toggle_camera_view = toggle_camera_view
         desired_height = desired_height set_remote_height = set_remote_height
         set_riding_enabled = set_riding_enabled
+        // false holds the legs in their authored pose (seated); true walks.
+        set_legs_enabled = fn(enabled) { state.avatar.set_legs_enabled(enabled) }
         flying = flying set_remote_flying = set_remote_flying
         camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load

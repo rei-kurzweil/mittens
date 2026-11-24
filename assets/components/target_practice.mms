@@ -50,6 +50,11 @@ let HAND_YAW = Math.pi / 2.0
 let WANDER_KICK = 1.0
 let WANDER_LEAK = 0.8
 let WANDER_MAX_SPEED = 1.5
+// Out of its vehicle, the NPC walks back to the driver's door in half-second
+// legs at walking pace, and gets in once this close.
+let WALK_SPEED = 1.4
+let WALK_STEP_SECONDS = 0.5
+let BOARD_DISTANCE = 1.4
 
 // A paused one-shot timer: play() it, and `seconds` later it emits `name`
 // as a DataEvent on `events`. Timing runs natively, not in per-frame script.
@@ -61,6 +66,19 @@ fn after_seconds(events, seconds, name) {
         Keyframe.at(beats) { emit_data(events, name) }
     }
     return timer
+}
+
+// Rotate v by the unit quaternion q (xyzw).
+fn rotate(q, v) {
+    let ix = q[3] * v[0] + q[1] * v[2] - q[2] * v[1]
+    let iy = q[3] * v[1] + q[2] * v[0] - q[0] * v[2]
+    let iz = q[3] * v[2] + q[0] * v[1] - q[1] * v[0]
+    let iw = -q[0] * v[0] - q[1] * v[1] - q[2] * v[2]
+    return [
+        ix * q[3] - iw * q[0] - iy * q[2] + iz * q[1],
+        iy * q[3] - iw * q[1] - iz * q[0] + ix * q[2],
+        iz * q[3] - iw * q[2] - ix * q[1] + iy * q[0],
+    ]
 }
 
 fn noise(value) {
@@ -134,6 +152,11 @@ export fn practice_health(bar, center, options) {
 //   seated       sit (Mitten's floor-seated pose, no leg IK) instead of
 //                standing, e.g. in a vehicle seat; position is then the root
 //                in the seat's parent space
+//   vehicle      { chassis, seat, door } with seated: the caller attaches
+//                root to chassis at seat (chassis space). Going down ejects
+//                the NPC beside the door (chassis space; on the ground);
+//                after respawning it walks back to the door, which may be
+//                moving, and gets back in, aiming and firing throughout
 // The NPC's root may ride a moving, turned parent (a truck's chassis): it
 // aims in world space and turns relative to that parent.
 export fn practice_target(options) {
@@ -151,11 +174,12 @@ export fn practice_target(options) {
     if options["speed"] != null { speed = options.speed }
     let on_damage = options["on_damage"]
     let player = options["player"]
+    let vehicle = options["vehicle"]
     // yaw is the head's heading relative to the NPC's parent; aim_yaw is the
     // world heading of the last aim, for the shot check; frame is the NPC's
     // root frame once built, whose parent may turn.
     let state = { shield = null time = 0.0 yaw = options.yaw aim_yaw = options.yaw pitch = 0.0 steps = 0
-        walk_x = 0.0 walk_z = 0.0 frame = null }
+        walk_x = 0.0 walk_z = 0.0 frame = null seated = false }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -387,6 +411,67 @@ export fn practice_target(options) {
         enter("wait")
     }
 
+    // Vehicle riding (see the vehicle option): eject on death, walk back to
+    // the door after respawning, then get in. Walking tweens the NPC's root
+    // inside its frame, so the walking IK steps the legs, and getting in
+    // tweens it back into the seat.
+    fn ride_vehicle(ride) {
+        state.seated = true
+        let ground = T { name = options.prefix + "_ground" }
+        ground
+        let walk = Transition { duration_beats(WALK_STEP_SECONDS * BEATS_PER_SECOND) replace_same_target() }
+        npc.root.attach(walk)
+        fn chassis_point(local) {
+            let pose = ride.chassis.world_trs()
+            let r = rotate(pose.rotation_quat_xyzw, local)
+            return [pose.translation[0] + r[0], pose.translation[1] + r[1], pose.translation[2] + r[2]]
+        }
+        fn eject() {
+            if !state.seated { return }
+            state.seated = false
+            let door = chassis_point(ride.door)
+            ground.attach(state.frame)
+            state.frame.update_transform([door[0], 0.0, door[2]], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            npc.root.update_transform([0.0, 0.0, 0.0])
+            npc.set_legs_enabled(true)
+        }
+        fn board() {
+            state.seated = true
+            ride.chassis.attach(state.frame)
+            state.frame.update_transform(ride.seat, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            npc.root.update_transform([0.0, 0.0, 0.0])
+            npc.set_legs_enabled(false)
+        }
+        fn approach() {
+            if state.seated || !health.alive() { return }
+            let door = chassis_point(ride.door)
+            let here = npc.root.world_trs().translation
+            let dx = door[0] - here[0]
+            let dz = door[2] - here[2]
+            let d = Math.sqrt(dx * dx + dz * dz)
+            if d < BOARD_DISTANCE {
+                board()
+                return
+            }
+            let step = Math.clamp(d, 0.0, WALK_SPEED * WALK_STEP_SECONDS)
+            let base = state.frame.world_trs().translation
+            npc.root.update_transform([here[0] + dx / d * step - base[0], 0.0, here[2] + dz / d * step - base[2]])
+        }
+        let walk_events = T { name = options.prefix + "_walk_events" }
+        let walking = Animation.looping().length(WALK_STEP_SECONDS * BEATS_PER_SECOND) {
+            Keyframe.at(0.0) {}
+            Keyframe.at(WALK_STEP_SECONDS * BEATS_PER_SECOND) { emit_data(walk_events, "Approach") }
+        }
+        ground.attach(walk_events)
+        ground.attach(walking)
+        on(walk_events, "DataEvent", fn(event) { if event == "Approach" { approach() } })
+        let on_death = hooks.death
+        hooks.death = fn() {
+            if on_death { on_death() }
+            eject()
+        }
+    }
+
     let p = options.position
     let frame = T.position(p[0], p[1], p[2]) {
         name = options.prefix + "_frame"
@@ -394,6 +479,7 @@ export fn practice_target(options) {
         if clocks { clocks }
     }
     state.frame = frame
+    if vehicle { ride_vehicle(vehicle) }
     on_global("FrameTick", fn(event) {
         let dt = event.dt_sec
         let alive = health.alive()
@@ -421,7 +507,7 @@ export fn practice_target(options) {
             // translate adds velocity: steer toward the walk, leave Y to gravity.
             let linear = npc.velocity.linear()
             npc.velocity.translate([vx - linear[0], 0.0, vz - linear[2]])
-        } else if alive {
+        } else if alive && !vehicle {
             // Strafe back and forth along X.
             state.time = state.time + dt
             npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])

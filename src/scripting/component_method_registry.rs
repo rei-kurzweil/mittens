@@ -144,6 +144,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "set_mouth_open_amount"
                     | "capsule_ready"
                     | "set_third_person"
+                    | "set_legs_enabled"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -216,6 +217,19 @@ pub(crate) fn invoke_component_method(
             Ok(Value::Bool(
                 avatar.collision_enabled && avatar.capsule_ready,
             ))
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_legs_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err("set_legs_enabled(): expected a boolean".into());
+            };
+            // Both lower-body switches: off holds the legs in their authored
+            // pose (seated), on returns them to crouch and walking IK.
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_legs_enabled(): expected an AvatarControl component")?;
+            avatar.crouch_enabled = *enabled;
+            avatar.walking_enabled = *enabled;
+            Ok(Value::Null)
         }
         ("AvatarControl" | "AVC" | "avatar_control", "set_third_person") => {
             let [Value::Bool(enabled)] = args else {

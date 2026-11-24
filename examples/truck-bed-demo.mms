@@ -196,10 +196,14 @@ let player = practice_health(local.health, local.shield_mount, {
 fn can_fire(user) { return player.alive() }
 
 // Seated in the driver's seat (chassis space): the head lands near the
-// driver's eye point. The script drives; Mitten only aims and fires.
+// driver's eye point. The script drives; Mitten only aims and fires, and
+// climbs back in after going down.
 let target = practice_target({
     prefix = "npc" avatar = "mitten" use_xr = use_xr use_desktop = use_desktop
     position = [-0.33, 0.20, 0.30] yaw = 0.0 strafe = 0.0 seated = true
+    // Shot down, she's thrown out beside the driver's door; once back up she
+    // walks to the door (chasing the truck if it's moving) and gets back in.
+    vehicle = { chassis = chassis seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] }
     health_view = local.health_view on_damage = sounds.damage
     on_down = fn() {
         kills.player = kills.player + 1
