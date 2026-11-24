@@ -76,7 +76,7 @@ pub struct ContactObservation {
     pub separation: [f32; 3],
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StaticContactSystem {
     contacts: Vec<ContactObservation>,
     /// Each mover's last center, in the coordinates of the outbound context
@@ -105,6 +105,35 @@ pub struct StaticContactSystem {
     pub narrow_phase_tests: u64,
     pub correction_iterations: u64,
     pub non_convergences: u64,
+}
+
+impl Default for StaticContactSystem {
+    fn default() -> Self {
+        Self {
+            contacts: Vec::new(),
+            previous_centers: HashMap::new(),
+            body_offsets: HashMap::new(),
+            broad_phase: CollidableBvh::with_contexts(),
+            outbound: HashMap::new(),
+            riders: HashMap::new(),
+            traversal: Vec::new(),
+            found: Vec::new(),
+            candidates: Vec::new(),
+            additional: Vec::new(),
+            bvh_node_visits: 0,
+            index_update_time: Duration::ZERO,
+            query_time: Duration::ZERO,
+            exact_test_time: Duration::ZERO,
+            total_time: Duration::ZERO,
+            profile_passes: 0,
+            profile_times: [Duration::ZERO; 4],
+            profile_counts: [0; 3],
+            candidate_pairs: 0,
+            narrow_phase_tests: 0,
+            correction_iterations: 0,
+            non_convergences: 0,
+        }
+    }
 }
 
 impl StaticContactSystem {

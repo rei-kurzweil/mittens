@@ -243,11 +243,21 @@ on context decks.
     within a few cm of their spot, never snags, leaves at the deck's speed,
     and can crouch and kneel there (lower-body IK on a moving support frame).
 
+**Only the movement-contact index splits contexts out** (2026-11-24):
+`CollidableBvh::with_contexts()`. Projectile, swept-zone and spring-bone
+indexes keep context zones in the world, so rockets and sensors hit decks
+and interiors without any extra step (this covers step 9).
+
 **Phase 4: vehicles**
 16. Car: deck context (interior floor, wing tops, roof), bigger carry zone,
     grab-the-controls driving instead of the driver mount.
 17. Pickup: the bed becomes a carry with its own context; drop the bench
-    auto-mount; cab seats stay snapped seats.
+    auto-mount; cab seats stay snapped seats. Done 2026-11-24, pending a
+    build: `pickup_bed_deck()` (board zone from the floor to 2.2 m so jumping
+    in over the walls counts; the old entry zone as the stay zone; a context
+    with floor, walls, cab wall, tailgate and bench boxes on the truck root).
+    Cargo in the bed (the hot dog stand) is not in the context yet, so riders
+    walk through it.
 18. A mech in the target practice range.
 
 **Phase 5: multiplayer**: latched `carried_by` + epoch on pose packets; the

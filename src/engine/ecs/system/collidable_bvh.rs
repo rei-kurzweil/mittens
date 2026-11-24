@@ -355,6 +355,10 @@ pub(crate) struct CollidableBvh {
     surfaces: Vec<Surface>,
     indices: HashMap<ComponentId, usize>,
     bvh: Option<BVH>,
+    /// Only the movement-contact index keeps context surfaces apart. Other
+    /// indexes (projectiles, swept zone events, spring bones) see them in the
+    /// world like any zone, so rockets and sensors still hit decks.
+    split_contexts: bool,
     /// Surfaces under a CollisionContext, by context component; never in `bvh`.
     contexts: HashMap<ComponentId, ContextSet>,
     context_of: HashMap<ComponentId, ComponentId>,
@@ -368,6 +372,15 @@ pub(crate) struct CollidableBvh {
     pub refreshed: u64,
 }
 impl CollidableBvh {
+    /// An index that keeps CollisionContext surfaces in their own local sets
+    /// (the movement-contact index); see `split_contexts`.
+    pub(crate) fn with_contexts() -> Self {
+        Self {
+            split_contexts: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn snapshot(
         &self,
         world: &World,
@@ -482,6 +495,7 @@ impl CollidableBvh {
             // local tree; leaving or changing context removes it from the old one.
             let home = resolved
                 .as_ref()
+                .filter(|_| self.split_contexts)
                 .and_then(|resolved| home_context(world, resolved.0));
             if let Some(previous) = self.context_of.get(&id).copied()
                 && home.map(|(context, _)| context) != Some(previous)
