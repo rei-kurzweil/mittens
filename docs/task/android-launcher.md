@@ -76,6 +76,10 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
   `openness valid=true` once worn. Blinking each eye closes Mitten's matching
   eyelid. Without the module: `supportsEyeTracking=false`, and the scene runs
   normally.
+  About once a second the log prints raw `L valid= open= R valid= open=`.
+  Note whether `valid` stays true during a blink and a wink, and what open
+  reads with relaxed eyes (ALVR saw about 0.91-0.93). Attach the module and
+  calibrate (Settings > Inputs > Eye tracker > Calibrate) before launching.
 
 ## Next
 

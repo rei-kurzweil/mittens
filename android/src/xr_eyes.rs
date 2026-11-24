@@ -10,15 +10,14 @@
 //!
 //! The ABI is not in the `openxr` 0.19 bindings. It follows HTC's Unity
 //! plugin (`ViveEyeTrackerHelper.cs`, `OpenXRUtils.cs` in
-//! ViveSoftware/VIVE-OpenXR-Unity) as used by the ALVR fork's device-tested
-//! probe (rei-kurzweil/wave-eye-tracking-notes; ALVR `feature/htc-eye-tracker`
-//! 5b3c5f1). Info structs keep ALVR's trailing `time` field, which the tested
-//! runtime accepted; HTC's own layout has only `type` and `next`.
+//! ViveSoftware/VIVE-OpenXR-Unity), matching the ALVR fork's wrapper that was
+//! tested on a Focus 3 (ALVR `feature/htc-eye-tracker` 5b3c5f1, MIT; see
+//! rei-kurzweil/wave-eye-tracking-notes `ALVR_REFERENCE.md`).
 use crate::xr_host::Report;
 use mittens_engine::engine::ecs::system::external_xr_frame::NativeEyeSample;
 use openxr as xr;
 use std::ffi::{CStr, c_void};
-use xr::sys::{Bool32, Result as XrResult, Session, Space, StructureType, Time};
+use xr::sys::{Bool32, Result as XrResult, Session, StructureType, Time};
 
 const EXTENSION: &str = "XR_HTC_eye_tracker";
 const CREATE_INFO: i32 = 1000326001;
@@ -47,7 +46,6 @@ struct SystemEyeTrackingPropertiesHTC {
 struct EyeGeometricDataInfoHTC {
     ty: StructureType,
     next: *const c_void,
-    time: Time,
 }
 
 #[repr(C)]
@@ -160,6 +158,7 @@ pub(crate) struct NativeEyes {
     destroy: DestroyEyeTracker,
     geometric: GetEyeGeometricData,
     active: Option<bool>,
+    frames: u32,
 }
 
 impl NativeEyes {
@@ -196,6 +195,7 @@ impl NativeEyes {
             destroy,
             geometric,
             active: None,
+            frames: 0,
         })
     }
 
@@ -205,7 +205,6 @@ impl NativeEyes {
         let info = EyeGeometricDataInfoHTC {
             ty: StructureType::from_raw(GEOMETRIC_INFO),
             next: std::ptr::null(),
-            time,
         };
         let empty = SingleEyeGeometricDataHTC {
             is_valid: xr::sys::FALSE,
@@ -221,6 +220,19 @@ impl NativeEyes {
             eyes: [empty; 2],
         };
         let result = unsafe { (self.geometric)(self.tracker, &info, &mut data) };
+        // About once a second, the raw per-eye values: blink validity and
+        // undetected-eye zeros are not yet characterized on this runtime.
+        self.frames = self.frames.wrapping_add(1);
+        if self.frames % 75 == 1 {
+            let [left, right] = &data.eyes;
+            report.line(format!(
+                "native eyes: {result:?} L valid={} open={:.2} R valid={} open={:.2}",
+                bool::from(left.is_valid),
+                left.eye_openness,
+                bool::from(right.is_valid),
+                right.eye_openness,
+            ));
+        }
         // HTC: openness 0 = normally closed, 1 = normally open; a valid zero
         // is a closed eye, an invalid eye is missing data.
         let closure = |eye: &SingleEyeGeometricDataHTC| {
