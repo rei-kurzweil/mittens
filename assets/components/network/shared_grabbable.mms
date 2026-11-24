@@ -24,7 +24,8 @@ export fn shared_grabbable(options) {
     let home = null
     let kind = { revision: f32, owner: f32, held: f32, mount: f32, translation: vec3, rotation: vec4 }
     let state = { revision = 0 owner = 1 held = false mount = world_mount pointer = null outgoing = null
-        elapsed = 0.0 generation = 0 repeats = 0 pump = null ammo = null restocks = 0 }
+        elapsed = 0.0 generation = 0 repeats = 0 pump = null ammo = null restocks = 0
+        restock_due = false }
     if stock {
         home = target.trs()
         state.ammo = stock.capacity
@@ -92,8 +93,16 @@ export fn shared_grabbable(options) {
         state.repeats = event_repeats
         sync_pump()
     }
+    // An empty weapon held by anyone (here or on a peer) never respawns out
+    // of their hand: a restock that comes due while it is held waits, and
+    // happens as soon as it is let go.
     fn restock() {
         if !stock { return }
+        if state.held {
+            state.restock_due = true
+            return
+        }
+        state.restock_due = false
         state.restocks = state.restocks + 1
         state.revision = state.revision + 1
         state.owner = options.rank
@@ -125,6 +134,7 @@ export fn shared_grabbable(options) {
         state.held = false
         mark_mount(world_mount)
         announce()
+        if state.restock_due { restock() }
     }
     // Called by attach_drops after a release lands in a shared mount zone.
     // It follows the release record, so the higher revision wins remotely.
@@ -134,6 +144,7 @@ export fn shared_grabbable(options) {
         state.held = false
         mark_mount(id)
         announce()
+        if state.restock_due { restock() }
     }
     fn bind_pointer(pointer) {
         on(pointer, "PointerGrabbed", grabbed)
@@ -183,6 +194,8 @@ export fn shared_grabbable(options) {
                 stock.apply(state.ammo, restocked)
             }
             sync_pump()
+            // A peer let go of a weapon whose restock came due while held.
+            if state.restock_due && !state.held { restock() }
         })
         // A newly connected peer learns the current state once.
         announce()

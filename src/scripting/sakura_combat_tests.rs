@@ -344,7 +344,7 @@ fn weapon_fire_gate_checks_trigger_and_deferred_launch() {
 }
 
 #[test]
-fn empty_weapons_stay_put_for_ten_seconds_then_return_loaded() {
+fn empty_weapons_stay_put_for_a_minute_then_return_loaded() {
     let mut scene = Universe::new(World::default());
     let clock = Arc::new(TestClock::default());
     scene
@@ -428,7 +428,8 @@ fn empty_weapons_stay_put_for_ten_seconds_then_return_loaded() {
     event(&mut scene, "Fire");
     tick(&mut scene, 30);
     event(&mut scene, "Move");
-    tick(&mut scene, 1_130);
+    // Just short of a minute (60 s at 120 steps per second) since the shots.
+    tick(&mut scene, 7_130);
     let rounds = |scene: &Universe| {
         scene
             .world
