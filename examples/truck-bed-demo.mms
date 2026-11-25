@@ -63,8 +63,9 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-// Sunrise in the mountains: a lit background range around a winding valley,
-// the sun coming up in its farthest pass ahead and to the right.
+// Sunrise in the mountains: four rings of peaks around the range (inside the
+// 250 m far plane) leave a winding valley along the road, with the sun coming
+// up in its farthest pass, ahead and to the right.
 let sunrise = mountain_sunrise(null)
 sunrise.world
 let pink = [0.88, 0.65, 0.73]

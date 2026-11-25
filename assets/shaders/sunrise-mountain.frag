@@ -1,13 +1,13 @@
 #version 450
-// Background mountains at sunrise (Background occlusion+lighting only). Faces
+// Mountains at sunrise. Faces
 // are lit by the scene's directional lights in their own colours, so a gold
 // sun on one side and a red counter-light on the other paint the two sides of
 // each ridge; point and spot lights live in foreground space and are skipped.
 // The normal comes from screen derivatives, not the vertex normal, so the
 // sheared cubes the ridges are built from shade correctly as flat facets.
 // Haze pulls distant and low geometry toward the sky's horizon colour, and
-// silhouettes near the sun get a gold rim. The camera is at the origin here,
-// since Background removes camera translation.
+// silhouettes near the sun get a gold rim. base_tex is the CombineMesh's
+// baked ambient occlusion (white when there is none).
 layout(location = 0) in vec3 v_world_pos;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
@@ -51,10 +51,14 @@ layout(set = 1, binding = 0, std140) uniform SunriseMountain {
     float floor_y; float valley_mist;
 } mat;
 
+layout(set = 1, binding = 1) uniform sampler2D base_tex;
+
 void main() {
     vec3 p = v_world_pos;
+    vec3 eye = -transpose(mat3(ubo.view)) * ubo.view[3].xyz;
+    vec3 to_eye = eye - p;
     vec3 N = normalize(cross(dFdx(p), dFdy(p)));
-    vec3 V = normalize(-p);
+    vec3 V = normalize(to_eye);
     if (dot(N, V) < 0.0) {
         N = -N;
     }
@@ -76,10 +80,10 @@ void main() {
         light += g_lights.lights[i].color_distance.xyz
             * max(g_lights.lights[i].pos_intensity.w, 0.0) * band;
     }
-    vec3 color = v_color.rgb * light;
+    vec3 color = v_color.rgb * texture(base_tex, v_uv).rgb * light;
 
     vec3 sun = length(mat.sun_direction) > 0.0001 ? normalize(mat.sun_direction) : vec3(0.0, 0.05, -1.0);
-    vec3 direction = normalize(p);
+    vec3 direction = normalize(-to_eye);
     vec2 flat_direction = direction.xz / max(length(direction.xz), 0.0001);
     vec2 flat_sun = sun.xz / max(length(sun.xz), 0.0001);
     float sun_side = dot(flat_direction, flat_sun) * 0.5 + 0.5;
@@ -88,7 +92,7 @@ void main() {
     float edge = pow(1.0 - abs(dot(N, V)), 3.0);
     color += mat.rim_color * edge * pow(sun_side, 4.0) * mat.rim_strength;
 
-    float distance_haze = smoothstep(mat.haze_near, max(mat.haze_far, mat.haze_near + 0.001), length(p));
+    float distance_haze = smoothstep(mat.haze_near, max(mat.haze_far, mat.haze_near + 0.001), length(to_eye));
     float mist = (1.0 - smoothstep(mat.floor_y, mat.floor_y + 6.0, p.y)) * mat.valley_mist;
     float haze = clamp(max(distance_haze, mist) * mat.haze_strength, 0.0, 1.0);
     vec3 haze_color = mix(mat.haze_color, mat.haze_sun_color, sun_side * sun_side);
