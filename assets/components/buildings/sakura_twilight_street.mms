@@ -32,17 +32,18 @@ fn flat_road(x, y, z, x_size, z_size, road_material) {
 fn grass_tile(x0, x1, z0, z1, y) {
     let width = x1 - x0
     let depth = z1 - z0
-    // Anchor the texture to the terrain. Whole grid tiles share the same UVs
-    // and mesh, and the narrower tiles meet them without changing texel density.
-    let u0 = x0 / 2.0 - Math.floor(x0 / 2.0)
-    let v0 = z0 / 2.0 - Math.floor(z0 / 2.0)
-    let u1 = u0 + width / 2.0
-    let v1 = v0 + depth / 2.0
+    // Anchor the texture to the terrain, one repeat per 4 m. Whole grid tiles
+    // share the same UVs and mesh, and the narrower tiles meet them without
+    // changing texel density.
+    let u0 = x0 / 4.0 - Math.floor(x0 / 4.0)
+    let v0 = z0 / 4.0 - Math.floor(z0 / 4.0)
+    let u1 = u0 + width / 4.0
+    let v1 = v0 + depth / 4.0
     return T.position((x0 + x1) / 2.0, y, (z0 + z1) / 2.0).rotation(-Math.pi / 2.0, 0.0, 0.0).scale(width, depth, 1.0) {
         R.plane() {
-            C.rgba(1.0, 1.0, 1.0, 1.0)
+            C.rgba(0.80, 0.96, 0.62, 1.0)
             UV.uv(u0,v1).uv(u1,v1).uv(u1,v0).uv(u0,v0)
-            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
             TextureFiltering.linear()
         }
     }
@@ -81,11 +82,11 @@ fn corner_grass_outline(radius, outside, segments) {
 fn corner_grass(label, outline, x, y, z) {
     return T.position(x, y, z).rotation(-Math.pi / 2.0, 0.0, 0.0) {
         R.polygon(label, outline) {
-            C.rgba(1.0, 1.0, 1.0, 1.0)
+            C.rgba(0.80, 0.96, 0.62, 1.0)
             UV {
-                for point in outline { uv((x + point[0]) / 2.0, (z - point[1]) / 2.0) }
+                for point in outline { uv((x + point[0]) / 4.0, (z - point[1]) / 4.0) }
             }
-            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
             TextureFiltering.linear()
         }
     }

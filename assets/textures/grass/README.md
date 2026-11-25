@@ -1,4 +1,28 @@
-# Ship park grass
+# Grass
+
+## Cartoon grass (`cartoon-grass.png`)
+
+Used by every grass surface: the ship park, the Sakura street, target
+practice and the truck bed demo. Regenerate with:
+
+```sh
+python3 scripts/generate_cartoon_grass.py
+```
+
+A seamless 1024 px greyscale tile: soft lightness patches with little tufts
+drawn as dark outlined arches (an upside-down U, an m, or several n shapes),
+legs leaning in toward the bottom. It is one hue in several lightnesses, so
+each scene colours it with the material colour (`C.rgba` multiplies it). One
+repeat is meant to cover about 4 m. Options: `--outline` (line width, px),
+`--taper` (how far legs lean in), `--shapes` (arch count weights, e.g.
+`1:0.35,2:0.4,3:0.2,4:0.05`), `--tufts`, `--tuft-size`, `--fill` (lighten
+tuft interiors), `--ground`, `--patch`, `--line`, `--seed`, `--size`,
+`--out`.
+
+The park's hills are an ImplicitSurface whose UVs are world metres, so they
+use `.uv_scale(0.25)` to match.
+
+## Previous ship park grass (`ship-park-grass.png`, unused)
 
 Regenerate the seamless albedo with:
 

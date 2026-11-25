@@ -79,8 +79,8 @@ fn grass_tile(x, z) {
         Destroyable.threshold(3.0)
         R.cube() {
             Raycastable.enabled()
-            grass C.rgba(1.0, 1.0, 1.0, 1.0)
-            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            grass C.rgba(0.80, 0.96, 0.62, 1.0)
+            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
             TextureFiltering.linear()
         }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }

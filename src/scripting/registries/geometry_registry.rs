@@ -83,6 +83,7 @@ pub(super) fn apply(
             "iso_level" => s.iso_level = arg_f32(args, 0)?,
             "smooth_min_radius" => s.smooth_min_radius = arg_f32(args, 0)?,
             "clip_floor" => s.clip_floor = Some(arg_f32(args, 0)?),
+            "uv_scale" => s.uv_scale = arg_f32(args, 0)?,
             _ => return Err(format!("ImplicitSurface: unknown builder '{method}'")),
         };
         return Ok(());

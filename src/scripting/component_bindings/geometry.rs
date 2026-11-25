@@ -13,6 +13,7 @@ pub(super) fn register(
             ("iso_level", 1),
             ("smooth_min_radius", 1),
             ("clip_floor", 1),
+            ("uv_scale", 1),
         ],
         "ImplicitSphere" => &[("radius", 1)],
         _ => unreachable!(),

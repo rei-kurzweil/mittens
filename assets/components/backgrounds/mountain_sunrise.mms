@@ -30,14 +30,14 @@ let SUN = { azimuth = -1.1 elevation = 0.06 radius = 0.04 }
 // peak height range above the floor (m), base colour, and passes
 // [azimuth, half width, peak height inside the pass].
 let LAYERS = [
-    { margin = 16.0 spacing = 13.0 low = 7.0 high = 15.0 color = [0.74, 0.40, 0.40]
+    { margin = 40.0 spacing = 16.0 low = 8.0 high = 17.0 color = [0.86, 0.46, 0.56]
       gaps = [[-0.45, 0.75, 1.5], [3.24, 0.45, 1.5]] },
-    { margin = 30.0 spacing = 16.0 low = 13.0 high = 24.0 color = [0.80, 0.46, 0.44]
+    { margin = 62.0 spacing = 20.0 low = 15.0 high = 27.0 color = [0.90, 0.52, 0.62]
       gaps = [[-0.80, 0.42, 2.0], [2.84, 0.30, 2.0]] },
-    { margin = 46.0 spacing = 20.0 low = 20.0 high = 34.0 color = [0.85, 0.53, 0.50]
+    { margin = 85.0 spacing = 24.0 low = 23.0 high = 38.0 color = [0.93, 0.60, 0.68]
       gaps = [[-1.00, 0.26, 3.0], [3.24, 0.20, 3.0]] },
-    { margin = 66.0 spacing = 24.0 low = 30.0 high = 46.0 color = [0.90, 0.60, 0.56]
-      gaps = [[-1.12, 0.12, 6.0]] }
+    { margin = 110.0 spacing = 28.0 low = 34.0 high = 52.0 color = [0.96, 0.68, 0.74]
+      gaps = [[-1.12, 0.12, 9.0]] }
 ]
 
 let SKY = {
@@ -151,7 +151,7 @@ fn layer_peaks(layer, center, extent, floor_y, material) {
 //   sky: overrides for SKY fields; ambient [r, g, b];
 //   sun_light, counter_light: [r, g, b, intensity].
 // Returns { world, sky_material, mountain_material, sun_light, counter_light,
-//           ambient }. Add `world` to the scene once. Rings reach about 66 m
+//           ambient }. Add `world` to the scene once. Rings reach about 110 m
 // beyond the play area, so the camera's far plane must reach past them.
 export fn mountain_sunrise(options) {
     if options == null { options = {} }
@@ -174,8 +174,8 @@ export fn mountain_sunrise(options) {
     sky_inputs.sun_direction = sun
     let sky_material = Material(sky_definition).inputs(sky_inputs)
     let mountain_material = Material(mountain_definition).inputs({
-        haze_color = sky_inputs.horizon_color, haze_near = 40.0,
-        haze_sun_color = sky_inputs.sun_horizon_color, haze_far = 220.0,
+        haze_color = sky_inputs.horizon_color, haze_near = 50.0,
+        haze_sun_color = sky_inputs.sun_horizon_color, haze_far = 240.0,
         rim_color = sky_inputs.glow_color, haze_strength = 0.7,
         sun_direction = sun, rim_strength = 0.6,
         floor_y = floor_y, valley_mist = 0.5
@@ -203,7 +203,7 @@ export fn mountain_sunrise(options) {
     // always cover it.
     let sun_distance = 70.0
     let sun_size = 2.0 * Math.sin(SUN.radius) * sun_distance
-    let span = [2.0 * (extent[0] + 80.0), 2.0 * (extent[1] + 80.0)]
+    let span = [2.0 * (extent[0] + 140.0), 2.0 * (extent[1] + 140.0)]
     let world = T {
         name = "mountain_sunrise"
         Raycastable.disabled() {

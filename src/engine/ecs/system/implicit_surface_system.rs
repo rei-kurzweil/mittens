@@ -135,13 +135,18 @@ impl ImplicitSurfaceSystem {
                         .get_component_by_id_as::<ImplicitSurfaceComponent>(root)
                         .expect("root remains a surface")
                         .smooth_min_radius;
-                    let clip_floor = world
+                    let surface = world
                         .get_component_by_id_as::<ImplicitSurfaceComponent>(root)
-                        .unwrap()
-                        .clip_floor;
+                        .unwrap();
+                    let (clip_floor, uv_scale) = (surface.clip_floor, surface.uv_scale);
                     match sample_and_extract_clipped(spec, &spheres, smooth_min_radius, clip_floor)
                     {
-                        Ok(mesh) => {
+                        Ok(mut mesh) => {
+                            if uv_scale != 1.0 {
+                                for vertex in &mut mesh.vertices {
+                                    vertex.uv = vertex.uv.map(|value| value * uv_scale);
+                                }
+                            }
                             let new_output = if mesh.vertices.is_empty() {
                                 publish_collision(world, root, None);
                                 mesh_bounds.remove(root);
@@ -636,6 +641,7 @@ fn authored_fingerprint(world: &World, root: ComponentId) -> u64 {
         surface.iso_level.to_bits().hash(&mut hasher);
         surface.smooth_min_radius.to_bits().hash(&mut hasher);
         surface.clip_floor.map(f32::to_bits).hash(&mut hasher);
+        surface.uv_scale.to_bits().hash(&mut hasher);
     }
     let root_model = TransformSystem::world_model(world, root).unwrap_or_else(mat4_identity);
     let root_inverse = mat4_inverse(root_model);
@@ -731,6 +737,7 @@ mod tests {
             iso_level: 0.0,
             smooth_min_radius: 0.0,
             clip_floor: None,
+            uv_scale: 1.0,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         world.add_child(root, sphere).unwrap();
@@ -798,6 +805,7 @@ mod tests {
             iso_level: 0.0,
             smooth_min_radius: 0.0,
             clip_floor: None,
+            uv_scale: 1.0,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let color = world.add_component(ColorComponent::rgba(0.7, 0.8, 0.9, 1.0));
@@ -838,6 +846,7 @@ mod tests {
             iso_level: 0.0,
             smooth_min_radius: 0.0,
             clip_floor: None,
+            uv_scale: 1.0,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let color = world.add_component(ColorComponent::rgba(0.7, 0.8, 0.9, 1.0));
@@ -875,6 +884,7 @@ mod tests {
             iso_level: 0.0,
             smooth_min_radius: 0.0,
             clip_floor: None,
+            uv_scale: 1.0,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let mut refraction = RefractionComponent::new();

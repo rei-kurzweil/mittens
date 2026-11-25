@@ -46,9 +46,9 @@ export fn ship_park_ground(extent_factor) {
         name = "ship_park_ground"
         T.position(0.0, 0.004, 0.0).rotation(-Math.pi/2.0, 0.0, 0.0).scale(16.0*extent_factor,12.0*extent_factor,1.0) {
             R.plane() {
-                grass C.rgba(1.0, 1.0, 1.0, 1.0)
-                UV.uv(-8*extent_factor,6*extent_factor).uv(8*extent_factor,6*extent_factor).uv(8*extent_factor,-6*extent_factor).uv(-8*extent_factor,-6*extent_factor)
-                Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+                grass C.rgba(0.80, 0.96, 0.62, 1.0)
+                UV.uv(-2*extent_factor,1.5*extent_factor).uv(2*extent_factor,1.5*extent_factor).uv(2*extent_factor,-1.5*extent_factor).uv(-2*extent_factor,-1.5*extent_factor)
+                Texture.with_uri("assets/textures/grass/cartoon-grass.png")
                 TextureFiltering.linear()
             }
         }
@@ -64,10 +64,10 @@ export fn ship_park_ground(extent_factor) {
                 if chunk>0 { label=label+"_"+chunk }
             }
         ImplicitSurface.bounds(xlo,-0.30,zlo,xhi,profile.height_limit,zhi)
-            .voxel_size(voxel).smooth_min_radius(profile.blend).clip_floor(-0.08) {
+            .voxel_size(voxel).smooth_min_radius(profile.blend).clip_floor(-0.08).uv_scale(0.25) {
             name = label
-            grass C.rgba(1.0, 1.0, 1.0, 1.0)
-            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            grass C.rgba(0.80, 0.96, 0.62, 1.0)
+            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
             TextureFiltering.linear()
             // This zone receives the generated triangle mesh, keeping foot
             // contacts on the same smooth surface that is rendered.

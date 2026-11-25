@@ -63,8 +63,8 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-// Sunrise in the mountains: four rings of peaks around the range (inside the
-// 250 m far plane) leave a winding valley along the road, with the sun coming
+// Sunrise in the mountains: four rings of peaks 40 to 110 m beyond the range
+// (inside the 250 m far plane) leave a winding valley along the road, with the sun coming
 // up in its farthest pass, ahead and to the right.
 let sunrise = mountain_sunrise(null)
 sunrise.world
@@ -83,14 +83,15 @@ fn box(position, size, color) {
 // A 96 x 30 m range of destroyable 8 m tiles: grass, with a 6 m road of
 // tiles across it at z = -12. A truck that drops through a hole is caught
 // and put back like anyone else.
+// Cartoon grass, tinted a little pink to sit with the sunrise.
 let grass = ship_environment_material("far")
 fn grass_tile(x, z) {
     return T.position(x, -0.15, z).scale(8.0, 0.3, 8.0) {
         Destroyable.threshold(3.0)
         R.cube() {
             Raycastable.enabled()
-            grass C.rgba(1.0, 1.0, 1.0, 1.0)
-            Texture.with_uri("assets/textures/grass/ship-park-grass.png")
+            grass C.rgba(0.94, 0.80, 0.72, 1.0)
+            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
             TextureFiltering.linear()
         }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
