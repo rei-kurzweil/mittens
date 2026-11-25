@@ -172,15 +172,15 @@ fn pillar(x, z, outward, seed, material) {
     }
 }
 
-// Pillars every ~9 m along one side of the plateau, from `from` to `to`
-// ([x, z]), pushed out along `outward`.
-fn cliff_side(from, to, outward, salt, material) {
-    let dx = to[0] - from[0]
-    let dz = to[1] - from[1]
+// Pillars every ~9 m along one side of the plateau, from `start` to
+// `finish` ([x, z]), pushed out along `outward`.
+fn cliff_side(start, finish, outward, salt, material) {
+    let dx = finish[0] - start[0]
+    let dz = finish[1] - start[1]
     let count = Math.ceil(Math.sqrt(dx * dx + dz * dz) / 9.0)
     return T {
         for index in range(count + 1) {
-            pillar(from[0] + dx * index / count, from[1] + dz * index / count, outward, salt + index * 3.1, material)
+            pillar(start[0] + dx * index / count, start[1] + dz * index / count, outward, salt + index * 3.1, material)
         }
     }
 }
