@@ -106,7 +106,7 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-let lighting = sakura_twilight_lighting(grab_rank, hardware)
+let lighting = sakura_twilight_lighting(grab_rank, hardware, true)
 lighting.world
 // On the south side of the main roof, facing back toward the spawn.
 T.position(roof_x + 1.3, roof_height, 3.4).rotation(0.0, Math.pi, 0.0) {

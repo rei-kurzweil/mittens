@@ -55,12 +55,14 @@ void main() {
     color += sky.glow_color * glow * sky.glow_strength;
 
     // Thin streaks low in the sky: lavender away from the sun, gold toward it.
-    float azimuth = atan(direction.z, direction.x);
-    float clouds = streak(azimuth, altitude, 0.07, 0.012, sky.cloud_seed)
-                 + streak(azimuth, altitude, 0.15, 0.018, sky.cloud_seed + 1.7)
-                 + 0.7 * streak(azimuth, altitude, 0.26, 0.025, sky.cloud_seed + 4.1);
-    vec3 cloud = mix(sky.cloud_color, sky.glow_color, pow(sun_side, 3.0));
-    color = mix(color, cloud, clamp(clouds * sky.cloud_strength, 0.0, 1.0));
+    if (sky.cloud_strength > 0.0) {
+        float azimuth = atan(direction.z, direction.x);
+        float clouds = streak(azimuth, altitude, 0.07, 0.012, sky.cloud_seed)
+                     + streak(azimuth, altitude, 0.15, 0.018, sky.cloud_seed + 1.7)
+                     + 0.7 * streak(azimuth, altitude, 0.26, 0.025, sky.cloud_seed + 4.1);
+        vec3 cloud = mix(sky.cloud_color, sky.glow_color, pow(sun_side, 3.0));
+        color = mix(color, cloud, clamp(clouds * sky.cloud_strength, 0.0, 1.0));
+    }
 
     f_color = vec4(color, 1.0);
 }

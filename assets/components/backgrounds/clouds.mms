@@ -37,3 +37,27 @@ export fn clouds(color, puff_count, max_puff_size, puff_clustering) {
         }
     }
 }
+
+// Each bank is [x, y, z, uniform scale, yaw, puff count]. Scale the voxel size
+// with the prefab so each cloud bakes at the same resolution.
+export fn sky_cloud_banks(banks, color) {
+    let tints = {}
+    let root = T {
+        name = "implicit_sky_clouds"
+        for index in range(len(banks)) {
+            let bank = banks[index]
+            let tint = C.rgba(color[0], color[1], color[2], 1.0)
+            tints["" + index] = tint
+            T.position(bank[0], bank[1], bank[2]).rotation(0.0, bank[4], 0.0)
+                .scale(bank[3], bank[3], bank[3]) {
+                cloud(bank[5], 3.8, tint, bank[3] * 0.18)
+            }
+        }
+    }
+    fn set_tint(rgb) {
+        for index in range(len(banks)) {
+            tints["" + index].set_color([rgb[0], rgb[1], rgb[2], 1.0])
+        }
+    }
+    return { root = root set_tint = set_tint }
+}

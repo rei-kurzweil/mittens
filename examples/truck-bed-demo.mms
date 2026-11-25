@@ -14,6 +14,7 @@ import { input_settings_panel } from "../assets/components/panels/input_settings
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
 import { mountain_sunrise } from "../assets/components/backgrounds/mountain_sunrise.mms"
+import { sky_cloud_banks } from "../assets/components/backgrounds/clouds.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
@@ -66,8 +67,17 @@ let hardware = Material(anime).inputs({
 // cliffs 60 m above a hazy plain, with a few low ranges out on the plain
 // behind and to the sides, and the sun coming up over the open plain ahead
 // and to the right. The far plane (420 m) reaches the farthest range.
-let sunrise = mountain_sunrise(null)
+let sunrise = mountain_sunrise({ sky = { cloud_strength = 0.0 } })
 sunrise.world
+BG.occlusion_and_lighting() {
+    name = "truck_bed_sunrise_clouds"
+    sky_cloud_banks([
+        [-32.0, 11.0, -51.0, 4.2, 0.52, 5],
+        [6.0, 14.0, -58.0, 3.7, -0.12, 5],
+        [48.0, 23.0, -34.0, 4.0, -0.97, 3],
+        [-46.0, 17.0, 37.0, 4.4, -0.80, 5],
+    ], [0.71, 0.49, 0.60]).root
+}
 let pink = [0.88, 0.65, 0.73]
 let crate = [0.80, 0.62, 0.44]
 

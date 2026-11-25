@@ -2,16 +2,18 @@
 // `base_width` is the approximate world-space width of the bottom puff row.
 // `components` is a caller-owned component subtree, usually a Color with an
 // optional visual modifiers, so individual clouds can choose their own color.
-export fn cloud(puff_count, base_width, components) {
+// Supply a larger world-space voxel size for distant, scaled-up clouds.
+export fn cloud(puff_count, base_width, components, voxel_size) {
     let radius = base_width * 0.27
     let upper_radius = base_width * 0.23
+    if voxel_size == null { voxel_size = 0.14 }
 
     return ImplicitSurface
         .bounds(
             -base_width * 0.58, -base_width * 0.48, -base_width * 0.34,
              base_width * 0.58,  base_width * 0.56,  base_width * 0.34,
         )
-        .voxel_size(0.14)
+        .voxel_size(voxel_size)
         .iso_level(0.0)
         .smooth_min_radius(base_width * 0.10) {
 
