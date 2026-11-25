@@ -13,7 +13,7 @@ import { avatar_settings_panel } from "../assets/components/panels/avatar_settin
 import { input_settings_panel } from "../assets/components/panels/input_settings_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
-import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
+import { mountain_sunrise } from "../assets/components/backgrounds/mountain_sunrise.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
@@ -39,7 +39,7 @@ import { display_car_desktop, display_car_xr } from "../assets/components/vehicl
 // road and shoot the truck with its nose laser (trigger) or its three-rocket
 // burst (the red dashboard button).
 // Pistols and rockets work as in target practice; the far wall is
-// destroyable.
+// destroyable. All of it sits in a valley at sunrise (mountain_sunrise).
 //
 //   cargo run --release -- load examples/truck-bed-demo.mms
 //
@@ -48,7 +48,7 @@ import { display_car_desktop, display_car_xr } from "../assets/components/vehicl
 
 RendererSettings { window_visible(use_desktop) window_size(1280, 800) }
 Clock.bpm(120.0)
-BGC.rgba(0.68, 0.56, 0.84, 1.0)
+BGC.rgba(0.42, 0.24, 0.34, 1.0)
 RenderGraph {
     EmissivePass {}
     Bloom { intensity(0.65) radius_ndc(0.035) emissive_scale(1.0) half_res(true) }
@@ -63,8 +63,10 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-let lighting = sakura_twilight_lighting(1, hardware)
-lighting.world
+// Sunrise in the mountains: a lit background range around a winding valley,
+// the sun coming up in its farthest pass ahead and to the right.
+let sunrise = mountain_sunrise(null)
+sunrise.world
 let pink = [0.88, 0.65, 0.73]
 let crate = [0.80, 0.62, 0.44]
 

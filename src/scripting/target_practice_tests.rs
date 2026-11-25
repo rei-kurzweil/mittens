@@ -265,6 +265,16 @@ fn truck_bed_demo_drives_the_pickup_with_seated_mitten_aboard() {
     assert!(has_label(&scene, "demo_mech"));
     assert!(has_label(&scene, "car_rockets_fire_button"));
     assert!(has_label(&scene, "car_laser_origin"));
+    // The sunrise backdrop: sky, lit range with its sun disc, and lights.
+    for label in [
+        "mountain_sunrise_sky_surface",
+        "mountain_sunrise_range",
+        "mountain_sunrise_sun_disc",
+        "mountain_sunrise_sun",
+        "mountain_sunrise_counter",
+    ] {
+        assert!(has_label(&scene, label), "{label}");
+    }
     assert_eq!(
         scene.world.parent_of(named(&scene, "npc_frame")),
         Some(named(&scene, "pickup_chassis_frame"))
