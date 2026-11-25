@@ -1,26 +1,32 @@
 # Grass
 
-## Cartoon grass (`cartoon-grass.png`)
+## Cartoon grass tufts (`cartoon-grass-tufts.png`)
 
-Used by every grass surface: the ship park, the Sakura street, target
-practice and the truck bed demo. Regenerate with:
+Used by every grass surface (the ship park, the Sakura street, target
+practice, the truck bed demo) through `cartoon_grass(bucket, options)` in
+`assets/components/materials/cartoon_grass.mms` and its shader
+`assets/shaders/cartoon-grass.frag`. Regenerate with:
 
 ```sh
-python3 scripts/generate_cartoon_grass.py
+python3 scripts/generate_grass_tufts.py
 ```
 
-A seamless 1024 px greyscale tile: soft lightness patches with little tufts
-drawn as dark outlined arches (an upside-down U, an m, or several n shapes),
-legs leaning in toward the bottom. It is one hue in several lightnesses, so
-each scene colours it with the material colour (`C.rgba` multiplies it). One
-repeat is meant to cover about 4 m. Options: `--outline` (line width, px),
-`--taper` (how far legs lean in), `--shapes` (arch count weights, e.g.
-`1:0.35,2:0.4,3:0.2,4:0.05`), `--tufts`, `--tuft-size`, `--fill` (lighten
-tuft interiors), `--ground`, `--patch`, `--line`, `--seed`, `--size`,
-`--out`.
+A 512 px 2x2 atlas of four single tufts, each drawn as outlined arches (an
+upside-down U, an m, three n shapes, another m), base on the bottom edge of
+its quarter. RGB is the outline's lightness and alpha its coverage. Options:
+`--arches` (four arch counts), `--outline` (line width, px), `--taper` (how
+far legs lean in at the bottom), `--width`, `--fill`, `--line`, `--seed`,
+`--size`, `--out`.
 
-The park's hills are an ImplicitSurface whose UVs are world metres, so they
-use `.uv_scale(0.25)` to match.
+The shader paints the ground as the material colour times a soft lightness
+pattern and scatters tufts by world position (at most one per
+`cell_size` cell, `density` of them filled, random size and variant). Each
+tuft is drawn upright toward the viewer with its curved side up, wherever
+you look from, and tufts fade out between `fade_near` and `fade_far`. One
+colour, several lightnesses: each scene sets the colour with `C.rgba`.
+
+`scripts/generate_cartoon_grass.py` draws the same tufts into a seamless
+ground tile; it is no longer used by any scene.
 
 ## Previous ship park grass (`ship-park-grass.png`, unused)
 

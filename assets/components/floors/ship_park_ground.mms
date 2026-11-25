@@ -1,4 +1,4 @@
-import { ship_environment_material } from "../materials/ship_anime_materials.mms"
+import { cartoon_grass } from "../materials/cartoon_grass.mms"
 // Rolling mounds grown from smoothly fused sphere fields, clipped into the
 // upper deck slab so no hidden sphere geometry protrudes into the washrooms.
 fn ground_profile(extent_factor) {
@@ -41,14 +41,14 @@ export fn ship_park_ground(extent_factor) {
     let profile = ground_profile(extent_factor)
     let voxel = 0.12
     if extent_factor == 4 { voxel=0.24 }
-    let grass = ship_environment_material()
+    let grass = cartoon_grass("far", null)
     return T {
         name = "ship_park_ground"
         T.position(0.0, 0.004, 0.0).rotation(-Math.pi/2.0, 0.0, 0.0).scale(16.0*extent_factor,12.0*extent_factor,1.0) {
             R.plane() {
                 grass C.rgba(0.80, 0.96, 0.62, 1.0)
                 UV.uv(-2*extent_factor,1.5*extent_factor).uv(2*extent_factor,1.5*extent_factor).uv(2*extent_factor,-1.5*extent_factor).uv(-2*extent_factor,-1.5*extent_factor)
-                Texture.with_uri("assets/textures/grass/cartoon-grass.png")
+                Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
                 TextureFiltering.linear()
             }
         }
@@ -67,7 +67,7 @@ export fn ship_park_ground(extent_factor) {
             .voxel_size(voxel).smooth_min_radius(profile.blend).clip_floor(-0.08).uv_scale(0.25) {
             name = label
             grass C.rgba(0.80, 0.96, 0.62, 1.0)
-            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
             // This zone receives the generated triangle mesh, keeping foot
             // contacts on the same smooth surface that is rendered.

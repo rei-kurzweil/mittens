@@ -18,7 +18,7 @@ import { ship_input_controller } from "../assets/components/ship_input_controlle
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
-import { ship_environment_material } from "../assets/components/materials/ship_anime_materials.mms"
+import { cartoon_grass } from "../assets/components/materials/cartoon_grass.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
@@ -84,14 +84,14 @@ fn box(position, size, color) {
 // tiles across it at z = -12. A truck that drops through a hole is caught
 // and put back like anyone else.
 // Cartoon grass, tinted a little pink to sit with the sunrise.
-let grass = ship_environment_material("far")
+let grass = cartoon_grass("far", null)
 fn grass_tile(x, z) {
     return T.position(x, -0.15, z).scale(8.0, 0.3, 8.0) {
         Destroyable.threshold(3.0)
         R.cube() {
             Raycastable.enabled()
             grass C.rgba(0.94, 0.80, 0.72, 1.0)
-            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
         }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }

@@ -1,4 +1,12 @@
 import { radio_tower } from "./radio_tower.mms"
+import { cartoon_grass } from "../materials/cartoon_grass.mms"
+
+// One shared grass material, made on first use.
+let street = { grass = null }
+fn street_grass() {
+    if street.grass == null { street.grass = cartoon_grass("far", null) }
+    return street.grass
+}
 
 // The eastbound descent, landing, and quarter turn share one road layout.
 fn ramp_segment(x0, y0, x1, y1, z, width, road_material, rail_material) {
@@ -41,9 +49,10 @@ fn grass_tile(x0, x1, z0, z1, y) {
     let v1 = v0 + depth / 4.0
     return T.position((x0 + x1) / 2.0, y, (z0 + z1) / 2.0).rotation(-Math.pi / 2.0, 0.0, 0.0).scale(width, depth, 1.0) {
         R.plane() {
+            street_grass()
             C.rgba(0.80, 0.96, 0.62, 1.0)
             UV.uv(u0,v1).uv(u1,v1).uv(u1,v0).uv(u0,v0)
-            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
         }
     }
@@ -82,11 +91,12 @@ fn corner_grass_outline(radius, outside, segments) {
 fn corner_grass(label, outline, x, y, z) {
     return T.position(x, y, z).rotation(-Math.pi / 2.0, 0.0, 0.0) {
         R.polygon(label, outline) {
+            street_grass()
             C.rgba(0.80, 0.96, 0.62, 1.0)
             UV {
                 for point in outline { uv((x + point[0]) / 4.0, (z - point[1]) / 4.0) }
             }
-            Texture.with_uri("assets/textures/grass/cartoon-grass.png")
+            Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
         }
     }
