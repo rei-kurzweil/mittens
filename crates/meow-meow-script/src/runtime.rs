@@ -1287,7 +1287,7 @@ impl Runtime {
     pub fn materialize_component(&self, source: &str) -> Result<MaterializedCE, EvalError> {
         let tokens = MeowMeowTokenizer::new(source)
             .tokenize()
-            .map_err(|e| EvalError::Tokenize(format!("{e:?}")))?;
+            .map_err(|e| EvalError::Tokenize(crate::evaluator::located(source, e.span.start, &e.message)))?;
         let parser = match self.catalog.component_name_policy {
             ComponentNamePolicy::OpenUppercase => {
                 MeowMeowParser::with_open_component_names_namespaces_and_static_apis(
@@ -1308,7 +1308,7 @@ impl Runtime {
         };
         let statements = parser
             .parse_program()
-            .map_err(|e| EvalError::Parse(e.message))?;
+            .map_err(|e| EvalError::Parse(crate::evaluator::located(source, e.span.start, &e.message)))?;
         let [Statement::Expression(Expression::Component(component))] = statements.as_slice()
         else {
             return Err(EvalError::Runtime(

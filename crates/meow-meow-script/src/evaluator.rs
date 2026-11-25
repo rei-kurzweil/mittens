@@ -184,7 +184,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
     fn parse(&self, source: &str) -> Result<Vec<Statement>, EvalError> {
         let tokens = MeowMeowTokenizer::new(source)
             .tokenize()
-            .map_err(|e| EvalError::Tokenize(format!("{e:?}")))?;
+            .map_err(|e| EvalError::Tokenize(located(source, e.span.start, &e.message)))?;
         let parser = if let Some(catalog) = &self.catalog {
             match catalog.component_name_policy {
                 ComponentNamePolicy::OpenUppercase => {
@@ -209,7 +209,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
         };
         parser
             .parse_program()
-            .map_err(|e| EvalError::Parse(e.message))
+            .map_err(|e| EvalError::Parse(located(source, e.span.start, &e.message)))
     }
 
     fn eval_block(&mut self, block: &BlockStatement) -> Result<Flow, EvalError> {
@@ -546,7 +546,13 @@ impl<'a, H: Host> Evaluator<'a, H> {
     }
 
     fn eval_module_source(&mut self, source: &str, identity: SourceId) -> Result<Value, EvalError> {
-        let statements = self.parse(source)?;
+        let statements = self.parse(source).map_err(|error| match error {
+            EvalError::Parse(message) => EvalError::Parse(format!("in {}: {message}", identity.as_str())),
+            EvalError::Tokenize(message) => {
+                EvalError::Tokenize(format!("in {}: {message}", identity.as_str()))
+            }
+            other => other,
+        })?;
         let previous_source = self.source_id.replace(identity);
         self.module_depth += 1;
         self.scopes.push(HashMap::new());
@@ -2257,4 +2263,16 @@ mod component_identity_tests {
             );
         }
     }
+}
+
+/// `message` with the line and column of byte `offset` in `source`, and that
+/// line with a caret under the column.
+pub(crate) fn located(source: &str, offset: usize, message: &str) -> String {
+    let offset = offset.min(source.len());
+    let before = &source[..offset];
+    let line = before.bytes().filter(|&b| b == b'\n').count() + 1;
+    let column = before.rfind('\n').map_or(offset + 1, |newline| offset - newline);
+    let text = source.lines().nth(line - 1).unwrap_or("");
+    let caret = " ".repeat(column.saturating_sub(1));
+    format!("line {line}, column {column}: {message}\n  {text}\n  {caret}^")
 }
