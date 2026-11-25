@@ -737,6 +737,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             return match lhs {
                 Value::Identifier(name) if name == "Math" => match key.as_str() {
                     "pi" => Ok(Value::Number(std::f64::consts::PI)),
+                    "tau" => Ok(Value::Number(std::f64::consts::TAU)),
                     "e" => Ok(Value::Number(std::f64::consts::E)),
                     _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
                 },
