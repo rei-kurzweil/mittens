@@ -45,7 +45,8 @@ Notes, 2026-11-25. Not started; a design to agree before code.
 
 ### 1. One blast, carried on the damage event
 
-Give `Damage` an optional impulse: `Damage.at(x, y, z, radius, amount)
+Give the damage request an optional impulse (on the damage intent, once
+`damage-impacts-without-ecs-churn.md` lands): `Damage.at(x, y, z, radius, amount)
 .blast(outer_radius, speed, spin)`. The cut still uses `radius`; the push
 reaches `outer_radius`, falling off to zero there. Every consumer reads the
 same event, so cut, debris and push agree, and pistols (no `.blast`) push
@@ -116,7 +117,11 @@ peer.
 ## Order
 
 1. `Damage...blast(...)` plus debris velocity and spin (sections 1 and 2).
-   Small, local, visible straight away.
+   Small, local, visible straight away. Do it together with
+   `damage-impacts-without-ecs-churn.md`: `Damage.at` still creates a
+   temporary `DamageComponent` per hit (the move to a damage intent drained by
+   the destruction system is only proposed there). Carry the blast fields on
+   that intent's payload rather than adding them to the component.
 2. `Knockback` on vehicles (section 3).
 3. `Loose` items, single-player first (section 4), then the shared-grab
    integration (section 5).
