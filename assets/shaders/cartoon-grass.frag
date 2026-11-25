@@ -1,6 +1,7 @@
 #version 450
-// Cartoon grass ground. The ground itself is the instance colour (C.rgba)
-// times a soft procedural lightness pattern. Tufts come from a 2x2 atlas
+// Cartoon grass ground. The ground itself is the albedo (the `albedo` input
+// times the instance colour, C.rgba) times a soft procedural lightness
+// pattern. Tufts come from a 2x2 atlas
 // (generate_grass_tufts.py): the ground is divided into cells in world XZ,
 // and each cell may hold one tuft at a hashed spot, size and variant. A tuft
 // is drawn upright toward the viewer, curved side up, as if it stood on the
@@ -8,7 +9,12 @@
 // viewer, stretched by how flat the ground is seen there. So tufts keep
 // their places on the ground but always face the camera. Tufts fade out by
 // `fade_far`; nearer ones cover farther ones. Only up-facing surfaces get
-// tufts. Lighting is the Anime ramp (shade colour below the lit threshold).
+// tufts.
+// Lighting is the Anime ramp: never brighter than the albedo, and toward the
+// shade colour as the light reaching the surface (each light's intensity,
+// attenuated by distance and spot cone) drops below the lit threshold. A
+// light counts only on the side it faces, ramped across N.L = 0 over
+// +-facing_softness instead of switching at the terminator.
 layout(location = 0) in vec3 v_world_pos;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
@@ -47,6 +53,7 @@ layout(set = 0, binding = 1, std430) readonly buffer LightsSSBO {
 
 layout(set = 1, binding = 0, std140) uniform CartoonGrass {
     vec3 shade_color; float shade_strength;
+    vec3 albedo; float facing_softness;
     float shade_threshold; float lit_threshold; float cell_size; float density;
     float tuft_min; float tuft_max; float fade_near; float fade_far;
     float patch_strength; float patch_scale; float ground_lightness; float line_strength;
@@ -178,12 +185,13 @@ void main() {
                 attenuation *= smoothstep(outer_cos, max(inner_cos, outer_cos + 1e-5), dot(-L, spot_direction));
             }
         }
-        if (dot(N, L) > 0.0) {
-            facing_amount += max(intensity, 0.0) * attenuation;
-        }
+        float softness = max(mat.facing_softness, 0.0);
+        float ndotl = dot(N, L);
+        float facing = softness > 1e-4 ? smoothstep(-softness, softness, ndotl) : step(0.0, ndotl);
+        facing_amount += max(intensity, 0.0) * attenuation * facing;
     }
 
-    vec3 base = v_color.rgb * clamp(lightness, 0.0, 1.0);
+    vec3 base = mat.albedo * v_color.rgb * clamp(lightness, 0.0, 1.0);
     vec3 shade = mix(vec3(1.0), clamp(mat.shade_color, vec3(0.0), vec3(1.0)), clamp(mat.shade_strength, 0.0, 1.0));
     vec3 color = mix(base * shade, base, anime_ramp(facing_amount, mat.shade_threshold, mat.lit_threshold));
     f_color = vec4(color, 1.0);

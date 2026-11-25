@@ -18,7 +18,6 @@ import { ship_input_controller } from "../assets/components/ship_input_controlle
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol } from "../assets/components/weapons/ship_machine_pistol.mms"
-import { cartoon_grass } from "../assets/components/materials/cartoon_grass.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
@@ -39,7 +38,7 @@ import { display_car_desktop, display_car_xr } from "../assets/components/vehicl
 // road and shoot the truck with its nose laser (trigger) or its three-rocket
 // burst (the red dashboard button).
 // Pistols and rockets work as in target practice; the far wall is
-// destroyable. All of it sits in a valley at sunrise (mountain_sunrise).
+// destroyable. All of it sits on a clifftop at sunrise (mountain_sunrise).
 //
 //   cargo run --release -- load examples/truck-bed-demo.mms
 //
@@ -63,9 +62,10 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-// Sunrise in the mountains: four rings of peaks 40 to 110 m beyond the range
-// (inside the 250 m far plane) leave a winding valley along the road, with the sun coming
-// up in its farthest pass, ahead and to the right.
+// Sunrise on a clifftop: a wide grass plateau around the range ends in rock
+// cliffs 60 m above a hazy plain, with a few low ranges out on the plain
+// behind and to the sides, and the sun coming up over the open plain ahead
+// and to the right. The far plane (420 m) reaches the farthest range.
 let sunrise = mountain_sunrise(null)
 sunrise.world
 let pink = [0.88, 0.65, 0.73]
@@ -83,14 +83,14 @@ fn box(position, size, color) {
 // A 96 x 30 m range of destroyable 8 m tiles: grass, with a 6 m road of
 // tiles across it at z = -12. A truck that drops through a hole is caught
 // and put back like anyone else.
-// Cartoon grass, tinted a little pink to sit with the sunrise.
-let grass = cartoon_grass("far", null)
+// The plateau's pink cartoon grass, so the range matches it.
+let grass = sunrise.grass
 fn grass_tile(x, z) {
     return T.position(x, -0.15, z).scale(8.0, 0.3, 8.0) {
         Destroyable.threshold(3.0)
         R.cube() {
             Raycastable.enabled()
-            grass C.rgba(0.94, 0.80, 0.72, 1.0)
+            grass C.rgba(1.0, 1.0, 1.0, 1.0)
             Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
         }
@@ -176,7 +176,7 @@ let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 
 let local = make_rooftop_player({
     prefix = "local" local_player = true avatar = "mitten" use_xr = use_xr use_desktop = use_desktop
-    camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
+    camera_far = 420.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
     opaque_bucket = "near" show_health = true shield_mount = true
 })
 // Kills: yours count the NPC going down, the NPC's count you going down.
