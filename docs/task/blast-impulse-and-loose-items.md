@@ -1,6 +1,10 @@
 # Blast impulse, knocked vehicles and loose items
 
-Notes, 2026-11-25. Not started; a design to agree before code.
+Notes, 2026-11-25. Steps 1 and 2 implemented 2026-11-25, pending a build:
+`Damage.at(...).blast(radius, speed, spin)` on the queued impact, debris
+launched and spun by it (`debris_motion`), and `Blastable` on Velocity bodies
+applied by `BlastSystem` (`blast_system.rs`); vehicles get it from
+`ship_vehicle_motion`. The `Knockback` name below became `Blastable`.
 
 ## Wanted
 

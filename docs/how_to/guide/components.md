@@ -767,6 +767,17 @@ XR {}
 
 ## Physics and motion
 
+### `BlastableComponent`
+<!-- catalog:component source="BlastableComponent" mms="direct" names="Blastable" -->
+Opts a Velocity's body into blasts: the push a damage impact carries with `Damage.at(...).blast(radius, speed, spin)` (rockets use `.blast(6, 9, 8)`). Place it as a child of the Velocity, like Gravity. A blast reaching the Velocity's driven transform adds speed away from the blast, biased upward and scaled by `1 / mass`, and a turn scaled by `spin / mass`: a yaw that swings the front away, or with `.tumble()` a roll across the push. Both fall off to zero at the blast radius. Vehicles get one from `ship_vehicle_motion`.
+**Directly constructible** as `Blastable`. Sources: [Rust implementation](../../../src/engine/ecs/component/blastable.rs), [blast system](../../../src/engine/ecs/system/blast_system.rs) and [MMS registry](../../../src/scripting/registries/geometry_registry.rs).
+```mms parse-only
+Velocity {
+    T {}
+    Blastable.mass(1.6).spin(0.3) {}
+}
+```
+
 ### `GravityComponent`
 <!-- catalog:component source="GravityComponent" mms="direct" names="Gravity" -->
 Carries gravity state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. The Gravity engine subsystem; its component lifecycle is processed at signal drain points.

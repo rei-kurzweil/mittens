@@ -35,6 +35,7 @@ pub struct SystemWorld {
     pub combine_mesh: CombineMeshSystem,
     pub implicit_surface: ImplicitSurfaceSystem,
     pub destroyable: crate::engine::ecs::system::destroyable_system::DestroyableSystem,
+    pub(crate) blast: crate::engine::ecs::system::blast_system::BlastSystem,
     pub mesh_bounds: MeshBoundsSystem,
     pub renderable: RenderableSystem,
     pub(crate) tube_trails: crate::engine::ecs::system::tube_trail_system::TubeTrailSystem,

@@ -71,7 +71,8 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         }
     }
 
-    /// `Damage.at(x, y, z, radius, amount)` queues an impact on the world
+    /// `Damage.at(x, y, z, radius, amount)`, optionally followed by
+    /// `.blast(radius, speed, spin)`, queues an impact on the world
     /// instead of creating a temporary component, so a hit changes no
     /// topology and never forces a collision-index refresh. The returned
     /// value is inert, like a phase-gated expression.
@@ -89,10 +90,31 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
                 _ => None,
             })
             .collect();
+        // At most one `.blast(radius, speed, spin)` may follow.
+        let mut blast = None;
+        for call in &tree.initializer_calls {
+            let values: Vec<f32> = call
+                .arguments
+                .iter()
+                .filter_map(|value| match value {
+                    mms::Value::Number(number) => Some(*number as f32),
+                    _ => None,
+                })
+                .collect();
+            let parsed = (call.name == "blast" && blast.is_none() && values.len() == 3)
+                .then(|| crate::engine::ecs::component::Blast::new(values[0], values[1], values[2]).ok())
+                .flatten();
+            let Some(parsed) = parsed else {
+                return Err(mms::HostError::failure(
+                    operation,
+                    "Damage.at(...) takes only one .blast(radius, speed, spin) with a positive radius and non-negative speed and spin",
+                ));
+            };
+            blast = Some(parsed);
+        }
         let valid = tree.constructor.name.as_deref() == Some("at")
             && tree.constructor.arguments.len() == 5
             && numbers.len() == 5
-            && tree.initializer_calls.is_empty()
             && numbers.iter().all(|v| v.is_finite())
             && numbers[3] > 0.0
             && numbers[4] > 0.0;
@@ -107,6 +129,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
                 position: [numbers[0], numbers[1], numbers[2]],
                 radius: numbers[3],
                 amount: numbers[4],
+                blast,
             });
         Ok(Self::inert_component("Damage".into()))
     }

@@ -102,6 +102,7 @@ pub(crate) mod spatial_bvh;
 pub mod spring_bone_visualization_system;
 pub mod static_contact_system;
 pub(crate) mod integrity_system;
+pub(crate) mod blast_system;
 pub mod system_world;
 mod system_world_grip;
 mod system_world_raycastable;

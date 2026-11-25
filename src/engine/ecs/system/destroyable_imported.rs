@@ -245,6 +245,7 @@ impl ImportedSources {
             clear: vec![],
             suppression: None,
             zone_suppression: None,
+            cut_impact: None,
             view: None,
         })
     }

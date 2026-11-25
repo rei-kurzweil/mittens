@@ -78,6 +78,7 @@ mod tests {
             position: [x, 0.0, 0.0],
             radius: 0.3,
             amount,
+            blast: None,
         };
         let mut emit = CommandQueue::new();
         let fraction = |world: &World| {

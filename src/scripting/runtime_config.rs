@@ -361,7 +361,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Renderable" => renderable_runtime_config::configure(component),
                 "CombineMesh" => no_arg_constructors(component, &["keep_transforms"]),
-                "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => {
+                "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" | "Blastable" => {
                     geometry_binding::register(component, canonical)
                 }
                 "Color" => {

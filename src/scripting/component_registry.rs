@@ -174,6 +174,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "ImplicitSurface",
     "Destroyable",
     "Damage",
+    "Blastable",
     "Input",
     "InputTransformMode",
     "InputXR",
@@ -1839,7 +1840,7 @@ fn create_component(
             None => add!(CombineMeshComponent::default()),
             Some(method) => return Err(format!("CombineMesh: unknown constructor '{method}'")),
         },
-        "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => geometry_registry::create(world, type_name, ctor, args),
+        "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" | "Blastable" => geometry_registry::create(world, type_name, ctor, args),
         "Background" => {
             let id = world.add_component(BackgroundComponent::new());
             if let Some(method) = ctor {
@@ -3004,6 +3005,9 @@ fn apply_call(
             .is_some()
         || world
             .get_component_by_id_as::<crate::engine::ecs::component::DamageComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::BlastableComponent>(id)
             .is_some()
     {
         return geometry_registry::apply(world, id, method, args);

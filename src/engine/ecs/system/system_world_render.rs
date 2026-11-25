@@ -22,6 +22,8 @@ impl SystemWorld {
         // The same impacts lower Integrity on any part they reach, cut or not.
         let impacts = destruction.take_impacts();
         crate::engine::ecs::system::integrity_system::apply_damage(world, &impacts, queue);
+        // Their blasts push Blastable bodies (vehicles).
+        self.blast.apply(world, &impacts, queue);
         self.destroyable = destruction;
 
         // MMS callbacks are serviced after simulation tick. Publish their

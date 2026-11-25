@@ -31,8 +31,10 @@ fn exhaust_trail(material) {
     }
 }
 
+// The cut reaches 1.5 m; the blast pushes debris and Blastable bodies out
+// to 6 m (the outer blast ring), at up to 9 m/s and 8 rad/s.
 export fn apply_rocket_impact(point, amount, rotation) {
-    Damage.at(point[0], point[1], point[2], 1.5, amount)
+    Damage.at(point[0], point[1], point[2], 1.5, amount).blast(6.0, 9.0, 8.0)
     rocket_explosion(point, rotation)
 }
 
