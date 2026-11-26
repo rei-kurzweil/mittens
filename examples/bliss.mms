@@ -82,16 +82,21 @@ T.position(SUN[0], SUN[1], SUN[2]) { DL.color(1.0, 0.96, 0.86).intensity(1.6) }
 T.position(-0.5, 0.4, 0.6) { DL.color(0.62, 0.74, 1.0).intensity(0.45) }
 
 // Ground and hills: a flat grass slab (its top at y = 0) and, for each hill,
-// one very large sphere sunk into it, so the ground cuts the sphere into a
-// broad, gentle cap (no slope steeper than about 5.5 degrees). Each hill is
-// its own implicit surface bounded around its cap, one sphere per field.
+// a sphere through it. Each hill is drawn as an ordinary sphere mesh scaled
+// wide and low and sunk to 60% of its height, so its top 60% shows as a smooth
+// dome meeting the ground at about 6.5 degrees; it collides as one very large
+// exact sphere whose cap matches the dome to within about 0.4 m. (Implicit
+// surfaces cut these rims off; see
+// docs/bugs/implicit-surface-coarse-voxels-cut-off-thin-rims.md.)
 // [x, z, base radius, height]; the near one carries the glass cubes.
+let DOME_SINK = 0.6
 let HILLS = [
     [135.0, -150.0, 140.0, 6.6], [-140.0, -85.0, 130.0, 6.2], [160.0, 90.0, 150.0, 7.0],
     [-120.0, 150.0, 150.0, 7.0], [0.0, -250.0, 160.0, 7.6], [-255.0, 20.0, 130.0, 6.2],
     [255.0, -55.0, 140.0, 6.6], [30.0, 225.0, 150.0, 7.0], [55.0, -70.0, 70.0, 3.3],
 ]
-// The sphere whose cap has this base radius and height: [radius, depth].
+// The collision sphere whose cap has this base radius and height:
+// [radius, depth of its centre].
 fn hill_sphere(hill) {
     let radius = (hill[2] * hill[2] + hill[3] * hill[3]) / (2.0 * hill[3])
     return [radius, radius - hill[3]]
@@ -130,25 +135,20 @@ T {
         }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
     }
-    for index in range(len(HILLS)) {
-        let hill = HILLS[index]
+    for hill in HILLS {
         let sphere = hill_sphere(hill)
-        let reach = hill[2] + 1.0
-        let top = hill[3] + 0.5
-        // At most 128 cells per axis, so the widest hills bake at about 2.5 m.
-        let voxel = Math.clamp(2.0 * reach / 120.0, 0.5, 4.0)
-        T.position(hill[0], 0.0, hill[1]) {
-            ImplicitSurface.bounds(-reach, -0.3, -reach, reach, top, reach)
-                .voxel_size(voxel).clip_floor(-0.08).uv_scale(0.25) {
-                name = "bliss_hill_" + index
+        // A sphere mesh (radius 0.5) scaled to a dome whose top 60% shows.
+        let dome_height = hill[3] / (1.0 - DOME_SINK)
+        let dome_radius = hill[2] / Math.sqrt(1.0 - DOME_SINK * DOME_SINK)
+        T.position(hill[0], -DOME_SINK * dome_height, hill[1]).scale(dome_radius * 2.0, dome_height * 2.0, dome_radius * 2.0) {
+            R.sphere() {
                 grass C.rgba(1.0, 1.0, 1.0, 1.0)
                 Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
                 TextureFiltering.linear()
-                // This zone receives the baked triangles, so feet and wheels
-                // touch the same surface that is drawn.
-                Zone.cube([reach, top, reach]) { Collidable.static().friction(0.8) {} }
-                T.position(0.0, -sphere[1], 0.0) { ImplicitSphere.radius(sphere[0]) }
             }
+        }
+        T.position(hill[0], -sphere[1], hill[1]) {
+            Zone.sphere(sphere[0]) { Collidable.static().friction(0.8) {} }
         }
     }
 }
