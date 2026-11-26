@@ -514,6 +514,10 @@ impl HeadNeckBodyConstraintSystem {
             let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
                 continue;
             };
+            // Paused: neither the constraint, its fallback nor its rest restore.
+            if avatar.paused {
+                continue;
+            }
             let result = if !avatar.head_neck_body_enabled || !avatar.neck_pin_enabled {
                 Err(HeadNeckBodyConstraintStatus::Disabled)
             } else if attachments.is_avatar_mounted(id) {

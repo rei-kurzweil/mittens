@@ -115,6 +115,11 @@ impl LowerBodyIkSystem {
                 instance.walking.reset();
                 instance.sole_offsets = avatar.crouch_sole_offsets;
             }
+            // Paused legs keep their pose; steps restart from it afterwards.
+            if avatar.paused {
+                instance.walking.reset();
+                continue;
+            }
             let mut node = Some(id);
             let mounted = attachments.is_avatar_mounted(id);
             let mut tracking = None;

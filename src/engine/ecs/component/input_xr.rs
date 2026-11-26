@@ -12,6 +12,20 @@ pub struct InputXRComponent {
     /// Runtime-only: true after a valid headset pose was applied this frame.
     pub pose_valid: bool,
     pub component_id: Option<ComponentId>,
+    /// Runtime-only: while set, the head follows a target transform instead
+    /// of the tracking origin (see `xr_head_lock`).
+    pub head_lock: Option<HeadLock>,
+}
+
+/// The head held at `target`'s world pose, moved by only a share of the
+/// headset's motion since the lock: 0 ignores it, 1 follows it fully.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeadLock {
+    pub target: ComponentId,
+    pub translation_follow: f32,
+    pub rotation_follow: f32,
+    /// The tracking-space head pose on the first locked frame.
+    pub anchor: Option<([f32; 3], [f32; 4])>,
 }
 
 impl InputXRComponent {
@@ -20,6 +34,7 @@ impl InputXRComponent {
             enabled,
             pose_valid: false,
             component_id: None,
+            head_lock: None,
         }
     }
 

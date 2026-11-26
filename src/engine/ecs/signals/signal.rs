@@ -125,6 +125,17 @@ pub enum EventSignal {
         dir: [f32; 3],
     },
 
+    /// A requested raycast (`request_raycast()`) hit nothing within
+    /// `max_distance`. Delivered to the raycaster's scope, so a script can tell
+    /// a miss from a result that hasn't arrived yet. Rays cast every frame for
+    /// pointers don't report misses.
+    RayMissed {
+        raycaster: ComponentId,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+    },
+
     /// A drag gesture started.
     DragStart {
         activation_source: PointerActivationSource,
@@ -488,6 +499,7 @@ impl EventSignal {
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::AttachmentChanged { .. } => SignalKind::AttachmentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
+            EventSignal::RayMissed { .. } => SignalKind::RayMissed,
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
@@ -1379,6 +1391,7 @@ pub enum SignalKind {
     ParentChanged,
     AttachmentChanged,
     RayIntersected,
+    RayMissed,
     DragStart,
     DragMove,
     DragEnd,

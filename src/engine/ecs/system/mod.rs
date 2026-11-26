@@ -120,6 +120,7 @@ pub mod velocity_system;
 mod velocity_drive;
 pub mod vr_types;
 pub mod xr_eye_tracking_system;
+pub(crate) mod xr_head_lock;
 pub mod xr_settings_system;
 pub mod avatar_settings_system;
 pub mod input_settings_system;

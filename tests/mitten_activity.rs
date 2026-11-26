@@ -177,6 +177,7 @@ fn mitten_restores_the_seated_pose_each_time_she_boards() {
 
     let chassis = named(&scene, "fixture_chassis");
     let frame = named(&scene, "fixture_frame");
+    let lay = named(&scene, "fixture_lay");
     let controls = named(&scene, "fixture_seat_controls");
     let joints = [
         "J_Bip_L_UpperLeg",
@@ -186,20 +187,20 @@ fn mitten_restores_the_seated_pose_each_time_she_boards() {
         "J_Bip_R_LowerLeg",
         "J_Bip_R_Foot",
     ];
-    let leg_pose = |scene: &Universe| {
-        joints.map(|joint| {
-            scene
-                .world
-                .get_component_by_id_as::<TransformComponent>(named(scene, joint))
-                .unwrap()
-                .transform
-                .rotation
-        })
+    let rotation = |scene: &Universe, id| {
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .unwrap()
+            .transform
+            .rotation
     };
+    let leg_pose = |scene: &Universe| joints.map(|joint| rotation(scene, named(scene, joint)));
     let matches = |a: [f32; 4], b: [f32; 4]| {
         a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f32>().abs() > 0.999
     };
     let seated = leg_pose(&scene);
+    let upright = rotation(&scene, lay);
     assert_eq!(scene.world.parent_of(frame), Some(chassis));
     for cycle in 1..=2 {
         scene.command_queue.push_event(
@@ -211,7 +212,20 @@ fn mitten_restores_the_seated_pose_each_time_she_boards() {
         );
         advance(&mut scene, &clock, 30);
         assert_ne!(scene.world.parent_of(frame), Some(chassis));
-        advance(&mut scene, &clock, 350);
+        assert!(
+            !matches(rotation(&scene, lay), upright),
+            "cycle {cycle} should lie down after exiting"
+        );
+        advance(&mut scene, &clock, 50 * 60 - 40);
+        assert!(
+            !matches(rotation(&scene, lay), upright),
+            "cycle {cycle} should stay down until respawn"
+        );
+        advance(&mut scene, &clock, 30);
+        assert!(
+            matches(rotation(&scene, lay), upright),
+            "cycle {cycle} should get up before walking"
+        );
         assert_ne!(
             scene.world.parent_of(frame),
             Some(chassis),

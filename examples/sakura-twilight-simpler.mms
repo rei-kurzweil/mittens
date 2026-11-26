@@ -17,6 +17,7 @@ import { shared_player_health } from "../assets/components/network/shared_player
 import { arena_shields } from "../assets/components/network/arena_shields.mms"
 import { arena_audio } from "../assets/components/arena_audio.mms"
 import { player_death } from "../assets/components/player_death.mms"
+import { player_down_hooks } from "../assets/components/characters/downed.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
@@ -285,30 +286,36 @@ let remote = make_rooftop_player({
     opaque_bucket = "near" show_health = true health_view = local.health_view shield_mount = true
 })
 combat_health.bind(local.health, remote.health, remote.hit_zone)
-// Dying sends the local player back to their spawn on the main rooftop, by
-// the dock, to come back in by choosing an avatar. Riding is released first
-// (seats end on the next attachment tick), then the move follows a moment
-// later. The peer sees it through the replicated root.
+// Dying leaves the local player lying where they fell for 50 s, unable to
+// move (downed.mms, which also releases any seat). Then they get up back at
+// their spawn on the main rooftop, by the dock, with full health; choosing an
+// avatar also restores health. The peer sees the move through the replicated
+// root. The lying body itself isn't replicated yet: the peer sees the head go
+// down with the body hanging from it.
+// Animation lengths are in beats: 2 per second at 120 bpm.
+let RESPAWN_BEATS = 50.0 * 2.0
 let respawn = { at = null }
 let respawn_events = T { name = "sakura_twilight_respawn_events" }
 respawn_events
-let respawn_delay = Animation.paused().length(0.5) {
+let respawn_delay = Animation.paused().length(RESPAWN_BEATS) {
     Keyframe.at(0.0) {}
-    Keyframe.at(0.5) { emit_data(respawn_events, "ReturnToRoof") }
+    Keyframe.at(RESPAWN_BEATS) { emit_data(respawn_events, "ReturnToRoof") }
 }
 respawn_events.attach(respawn_delay)
+let player_down = player_down_hooks(local, fn() { return { desktop = query("#local_desktop_locomotion") } })
 on(respawn_events, "DataEvent", fn(event) {
-    if event != "ReturnToRoof" || !respawn.at { return }
+    if event != "ReturnToRoof" { return }
+    player_down.up()
     if local.velocity { local.velocity.reset() }
-    local.root.update_transform(respawn.at)
-    local.set_riding_enabled(true)
+    if respawn.at { local.root.update_transform(respawn.at) }
+    combat_health.reset()
 })
 combat_health.bind_death(fn(is_local) {
     let center = remote.shield_mount
     if is_local { center = local.shield_mount }
     player_death(center.world_trs().translation, 2.0)
     if is_local {
-        local.set_riding_enabled(false)
+        player_down.down()
         respawn_delay.play()
     }
 })

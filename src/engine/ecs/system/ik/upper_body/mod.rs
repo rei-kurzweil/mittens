@@ -105,6 +105,12 @@ impl UpperBodyIkSystem {
             let Some(spine) = &mut instance.spine else {
                 continue;
             };
+            if world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some_and(|avatar| avatar.paused)
+            {
+                continue;
+            }
             let pitch = body.torso_pitch(id);
             if pitch > 1e-4 {
                 spine.write(world, emit, pitch);

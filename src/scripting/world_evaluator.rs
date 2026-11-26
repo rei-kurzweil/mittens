@@ -3317,6 +3317,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "DragMove" => Ok(SignalKind::DragMove),
         "DragEnd" => Ok(SignalKind::DragEnd),
         "RayIntersected" => Ok(SignalKind::RayIntersected),
+        "RayMissed" => Ok(SignalKind::RayMissed),
         "ParentChanged" => Ok(SignalKind::ParentChanged),
         "AttachmentChanged" => Ok(SignalKind::AttachmentChanged),
         "SelectionChanged" => Ok(SignalKind::SelectionChanged),

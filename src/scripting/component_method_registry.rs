@@ -145,6 +145,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "capsule_ready"
                     | "set_third_person"
                     | "set_legs_enabled"
+                    | "set_paused"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -231,6 +232,18 @@ pub(crate) fn invoke_component_method(
             avatar.walking_enabled = *enabled;
             Ok(Value::Null)
         }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_paused") => {
+            let [Value::Bool(paused)] = args else {
+                return Err("set_paused(): expected a boolean".into());
+            };
+            // Paused, AvatarControl's solvers stop and the avatar keeps its
+            // pose until a pose or a script changes it (e.g. lying down).
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_paused(): expected an AvatarControl component")?;
+            avatar.paused = *paused;
+            Ok(Value::Null)
+        }
         ("AvatarControl" | "AVC" | "avatar_control", "set_third_person") => {
             let [Value::Bool(enabled)] = args else {
                 return Err("set_third_person(): expected a boolean".into());
@@ -267,6 +280,39 @@ pub(crate) fn invoke_component_method(
             let acceleration = world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
                 .ok_or("bind_wheel requires Acceleration")?;
             acceleration.bind_drive_wheel(*steering, *spin, arg_f32(args, 2)?, *front)?;
+            Ok(Value::Null)
+        }
+        ("InputXR" | "InputVR" | "input_xr", "lock_head") => {
+            let [
+                Value::ComponentObject { id: target, .. },
+                Value::Number(translation),
+                Value::Number(rotation),
+            ] = args
+            else {
+                return Err(
+                    "lock_head(): expected (target transform, translation_follow, rotation_follow)"
+                        .into(),
+                );
+            };
+            if !translation.is_finite() || !rotation.is_finite() {
+                return Err("lock_head(): follow amounts must be finite".into());
+            }
+            if world.get_component_by_id_as::<TransformComponent>(*target).is_none() {
+                return Err("lock_head(): the target must be a Transform".into());
+            }
+            let lock = crate::engine::ecs::component::HeadLock {
+                target: *target,
+                translation_follow: *translation as f32,
+                rotation_follow: *rotation as f32,
+                anchor: None,
+            };
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, Some(lock))
+                .map_err(|error| format!("lock_head(): {error}"))?;
+            Ok(Value::Null)
+        }
+        ("InputXR" | "InputVR" | "input_xr", "unlock_head") => {
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, None)
+                .map_err(|error| format!("unlock_head(): {error}"))?;
             Ok(Value::Null)
         }
         ("Velocity" | "velocity", "reset") => {

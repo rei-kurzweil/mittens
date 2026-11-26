@@ -303,7 +303,7 @@ pub use ik_chain::{IKChainComponent, IKSolver};
 pub use implicit_surface::{ImplicitSphereComponent, ImplicitSurfaceComponent};
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use input_xr::InputXRComponent;
+pub use input_xr::{HeadLock, InputXRComponent};
 pub use input_xr_gamepad::{
     InputXRGamepadComponent, XrAxisControl, XrButtonControl, XrHandPreference, XrStickMode,
 };

@@ -234,7 +234,10 @@ export fn mountain_sunrise(options) {
     let hole = [-48.0, 48.0, -23.0, 7.0]
     if options["hole"] != null { hole = options.hole }
     if options["hole"] == null && options["center"] != null { hole = null }
-    let grass_albedo = [0.93, 0.66, 0.70]
+    // Linear, like every albedo: the sRGB swapchain brightens it on output.
+    // This displays as #e78eb3 where lit (the old [0.93, 0.66, 0.70] showed as
+    // a greyish #e0c0c5, and grey in shade).
+    let grass_albedo = [1.0, 0.34, 0.56]
     if options["grass_albedo"] != null { grass_albedo = options.grass_albedo }
     let floor_y = -CLIFF
 

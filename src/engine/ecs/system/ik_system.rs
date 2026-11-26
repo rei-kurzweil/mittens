@@ -148,6 +148,12 @@ fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) 
     if weight <= 0.0 {
         return;
     }
+    if avc_id
+        .and_then(|avc| world.get_component_by_id_as::<AvatarControlComponent>(avc))
+        .is_some_and(|avatar| avatar.paused)
+    {
+        return;
+    }
     if let Some(driver) = xr_pose_driver {
         let valid = world
             .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(driver)
