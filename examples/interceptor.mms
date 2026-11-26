@@ -167,24 +167,102 @@ let ceiling = [0.060, 0.068, 0.095]
 let trim = [0.16, 0.17, 0.24]
 let door = [0.24, 0.27, 0.36]
 
-fn shell_panel(name, position, size, color, material) {
+// A solid box that one rocket cuts. A surface splits into at most 512 chunks,
+// so large boxes need larger chunks.
+fn destroyable_box(name, position, size, color, material, chunk) {
     let panel = box(position, size, color, material, true)
-    let damage = Destroyable.threshold(3.0).chunk_size(2.5) { name = "interceptor_" + name + "_damage" }
+    let damage = Destroyable.threshold(3.0).chunk_size(chunk) { name = "interceptor_" + name + "_damage" }
     panel.attach(damage)
     return panel
+}
+
+fn shell_panel(name, position, size, color, material) {
+    return destroyable_box(name, position, size, color, material, 2.5)
+}
+
+// A rocket deals 8. Damage adds up per cell, so the hull is cut by the second
+// rocket near the same spot, not the first.
+let HULL_THRESHOLD = 12.0
+
+// Each roof truss, with its light bar and lamp, breaks off and falls after
+// two rockets near one of its three damage points, like the radio tower's
+// sections. Bars aren't cut: thin truss members would need a CSG surface each.
+let TRUSS_HEALTH = 16.0
+let TRUSS_FALL_SECONDS = 15.0
+let truss_state = {}
+let truss_events = T { name = "interceptor_truss_events" }
+truss_events
+
+fn drop_truss(index, section) {
+    if truss_state["fallen" + index] { return }
+    truss_state["fallen" + index] = true
+    let pose = section.world_trs()
+    let body = Velocity { name = "interceptor_truss_falling_" + index }
+    let fall = Gravity { body }
+    fall
+    truss_state["fall" + index] = fall
+    body.attach(section)
+    section.world_trs(pose)
+    let contact = Zone.sphere(0.8) { Collidable.slide() {} }
+    section.attach(contact)
+    body.translate([0.0, -0.5, 0.6])
+    body.rotate([0.3, 0.0, 0.25])
+    let expiry = Animation.paused().length(TRUSS_FALL_SECONDS * 2.0) {
+        Keyframe.at(0.0) {}
+        Keyframe.at(TRUSS_FALL_SECONDS * 2.0) { emit_data(truss_events, "TrussGone" + index) }
+    }
+    truss_events.attach(expiry)
+    expiry.play()
+}
+on(truss_events, "DataEvent", fn(event) {
+    for index in range(4) {
+        let fall = truss_state["fall" + index]
+        if event == "TrussGone" + index && fall {
+            fall.remove_subtree()
+            truss_state["fall" + index] = null
+        }
+    }
+})
+
+// Registered by a function so each handler keeps its own truss.
+fn watch_truss(index, section, probe) {
+    on(probe, "DataEvent", fn(event) {
+        if event == "broken" { drop_truss(index, section) }
+    })
+}
+
+fn roof_truss(index, z) {
+    let section = T.position(0.0, 6.92, z) {
+        name = "interceptor_truss_" + index
+        T.scale(1.08, 0.78, 0.78) { hangar_anime truss(16) }
+        box([0.0, -0.60, 0.0], [3.4, 0.14, 0.24], trim, hangar_anime, false)
+        T { glow window([0.0, -0.68, 0.0], [3.15, 0.045, 0.17], [0.73, 0.68, 0.55], 1.35) }
+        T.position(0.0, -0.80, 0.0) { PL.color(0.86, 0.79, 0.96).intensity(1.6).distance(12.0) }
+    }
+    for x in [-6.0, 0.0, 6.0] {
+        let probe = Integrity.max(TRUSS_HEALTH).reach(3.0).threshold("broken", 0.0) {
+            name = "interceptor_truss_integrity_" + index
+        }
+        let point = T.position(x, 0.0, 0.0) { probe }
+        section.attach(point)
+        watch_truss(index, section, probe)
+    }
+    return section
 }
 
 let hull = GLTF.new("assets/models/interceptor.glb") { name = "interceptor_hull" hull_anime }
 on(hull, "GLTFInitialized", fn(event) {
     for part_mesh in event.gltf.query_all("renderable") {
         // A full STA blast fits the per-surface damage cell budget.
-        let damage = Destroyable.threshold(3.0).cell_size(0.25) { name = "interceptor_hull_damage" }
+        let damage = Destroyable.threshold(HULL_THRESHOLD).cell_size(0.25) { name = "interceptor_hull_damage" }
         let contact = Collidable.static().friction(0.85) {}
         part_mesh.attach(damage)
         part_mesh.attach(contact)
     }
 })
-box([0.0, roof_y / 2.0 - 0.25, 0.0], [27.9, roof_y - 0.5, 33.9], [0.043, 0.036, 0.061], far_anime, false)
+// The building under the hangar: 7 x 7 x 9 chunks.
+destroyable_box("building", [0.0, roof_y / 2.0 - 0.25, 0.0], [27.9, roof_y - 0.5, 33.9],
+    [0.043, 0.036, 0.061], far_anime, 4.0)
 T.position(0.0, roof_y, 0.0) {
     name = "interceptor_rooftop_hangar"
     shell_panel("deck", [0.0, -0.25, 0.0], [28.0, 0.5, 34.0], [0.19, 0.19, 0.25], hangar_anime)
@@ -201,17 +279,16 @@ T.position(0.0, roof_y, 0.0) {
                 shell_panel("door", [x, 2.97, side * 11.94], [0.98, 5.94, 0.19], door, hangar_anime)
             }
         }
-        box([side * 13.85, 0.53, 0.0], [0.28, 1.06, 34.0], trim, hangar_anime, true)
-        box([0.0, 0.53, side * 16.86], [27.5, 1.06, 0.28], trim, hangar_anime, true)
+        shell_panel("rail", [side * 13.85, 0.53, 0.0], [0.28, 1.06, 34.0], trim, hangar_anime)
+        shell_panel("rail", [0.0, 0.53, side * 16.86], [27.5, 1.06, 0.28], trim, hangar_anime)
     }
-    for z in [-9.0, -3.0, 3.0, 9.0] {
-        T.position(0.0, 6.92, z).scale(1.08, 0.78, 0.78) { hangar_anime truss(16) }
+    let truss_z = [-9.0, -3.0, 3.0, 9.0]
+    for index in range(4) {
+        let z = truss_z[index]
+        roof_truss(index, z)
         for side in [-1, 1] {
-            box([side * 9.70, 3.47, z], [0.44, 6.94, 0.55], trim, hangar_anime, true)
+            shell_panel("post", [side * 9.70, 3.47, z], [0.44, 6.94, 0.55], trim, hangar_anime)
         }
-        box([0.0, 6.32, z], [3.4, 0.14, 0.24], trim, hangar_anime, false)
-        T { glow window([0.0, 6.24, z], [3.15, 0.045, 0.17], [0.73, 0.68, 0.55], 1.35) }
-        T.position(0.0, 6.12, z) { PL.color(0.86, 0.79, 0.96).intensity(1.6).distance(12.0) }
     }
     // The pad is flush with the hull's lowest point after undoing the GLB's
     // authored scene offset. The outer transform yaws the whole interceptor.
@@ -220,19 +297,39 @@ T.position(0.0, roof_y, 0.0) {
         box([edge * 3.77, 0.094, 0.0], [0.075, 0.007, 8.34], [0.60, 0.46, 0.30], hangar_anime, false)
         box([0.0, 0.094, edge * 4.17], [7.56, 0.007, 0.075], [0.60, 0.46, 0.30], hangar_anime, false)
     }
-    T.rotation(0.0, -0.24, 0.0) {
-        name = "interceptor_display"
-        T.position(0.0, 1.09, -1.1968) {
-            // Keep the original GLB primitive available for cuts and collision.
-            Destroyable.threshold(3.0)
-            CombineMesh.keep_transforms() {
-                name = "interceptor_hull_ao"
-                AmbientOcclusion.texcoord0().resolution(256).one_sided()
-                    .proximity_radius(0.85).cavity_radius(0.40).strength(0.38)
-                T { hull }
+}
+// The hull is a free body on its pad: rocket blasts push it and turn it, and
+// it stays upright. Four slide spheres at its corners rest on the pad (the
+// hull is about 4 x 2 x 4.8 m); a mover ignores its own hull's collision.
+let hull_body = T.position(0.0, roof_y, 0.0).rotation(0.0, -0.24, 0.0) {
+    name = "interceptor_display"
+    T.position(0.0, 1.09, -1.1968) {
+        // Keep the original GLB primitive available for cuts and collision.
+        Destroyable.threshold(HULL_THRESHOLD)
+        CombineMesh.keep_transforms() {
+            name = "interceptor_hull_ao"
+            AmbientOcclusion.texcoord0().resolution(256).one_sided()
+                .proximity_radius(0.85).cavity_radius(0.40).strength(0.38)
+            T { hull }
+        }
+    }
+}
+let hull_contacts = T {
+    name = "interceptor_hull_contacts"
+    for x in [-1.4, 1.4] {
+        for z in [-1.7, 1.7] {
+            T.position(x, 0.71, z) {
+                Zone.sphere(0.6) { Collidable.slide().movement_target(hull_body) {} }
             }
         }
     }
+}
+hull_body.attach(hull_contacts)
+Velocity {
+    name = "interceptor_hull_velocity"
+    hull_body
+    Blastable.mass(6.0).spin(0.5) { name = "interceptor_hull_blastable" }
+    Gravity { name = "interceptor_hull_gravity" }
 }
 fall_respawn("interceptor_rooftop_return", { min_x = -5.0 max_x = 5.0 min_z = 7.0 max_z = 9.0 }, roof_y, 12.0)
 
