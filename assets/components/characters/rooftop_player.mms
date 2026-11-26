@@ -335,7 +335,7 @@ export fn make_rooftop_player(options) {
         if body.capsule_ready() { gravity.set_enabled(true) }
     }
     enable_gravity_when_ready(avatar)
-    let state = { head = head avatar = avatar model = initial.model choice = options.avatar height = null pending = null changed = null capsule = null remote_height = null }
+    let state = { head = head avatar = avatar model = initial.model choice = options.avatar height = null pending = null avatar_timeout = null changed = null capsule = null remote_height = null }
     let held = { left = false right = false desktop = false mounted = false }
     fn holding_item() { return held.left || held.right || held.desktop }
     fn can_swap(report) {
@@ -349,12 +349,25 @@ export fn make_rooftop_player(options) {
         let pose = root.trs()
         root.trs({ translation = pose.translation rotation_quat_xyzw = pose.rotation_quat_xyzw scale = [scale, scale, scale] })
     }
+    fn finish_avatar_load() {
+        state.pending = null
+        state.avatar_timeout.bypass(true)
+    }
     fn cancel_avatar_load() {
         if state.pending {
             state.pending.staging.remove_subtree()
-            state.pending = null
+            finish_avatar_load()
         }
     }
+    state.avatar_timeout = on(world, "FrameTick", fn(event) {
+        let pending = state.pending
+        if !pending { return }
+        pending.elapsed = pending.elapsed + event.dt_sec
+        if pending.elapsed < 8.0 { return }
+        cancel_avatar_load()
+        pending.report(pending.choice + " load timed out. Current avatar kept.", false)
+    })
+    state.avatar_timeout.bypass(true)
     fn select_avatar(choice, report) {
         // A remote body is built at the peer's height, so tiny peers get the
         // same body and rig scale they see themselves.
@@ -383,11 +396,12 @@ export fn make_rooftop_player(options) {
         let staging = T.position(0.0, -10000.0, 0.0) { probe }
         spec.staging = staging
         state.pending = { staging = staging elapsed = 0.0 choice = choice height = target_meters report = report }
+        state.avatar_timeout.bypass(false)
         on(probe, "GLTFInitialized", fn(event) {
             if !state.pending || state.pending.staging != staging { return }
             if !can_swap(report) {
                 staging.remove_subtree()
-                state.pending = null
+                finish_avatar_load()
                 return
             }
             let scale = event.gltf.import_scale()
@@ -401,7 +415,7 @@ export fn make_rooftop_player(options) {
             }
             if choice == "miku" && !prepare_miku_arms(event.gltf, spec.import_scale) {
                 staging.remove_subtree()
-                state.pending = null
+                finish_avatar_load()
                 report("Miku rig unavailable", false)
                 return
             }
@@ -446,7 +460,7 @@ export fn make_rooftop_player(options) {
             state.model = spec.model
             state.choice = choice
             state.height = target_meters
-            state.pending = null
+            finish_avatar_load()
             apply_rig_scale(rig_scale)
             if state.changed { state.changed(next_head, spec.model, choice) }
             report(choice + " is active", true)
@@ -479,14 +493,6 @@ export fn make_rooftop_player(options) {
         on_global("MountStarted", fn(event) { held.mounted = true })
         on_global("MountEnded", fn(event) { held.mounted = false })
     }
-    let avatar_timeout = on(world, "FrameTick", fn(event) {
-        let pending = state.pending
-        if !pending { return }
-        pending.elapsed = pending.elapsed + event.dt_sec
-        if pending.elapsed < 8.0 { return }
-        cancel_avatar_load()
-        pending.report(pending.choice + " load timed out. Current avatar kept.", false)
-    })
     fn watch_pointer(pointer, key) {
         on(pointer, "PointerGrabbed", fn(event) { held[key] = true })
         on(pointer, "PointerReleased", fn(event) { held[key] = false })
@@ -513,7 +519,7 @@ export fn make_rooftop_player(options) {
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
-        dispose = fn() { cancel_avatar_load() avatar_timeout.remove() }
+        dispose = fn() { cancel_avatar_load() state.avatar_timeout.remove() }
         root = root locomotion = locomotion velocity = velocity head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label health = health health_view = health_view hit_zone = hit_zone
         shield_mount = shield_mount

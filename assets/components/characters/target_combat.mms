@@ -21,7 +21,7 @@ let AUTO_POINTS = 0.5
 let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
 
 // Animation timers dispatch only at visual time.
-fn after_seconds(events, seconds, name) {
+export fn after_seconds(events, seconds, name) {
     let beats = seconds * BEATS_PER_SECOND
     return Animation.paused().length(beats) {
         Keyframe.at(0.0) {}
@@ -120,75 +120,117 @@ export fn practice_combat(options) {
     return { root = timer_root start = fn() { enter("wait") } stop = fn() { enter("down") } }
 }
 
-// Mitten opens with five single shots at two-second intervals, then holds
-// auto for three seconds and rests for five. The pistol owns shot timing.
+// Keyframes own the cadence. Frame updates are only needed to track the
+// target during the wind-up before a single shot and during automatic fire.
 export fn mitten_antagonist(options) {
     let gun = options.gun
-    let state = { elapsed = 0.0 next_shot = 2.0 release_at = null
-        automatic = false burst_on = false burst_until = 0.0 holding = false last_hit = null }
+    let state = { phase = "down" aiming = false holding = false singles = 0 last_hit = null }
+    let events = T {}
+    let first = after_seconds(events, 1.6, "OpeningReady")
+    let singles = Animation.paused().length(2.0 * BEATS_PER_SECOND) {
+        Keyframe.at(0.0) { emit_data(events, "SingleAim") }
+        Keyframe.at(0.4 * BEATS_PER_SECOND) { emit_data(events, "SingleFire") }
+        Keyframe.at((0.4 + SEMI_HOLD_SECONDS) * BEATS_PER_SECOND) { emit_data(events, "SingleDone") }
+    }
+    let burst = after_seconds(events, 3.0, "BurstDone")
+    let cooldown = after_seconds(events, 5.0, "BurstReady")
+    let retry = after_seconds(events, 0.25, "BurstReady")
+    let timers = T {
+        name = options.name + "_combat_timers"
+        events first singles burst cooldown retry
+    }
+
+    fn allowed() {
+        return (!options["player_alive"] || options.player_alive()) &&
+            (!options["can_attack"] || options.can_attack())
+    }
+    fn set_aiming(active) {
+        if state.aiming == active { return }
+        state.aiming = active
+        options.aiming(active)
+    }
     fn release() {
+        if !state.holding { return }
         gun.fire_end()
         state.holding = false
     }
     fn pull() {
-        if state.holding { return }
         gun.fire_start()
         state.holding = true
     }
-    fn track(dt) {
-        options.aim(8.0 * dt)
-    }
-    let tick = on(world, "FrameTick", fn(event) {
-        if (options["player_alive"] && !options.player_alive()) || (options["can_attack"] && !options.can_attack()) {
-            if state.holding { release() }
+    fn begin_burst() {
+        if !allowed() {
+            state.phase = "wait"
+            retry.play()
             return
         }
-        let dt = event.dt_sec
-        state.elapsed = state.elapsed + dt
-        if !state.automatic {
-            if state.release_at != null && state.elapsed >= state.release_at {
-                release()
-                state.release_at = null
-                if state.next_shot > 10.0 {
-                    state.automatic = true
-                    state.burst_on = true
-                    state.burst_until = state.elapsed + 3.0
-                    gun.set_mode("auto")
-                }
-            } else if state.elapsed >= state.next_shot - 0.4 {
-                track(dt)
-                if state.elapsed >= state.next_shot && state.release_at == null {
-                    pull()
-                    state.release_at = state.elapsed + SEMI_HOLD_SECONDS
-                    state.next_shot = state.next_shot + 2.0
-                }
+        state.phase = "burst"
+        set_aiming(true)
+    }
+    fn advance(dt) {
+        if allowed() {
+            options.aim(8.0 * dt)
+            if state.phase == "burst" && !state.holding {
+                pull()
+                burst.play()
             }
-            if !state.automatic { return }
+            return
         }
-        if state.elapsed >= state.burst_until {
-            state.burst_on = !state.burst_on
-            let period = 5.0
-            if state.burst_on { period = 3.0 }
-            else { release() }
-            state.burst_until = state.elapsed + period
+        set_aiming(false)
+        if state.phase == "burst" {
+            release()
+            burst.pause()
+            state.phase = "wait"
+            retry.play()
         }
-        if state.burst_on {
-            track(dt)
-            pull()
+    }
+
+    on(events, "DataEvent", fn(event) {
+        if event == "OpeningReady" && state.phase == "opening" {
+            state.phase = "single"
+            singles.loop_anim()
+        } else if event == "SingleAim" && state.phase == "single" {
+            set_aiming(allowed())
+        } else if event == "SingleFire" && state.phase == "single" {
+            let ready = state.aiming && allowed()
+            set_aiming(false)
+            if ready { pull() }
+        } else if event == "SingleDone" && state.phase == "single" {
+            release()
+            if state.singles == 5 {
+                singles.pause()
+                gun.set_mode("auto")
+                begin_burst()
+            }
+        } else if event == "BurstDone" && state.phase == "burst" {
+            release()
+            set_aiming(false)
+            state.phase = "wait"
+            cooldown.play()
+        } else if event == "BurstReady" && state.phase == "wait" {
+            begin_burst()
         }
     })
-    tick.bypass(true)
+    fn stop() {
+        state.phase = "down"
+        release()
+        set_aiming(false)
+        first.pause()
+        singles.pause()
+        burst.pause()
+        cooldown.pause()
+        retry.pause()
+    }
     fn start() {
-        state.elapsed = 0.0
-        state.next_shot = 2.0
-        state.release_at = null
-        state.automatic = false
+        stop()
+        state.phase = "opening"
+        state.singles = 0
         state.last_hit = null
         gun.set_mode("semi")
-        tick.bypass(false)
+        first.play()
     }
-    fn stop() { release() tick.bypass(true) }
     fn shot(pose, mode) {
+        if mode == "semi" && state.phase == "single" { state.singles = state.singles + 1 }
         state.last_hit = options.shot_lands(pose)
         if !state.last_hit || !options["on_player_hit"] { return }
         if options["player_alive"] && !options.player_alive() { return }
@@ -196,6 +238,6 @@ export fn mitten_antagonist(options) {
         if mode == "auto" { points = AUTO_POINTS }
         options.on_player_hit(points)
     }
-    return { root = null start = start stop = stop shot = shot dispose = fn() { stop() tick.remove() }
+    return { root = timers advance = advance start = start stop = stop shot = shot
         last_hit = fn() { return state.last_hit } }
 }
