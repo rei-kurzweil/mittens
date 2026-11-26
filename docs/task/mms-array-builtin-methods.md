@@ -2,7 +2,9 @@
 
 Date: 2026-11-22
 
-Status: planned
+Status: `push` implemented 2026-11-25; `pop`, `len()` and `includes` still
+planned. Temporaries differ from the plan below: `[1, 2].push(3)` returns the
+length instead of erroring.
 
 Related: [shared MMS arrays](mms-shared-array-values.md) (the larger
 alternative), [heap/env model](../meow_meow/spec/env-heap-object-world.md).
@@ -60,9 +62,9 @@ Initial methods:
 | `len()` | no | length (same as `len(xs)`) |
 | `includes(v)` | no | bool, using existing value equality |
 
-`len` and `includes` may evaluate the receiver normally. Mutating methods on a
-non-place receiver (`[1, 2].push(3)`, `f().push(3)`) are a runtime error that
-names the method and says it needs a variable or table field.
+`len` and `includes` may evaluate the receiver normally. `push` on a
+non-place receiver (`[1, 2].push(3)`, `f().push(3)`) pushes onto the temporary
+and returns its length. `pop` on a temporary is still undecided.
 
 ## Constraints
 
@@ -78,11 +80,11 @@ names the method and says it needs a variable or table field.
 
 ## Validation
 
-- [ ] Evaluator tests: push/pop on a local, on a table field, inside a closure
-      that mutates a captured table's array, and the copy semantics of
-      `let b = a`.
-- [ ] Errors for mutating methods on temporaries and on non-arrays.
-- [ ] A table with a function field named `push` still dispatches to it.
+- [x] Evaluator tests for push on a local, on a table field and index, inside
+      a closure that mutates a captured table's array, and the copy semantics
+      of `let b = a`. pop still to do.
+- [x] Errors for push on non-arrays and with the wrong argument count.
+- [x] A table with a function field named `push` still dispatches to it.
 - [ ] Both `examples/data-viz-http-*.mms` load and accumulate samples.
-- [ ] Document the methods and the array/table sharing rule in
+- [x] Document push and the array/table sharing rule in
       `crates/meow-meow-script/docs/guide/language.md`.

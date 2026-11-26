@@ -13,6 +13,12 @@ Group the AmbientOcclusion constructor/builders (added for
 `docs/task/ambient-occlusion-baking.md`) with the rendering/materials family.
 Validate MMS round trips for `texcoord0`, the numeric builders and debug modes.
 
+`PathGraph` (2026-11-25) keeps its constructor, method declarations and
+host methods together in `src/scripting/path_graph_api.rs`, like
+`morph_api.rs`. The central registry, runtime config and host files only gained
+one dispatch line each; move that module with the physics/motion family if a
+split happens.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation

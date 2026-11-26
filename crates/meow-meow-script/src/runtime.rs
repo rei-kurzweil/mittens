@@ -1662,6 +1662,53 @@ mod tests {
     }
 
     #[test]
+    fn push_appends_to_arrays_in_place_and_returns_the_new_length() {
+        let runtime = Runtime::standard();
+        let mut session = runtime.session(crate::StandardHost::new());
+        let mut eval = |source: &str| {
+            session
+                .eval(source)
+                .unwrap_or_else(|error| panic!("{source}: {error}"))
+                .value
+        };
+        let number = |n: f64| Some(Value::Number(n));
+        // A local, a table field, a table index, and a closure that changes a
+        // captured table's array.
+        eval("let xs = []");
+        assert_eq!(eval("xs.push(1)"), number(1.0));
+        assert_eq!(eval("xs.push(2)"), number(2.0));
+        assert_eq!(eval("len(xs) + xs[1]"), number(4.0));
+        eval("let state = { list = [] }");
+        eval("state.list.push(\"a\")");
+        eval("state[\"list\"].push(\"b\")");
+        eval("let add = fn(v) { state.list.push(v) }");
+        eval("add(\"c\")");
+        eval("add(\"d\")");
+        assert_eq!(eval("len(state.list)"), number(4.0));
+        // Arrays are values: a copy doesn't see later pushes.
+        eval("let a = [1]");
+        eval("let b = a");
+        eval("a.push(2)");
+        assert_eq!(eval("len(a) * 10 + len(b)"), number(21.0));
+        // A temporary pushes and returns its length; nothing keeps it.
+        assert_eq!(eval("[1, 2].push(3)"), number(3.0));
+        eval("let one = fn() { return [1] }");
+        assert_eq!(eval("one().push(2)"), number(2.0));
+        // A table's own push field still dispatches to it.
+        eval("let own = { push = fn(v) { return \"own\" } }");
+        assert_eq!(eval("own.push(1)"), Some(Value::String("own".into())));
+        eval("let n = 3");
+        for invalid in ["xs.push()", "xs.push(1, 2)", "n.push(1)"] {
+            assert!(session.eval(invalid).is_err(), "{invalid}");
+        }
+        assert_eq!(
+            session.eval("len(xs)").unwrap().value,
+            number(2.0),
+            "failed pushes leave the array unchanged"
+        );
+    }
+
+    #[test]
     fn is_string_distinguishes_dynamic_values_without_host_dispatch() {
         let runtime = Runtime::standard();
         let mut session = runtime.session(crate::StandardHost::new());
