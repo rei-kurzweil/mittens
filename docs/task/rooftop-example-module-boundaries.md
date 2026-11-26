@@ -7,4 +7,5 @@
 - [x] Keep Interceptor's equipment and encounter together in `interceptor_range.mms`.
 - [ ] Consider moving the hangar shell and skyline into scene builders so the example can focus on composing the scene and wiring sessions. Keep each skyline batch intact and keep CSG colliders scoped to the surfaces that own them.
 - [ ] Consider moving Truck Bed Demo's truck and mech respawn schedules beside their fixtures. Keep the existing vehicle input and native animation paths. Check seat reattachment, destruction and recovery in both desktop and XR modes before a split.
+- [ ] Consider moving NPC seating and ejection into a vehicle-rider component if more vehicles use it. Keep the seat pose apply event-driven and validate the lower-body pose after repeated boarding.
 - [ ] Consider moving avatar swapping and its load timeout out of `rooftop_player.mms`. Preserve rig and pointer identity across swaps, remove the timeout binding when disposing a rig, and verify local and remote avatar changes.

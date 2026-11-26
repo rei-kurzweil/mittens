@@ -6,6 +6,7 @@ import { after_seconds, practice_combat } from "./characters/target_combat.mms"
 import { mitten_weapon_slot } from "./characters/mitten_equipment.mms"
 import { mitten_driver } from "./characters/mitten_driver.mms"
 import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_grip.mms"
+import { seated_lower_body_pose } from "./poses/mitten/floor-seated.pose.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -450,6 +451,16 @@ export fn practice_target(options) {
         if driver { ride.truck.set_remote_occupied(true) }
         let ground = T { name = options.prefix + "_ground" }
         ground
+        let seat_pose = null
+        if options.avatar == "mitten" && options["seated"] == true {
+            seat_pose = seated_lower_body_pose()
+            ground.attach(seat_pose)
+            on(events, "DataEvent", fn(event) {
+                if event == "ApplySeatPose" && state.seated && npc.model.query("#J_Bip_C_Hips") {
+                    seat_pose.overlay(npc.model)
+                }
+            })
+        }
         fn chassis_point(local) {
             let pose = ride.chassis.world_trs()
             let r = rotate(pose.rotation_quat_xyzw, local)
@@ -478,6 +489,8 @@ export fn practice_target(options) {
             state.frame.update_transform(ride.seat, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             npc.root.update_transform([0.0, 0.0, 0.0])
             npc.set_legs_enabled(false)
+            // Apply after the leg solver has released its walking pose.
+            if seat_pose { emit_data(events, "ApplySeatPose") }
             if driver {
                 driver.stop()
                 ride.truck.set_remote_occupied(true)

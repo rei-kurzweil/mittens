@@ -5,7 +5,10 @@ use std::sync::{
 
 use mittens_engine::engine::{
     Universe,
-    ecs::{ComponentId, EventSignal, SignalEmitter, SignalKind, World, system::ClockDriver},
+    ecs::{
+        ComponentId, EventSignal, SignalEmitter, SignalKind, World, component::TransformComponent,
+        system::ClockDriver,
+    },
 };
 
 #[derive(Default)]
@@ -131,4 +134,107 @@ fn mitten_enables_frame_callbacks_only_for_active_behaviors() {
         total,
         "removed timers do not fire"
     );
+}
+
+#[test]
+fn mitten_restores_the_seated_pose_each_time_she_boards() {
+    let mut scene = Universe::new(World::default());
+    scene
+        .systems
+        .xr
+        .set_external_frame(Some(Default::default()));
+    scene
+        .load_mms_source_at_path(
+            r#"
+            import { practice_target } from "../assets/components/target_practice.mms"
+            Clock.bpm(120.0)
+            T.position(0.0, -0.5, 0.0) { Zone.cube([20.0, 0.5, 20.0]) { Collidable.static() {} } }
+            let chassis = T { name = "fixture_chassis" }
+            chassis
+            let target = practice_target({
+                prefix = "fixture" avatar = "mitten" use_xr = false use_desktop = false
+                position = [-0.33, 0.20, 0.30] yaw = 0.0 strafe = 0.0 seated = true
+                vehicle = { chassis = chassis seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] }
+            })
+            chassis.attach(target.root)
+            let controls = T { name = "fixture_seat_controls" }
+            controls
+            let truck = { x = 0.0 }
+            on(controls, "DataEvent", fn(event) {
+                for shot in range(10) {
+                    target.pistol_hit({ renderable = { player_hit_zone = target.npc.hit_zone } })
+                }
+                truck.x = truck.x + 3.0
+                chassis.update_transform([truck.x, 0.0, 0.0])
+            })
+            "#,
+            "examples/_mitten_seat_test.mms",
+        )
+        .unwrap();
+    let clock = Arc::new(TestClock::default());
+    scene.systems.clock.set_driver(clock.clone());
+    advance(&mut scene, &clock, 8);
+
+    let chassis = named(&scene, "fixture_chassis");
+    let frame = named(&scene, "fixture_frame");
+    let controls = named(&scene, "fixture_seat_controls");
+    let joints = [
+        "J_Bip_L_UpperLeg",
+        "J_Bip_L_LowerLeg",
+        "J_Bip_L_Foot",
+        "J_Bip_R_UpperLeg",
+        "J_Bip_R_LowerLeg",
+        "J_Bip_R_Foot",
+    ];
+    let leg_pose = |scene: &Universe| {
+        joints.map(|joint| {
+            scene
+                .world
+                .get_component_by_id_as::<TransformComponent>(named(scene, joint))
+                .unwrap()
+                .transform
+                .rotation
+        })
+    };
+    let matches = |a: [f32; 4], b: [f32; 4]| {
+        a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f32>().abs() > 0.999
+    };
+    let seated = leg_pose(&scene);
+    assert_eq!(scene.world.parent_of(frame), Some(chassis));
+    for cycle in 1..=2 {
+        scene.command_queue.push_event(
+            controls,
+            EventSignal::DataEvent {
+                name: "Down".into(),
+                payload: None,
+            },
+        );
+        advance(&mut scene, &clock, 30);
+        assert_ne!(scene.world.parent_of(frame), Some(chassis));
+        advance(&mut scene, &clock, 350);
+        assert_ne!(
+            scene.world.parent_of(frame),
+            Some(chassis),
+            "walking back to the door"
+        );
+        assert!(
+            leg_pose(&scene)
+                .into_iter()
+                .zip(seated)
+                .any(|(a, b)| !matches(a, b)),
+            "cycle {cycle} should leave the seated pose while out of the cab"
+        );
+        advance(&mut scene, &clock, 100);
+        assert_eq!(
+            scene.world.parent_of(frame),
+            Some(chassis),
+            "reboard {cycle}"
+        );
+        for ((joint, a), b) in joints.into_iter().zip(leg_pose(&scene)).zip(seated) {
+            assert!(
+                matches(a, b),
+                "{joint} should match the startup seat pose after reboard {cycle}"
+            );
+        }
+    }
 }
