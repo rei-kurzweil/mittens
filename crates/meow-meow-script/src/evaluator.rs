@@ -798,6 +798,11 @@ impl<'a, H: Host> Evaluator<'a, H> {
         if let Expression::Identifier(name) = callee {
             match name.0.as_str() {
                 "range" => return range(&args),
+                "print" => {
+                    let text = args.first().map(print_text).unwrap_or_else(|| "null".into());
+                    println!("[mms] {text}");
+                    return Ok(Value::Null);
+                }
                 "is_string" => {
                     let [value] = args.as_slice() else {
                         return Err(EvalError::Runtime(
@@ -1450,7 +1455,10 @@ impl<'a, H: Host> Evaluator<'a, H> {
 
     fn is_component_body_builder_call(&self, name: &str) -> bool {
         if self.lookup(name).is_some()
-            || matches!(name, "range" | "len" | "byte_len" | "query" | "query_all")
+            || matches!(
+                name,
+                "print" | "range" | "len" | "byte_len" | "query" | "query_all"
+            )
         {
             return false;
         }
@@ -2227,6 +2235,44 @@ fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalEr
 fn truthy(value: &Value) -> bool {
     !matches!(value, Value::Null | Value::Bool(false))
 }
+
+/// Like the load-time `print`, arrays and tables are shown element by element
+/// rather than as debug output, here with sorted keys. Heap tables are copied
+/// out before formatting so nested tables never take the heap lock twice, and
+/// nesting past a few levels (or a table that contains itself) is cut short.
+fn print_text(value: &Value) -> String {
+    print_text_at(value, 0)
+}
+
+fn print_text_at(value: &Value, depth: usize) -> String {
+    const MAX_DEPTH: usize = 6;
+    let entries = |map: &HashMap<String, Value>| {
+        let mut keys: Vec<_> = map.keys().collect();
+        keys.sort();
+        keys.into_iter()
+            .map(|key| format!("{key}: {}", print_text_at(&map[key], depth + 1)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match value {
+        Value::Array(_) | Value::Map(_) | Value::Object(_) if depth >= MAX_DEPTH => "...".into(),
+        Value::Array(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(|item| print_text_at(item, depth + 1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Map(map) => format!("{{{}}}", entries(map)),
+        Value::Object(id) => match id.with_map(|map| map.clone()) {
+            Some(map) => format!("{{{}}}", entries(&map)),
+            None => "{}".into(),
+        },
+        other => value_text(other),
+    }
+}
+
 fn value_text(value: &Value) -> String {
     match value {
         Value::String(s) | Value::Identifier(s) => s.clone(),

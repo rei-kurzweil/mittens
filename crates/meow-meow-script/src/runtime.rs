@@ -1643,6 +1643,25 @@ mod tests {
     }
 
     #[test]
+    fn print_is_a_builtin_in_sessions_and_handles_nested_and_cyclic_tables() {
+        let runtime = Runtime::standard();
+        let mut session = runtime.session(crate::StandardHost::new());
+        for source in [
+            "print(\"text\")",
+            "print()",
+            "print([1, { b = 2 }, [3.5, null]])",
+            "let cycle = { n = 1 } cycle.me = cycle print(cycle)",
+            "let shout = fn(text) { print(text + \"!\") } shout(\"mew\")",
+        ] {
+            session.eval(source).unwrap_or_else(|error| panic!("{source}: {error}"));
+        }
+        assert_eq!(
+            session.eval("print(\"text\")").unwrap().value,
+            Some(Value::Null)
+        );
+    }
+
+    #[test]
     fn is_string_distinguishes_dynamic_values_without_host_dispatch() {
         let runtime = Runtime::standard();
         let mut session = runtime.session(crate::StandardHost::new());
