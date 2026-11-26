@@ -662,6 +662,11 @@ impl mms::Host for MittensHost<'_, '_> {
                         .map(S::Value)
                         .map_err(|e| mms::HostError::failure(format!("GLTF.{method}"), e));
                 }
+                if *component_type == "PathGraph" {
+                    return super::path_graph_api::invoke(self.world, id, method, &args)
+                        .map(S::Value)
+                        .map_err(|e| mms::HostError::failure(format!("PathGraph.{method}"), e));
+                }
                 if super::udp_channel_api::supports(component_type) {
                     return self.invoke_udp(id, component_type, method, args);
                 }

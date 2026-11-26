@@ -499,6 +499,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "MultiplayerSession" => {
                     multiplayer_runtime_config::configure(component, canonical)
                 }
+                "PathGraph" => super::path_graph_api::configure(component, canonical),
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }

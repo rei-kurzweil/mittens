@@ -53,7 +53,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         { weapons = pistols approach = [0.0, roof_y, -8.25] },
         { weapons = [spawn_left] approach = [-4.6, roof_y, 4.55] },
         { weapons = [spawn_right] approach = [4.6, roof_y, 4.55] },
-    ], paths.plan)
+    ], paths)
     // The encounter is per player. Each participant can clear their own range.
     let spawn_side = -1.0
     if spawn_x > 0.0 { spawn_side = 1.0 }
@@ -96,6 +96,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         name = "interceptor_range"
         sounds.root
         armory.root
+        paths.root
         tripod_light("interceptor_tripod_key", [-4.55, 0.0, 2.65], [0.0, roof_y + 1.15, 0.0],
             SL.color(0.89, 0.72, 0.55).intensity(1.95).distance(8.0).angle(0.46).penumbra(0.46),
             { tint = [0.85, 0.68, 0.53] intensity = 1.7 })

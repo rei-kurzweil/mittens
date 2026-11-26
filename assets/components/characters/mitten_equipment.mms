@@ -14,7 +14,9 @@ export fn mitten_route(here, points) {
 }
 
 // Stocked stands and loose pistols share the same inventory after a grab.
-export fn mitten_armory(stations, plan_route) {
+// paths is an optional path finder with plan(here, goal) and
+// nearest(here, goals); without one, routes are straight lines.
+export fn mitten_armory(stations, paths) {
     let root = T { name = "mitten_loose_weapons" }
     let loose = { count = 0 items = {} }
 
@@ -33,32 +35,50 @@ export fn mitten_armory(stations, plan_route) {
     fn loaded(weapon) { return weapon.rounds() > 0 && !weapon.player_holds() }
 
     fn path(here, goal) {
-        if plan_route { return plan_route(here, goal) }
+        if paths { return paths.plan(here, goal) }
         return mitten_route(here, [goal])
     }
 
+    // Where to walk for a loaded weapon at this height: its stand's approach
+    // point when the grip is near one, with the rest of the reach as cost.
     fn candidate(weapon, station, here) {
         if !loaded(weapon) { return null }
         let grip = weapon.grip.world_trs().translation
         if Math.abs(grip[1] - here[1]) > 1.6 { return null }
         let goal = [grip[0], here[1], grip[2]]
         if station && ground_distance(station, grip) < 1.6 { goal = station }
-        let route = path(here, goal)
-        if !route { return null }
-        return { weapon = weapon route = route grip = grip score = route.length + ground_distance(goal, grip) }
+        return { weapon = weapon grip = grip point = goal cost = ground_distance(goal, grip) }
     }
 
+    fn pickup(next, route) {
+        return { weapon = next.weapon route = route grip = next.grip score = route.length + next.cost }
+    }
+
+    // One search for every candidate. Equal scores keep the first candidate.
     fn nearest(here) {
-        let best = null
+        let candidates = []
         for station in stations {
             for weapon in station.weapons {
                 let next = candidate(weapon, station.approach, here)
-                if next && (!best || next.score < best.score) { best = next }
+                if next { candidates.push(next) }
             }
         }
         for i in range(loose.count) {
             let next = candidate(loose.items["" + i], null, here)
-            if next && (!best || next.score < best.score) { best = next }
+            if next { candidates.push(next) }
+        }
+        if len(candidates) == 0 { return null }
+        if paths {
+            let goals = []
+            for next in candidates { goals.push({ point = next.point cost = next.cost }) }
+            let route = paths.nearest(here, goals)
+            if !route { return null }
+            return pickup(candidates[route.index], route)
+        }
+        let best = null
+        for next in candidates {
+            let choice = pickup(next, mitten_route(here, [next.point]))
+            if !best || choice.score < best.score { best = choice }
         }
         return best
     }

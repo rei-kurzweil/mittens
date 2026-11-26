@@ -107,9 +107,9 @@ totals pick the lowest index. `index` is that goal's position in `goals`.
 
 ## Lifetime
 
-`PathGraph` is a runtime-only component. Its entity owns it, it is removed
-with that entity, and it is not serialized. Scripts rebuild it when the scene
-loads. `PathFindingSystem` has no per-frame work in this version. It is the
+`PathGraph` is an ordinary component. Its entity owns it and it is removed
+with that entity. `to_mms_ast` writes the whole `PathGraph.new({...})` table,
+so a saved scene rebuilds the same graph. `PathFindingSystem` has no per-frame work in this version. It is the
 query service over `PathGraph` components, and the place later features will
 go.
 
@@ -120,10 +120,12 @@ go.
 - Its `plan(here, goal)` wraps `graph.route` and keeps the
   `{ count, point(i), length }` shape that `target_practice.mms` follows.
 - `retreat` keeps its current choice of cover point and calls `graph.route`.
-- `mitten_armory` builds one goal per loaded weapon nobody is holding, with
-  the grip distance as `cost`. It calls `graph.nearest` once and maps `index`
-  back to the weapon. The per-weapon search loop and the MMS A* are deleted,
-  with no fallback.
+- `mitten_armory` takes the path finder instead of a `plan_route` function.
+  It builds one goal per loaded weapon nobody is holding, with the grip
+  distance as `cost`, using array `push`. It calls `nearest` once and maps
+  `index` back to the weapon. The per-weapon search loop and the MMS A* are
+  deleted, with no fallback. Without a path finder (the truck-bed demo) the
+  armory keeps its straight-line routes.
 
 ## Validation
 

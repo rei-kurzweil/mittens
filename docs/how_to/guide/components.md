@@ -857,6 +857,14 @@ Carries spring joint state used when that engine feature is present in a compone
 SpringJoint {}
 ```
 
+### `PathGraphComponent`
+<!-- catalog:component source="PathGraphComponent" mms="direct" names="PathGraph" -->
+A ground-plane waypoint graph for walking routes. `PathGraph.new({ nodes, obstacles, bounds })` takes `[x, y, z]` waypoints, padded `[min_x, max_x, min_z, max_z]` obstacle rectangles and a walkable rectangle, and builds its edges once. Methods: `route(here, goal)` returns `{ points, length }` or null; `nearest(here, goals)` takes points or `{ point, cost }` tables and returns `{ index, points, length }` for the cheapest goal to walk to, or null. See [path finding system](../../spec/path-finding-system.md).
+**Directly constructible** as `PathGraph`. Sources: [Rust implementation](../../../src/engine/ecs/component/path_graph.rs), [search](../../../src/engine/ecs/system/path_finding_system.rs) and [MMS API](../../../src/scripting/path_graph_api.rs).
+```mms parse-only
+PathGraph.new({ nodes = [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]] obstacles = [[1.0, 2.0, -1.0, 1.0]] bounds = [-5.0, 5.0, -5.0, 5.0] }) {}
+```
+
 ## Layout, text, and HTML
 
 ### `HtmlElementComponent`

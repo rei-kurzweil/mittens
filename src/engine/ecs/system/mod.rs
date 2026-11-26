@@ -81,6 +81,7 @@ pub mod object_placement_preview;
 pub mod openxr_system;
 pub mod paint_placement;
 pub mod panel_system;
+pub mod path_finding_system;
 pub mod pipeline_system;
 pub mod pointer_system;
 pub mod pose_capture_system;

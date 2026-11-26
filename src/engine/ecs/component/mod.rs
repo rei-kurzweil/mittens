@@ -641,3 +641,6 @@ pub use udp_channel::{UdpSocketComponent, UdpChannelComponent, UdpBinding};
 
 pub mod pose_input;
 pub use pose_input::PoseInputComponent;
+
+pub mod path_graph;
+pub use path_graph::PathGraphComponent;
