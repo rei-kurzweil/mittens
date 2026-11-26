@@ -82,26 +82,31 @@ T.position(SUN[0], SUN[1], SUN[2]) { DL.color(1.0, 0.96, 0.86).intensity(1.6) }
 T.position(-0.5, 0.4, 0.6) { DL.color(0.62, 0.74, 1.0).intensity(0.45) }
 
 // Ground and hills: a flat grass slab (its top at y = 0) and, for each hill,
-// one large sphere sunk into it, so the ground cuts the sphere into a gentle
-// cap. Each hill is its own small implicit surface bounded around its cap,
-// one sphere per field.
-// [x, z, radius, depth]: the cap rises radius - depth above the ground.
+// one very large sphere sunk into it, so the ground cuts the sphere into a
+// broad, gentle cap (no slope steeper than about 5.5 degrees). Each hill is
+// its own implicit surface bounded around its cap, one sphere per field.
+// [x, z, base radius, height]; the near one carries the glass cubes.
 let HILLS = [
-    [20.0, -24.0, 38.0, 33.0], [-26.0, -18.0, 40.0, 34.0], [30.0, 18.0, 36.0, 32.0],
-    [-22.0, 26.0, 42.0, 36.5], [2.0, -34.0, 44.0, 37.0], [-38.0, 2.0, 36.0, 32.0],
-    [38.0, -2.0, 38.0, 34.0], [8.0, 38.0, 40.0, 35.0],
+    [135.0, -150.0, 140.0, 6.6], [-140.0, -85.0, 130.0, 6.2], [160.0, 90.0, 150.0, 7.0],
+    [-120.0, 150.0, 150.0, 7.0], [0.0, -250.0, 160.0, 7.6], [-255.0, 20.0, 130.0, 6.2],
+    [255.0, -55.0, 140.0, 6.6], [30.0, 225.0, 150.0, 7.0], [55.0, -70.0, 70.0, 3.3],
 ]
-let HILL_VOXEL = 0.5
+// The sphere whose cap has this base radius and height: [radius, depth].
+fn hill_sphere(hill) {
+    let radius = (hill[2] * hill[2] + hill[3] * hill[3]) / (2.0 * hill[3])
+    return [radius, radius - hill[3]]
+}
 
 // The ground's height at (x, z): the highest hill cap there, or 0.
 fn hill_height(x, z) {
     let height = 0.0
     for hill in HILLS {
+        let sphere = hill_sphere(hill)
         let dx = x - hill[0]
         let dz = z - hill[1]
-        let inside = hill[2] * hill[2] - dx * dx - dz * dz
+        let inside = sphere[0] * sphere[0] - dx * dx - dz * dz
         if inside > 0.0 {
-            let cap = Math.sqrt(inside) - hill[3]
+            let cap = Math.sqrt(inside) - sphere[1]
             if cap > height { height = cap }
         }
     }
@@ -117,7 +122,7 @@ let grass = cartoon_grass("far", {
 })
 T {
     name = "bliss_ground"
-    T.position(0.0, -0.5, 0.0).scale(600.0, 1.0, 600.0) {
+    T.position(0.0, -0.5, 0.0).scale(1000.0, 1.0, 1000.0) {
         R.cube() {
             grass C.rgba(1.0, 1.0, 1.0, 1.0)
             Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
@@ -127,11 +132,14 @@ T {
     }
     for index in range(len(HILLS)) {
         let hill = HILLS[index]
-        let reach = Math.sqrt(hill[2] * hill[2] - hill[3] * hill[3]) + 1.0
-        let top = hill[2] - hill[3] + 0.5
+        let sphere = hill_sphere(hill)
+        let reach = hill[2] + 1.0
+        let top = hill[3] + 0.5
+        // At most 128 cells per axis, so the widest hills bake at about 2.5 m.
+        let voxel = Math.clamp(2.0 * reach / 120.0, 0.5, 4.0)
         T.position(hill[0], 0.0, hill[1]) {
             ImplicitSurface.bounds(-reach, -0.3, -reach, reach, top, reach)
-                .voxel_size(HILL_VOXEL).clip_floor(-0.08).uv_scale(0.25) {
+                .voxel_size(voxel).clip_floor(-0.08).uv_scale(0.25) {
                 name = "bliss_hill_" + index
                 grass C.rgba(1.0, 1.0, 1.0, 1.0)
                 Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
@@ -139,7 +147,7 @@ T {
                 // This zone receives the baked triangles, so feet and wheels
                 // touch the same surface that is drawn.
                 Zone.cube([reach, top, reach]) { Collidable.static().friction(0.8) {} }
-                T.position(0.0, -hill[3], 0.0) { ImplicitSphere.radius(hill[2]) }
+                T.position(0.0, -sphere[1], 0.0) { ImplicitSphere.radius(sphere[0]) }
             }
         }
     }
@@ -187,8 +195,8 @@ T.position(-5.0, 0.0, -3.0) {
     }
 }
 
-// A refractive cube and a frosted one on the hilltop ahead and to the right.
-let hilltop = [20.0, hill_height(20.0, -24.0), -24.0]
+// A refractive cube and a frosted one on the near hilltop, ahead and to the right.
+let hilltop = [55.0, hill_height(55.0, -70.0), -70.0]
 T.position(hilltop[0], hilltop[1], hilltop[2]) {
     name = "bliss_glass_cubes"
     Raycastable.enabled()
