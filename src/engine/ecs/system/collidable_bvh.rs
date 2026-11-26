@@ -4,8 +4,8 @@ use crate::engine::ecs::component::{
     CollidableComponent, CollidableMode, CollisionContextComponent, CollisionResponse,
     CollisionShape, ZoneComponent,
 };
-use crate::utils::math::{mat4_inverse, mat4_mul};
 use crate::engine::ecs::{ComponentId, World};
+use crate::utils::math::{mat4_inverse, mat4_mul};
 use bvh::Point3;
 use bvh::aabb::{AABB, Bounded};
 use bvh::bounding_hierarchy::BHShape;
@@ -15,6 +15,20 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 type Frame = [[f32; 4]; 4];
 type AxisShape = ([f32; 3], CollisionShape);
 type YawBox = ([f32; 3], [f32; 3], [[f32; 3]; 3]);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum SupportFace {
+    BoxTop([[f32; 3]; 4]),
+    Triangle([[f32; 3]; 3]),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SupportSurface {
+    pub zone: ComponentId,
+    pub point: [f32; 3],
+    pub bounds: [[f32; 3]; 2],
+    pub face: SupportFace,
+}
 
 fn inclined_box_mesh(
     shape: CollisionShape,
@@ -78,19 +92,30 @@ impl Surface {
     pub fn flat_support(
         &self,
         sole: [f32; 3],
-        capsule_center: [f32; 3],
+        center: [f32; 3],
         bottom: f32,
         margin: f32,
     ) -> Option<f32> {
+        self.flat_support_hit::<false>(sole, center, bottom, margin)
+            .map(|(height, _)| height)
+    }
+
+    pub fn flat_support_hit<const FACE: bool>(
+        &self,
+        sole: [f32; 3],
+        capsule_center: [f32; 3],
+        bottom: f32,
+        margin: f32,
+    ) -> Option<(f32, usize)> {
         if self.motion != CollidableMode::Static {
             return None;
         }
         if let Some(mesh) = &self.mesh {
             let origin = [sole[0], bottom + margin, sole[2]];
-            let distance = mesh.ray(origin, [0., -1., 0.])?;
+            let (distance, triangle) = mesh.ray_hit::<FACE>(origin, [0., -1., 0.])?;
             let height = origin[1] - distance;
             return ((height - bottom).abs() <= margin && height < capsule_center[1])
-                .then_some(height);
+                .then_some((height, triangle));
         }
         let (center, extents, axes) = self.yaw_box?;
         let height = center[1] + extents[1];
@@ -104,7 +129,26 @@ impl Surface {
                 return None;
             }
         }
-        Some(height)
+        Some((height, 0))
+    }
+
+    pub fn support_surface(&self, point: [f32; 3], triangle: usize) -> Option<SupportSurface> {
+        let face = if let Some(mesh) = &self.mesh {
+            SupportFace::Triangle(mesh.triangle(triangle)?)
+        } else {
+            let (center, half, axes) = self.yaw_box?;
+            SupportFace::BoxTop([[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]].map(|[x, z]| {
+                let offset =
+                    |axis: usize| x * half[0] * axes[0][axis] + z * half[2] * axes[2][axis];
+                [center[0] + offset(0), point[1], center[2] + offset(2)]
+            }))
+        };
+        Some(SupportSurface {
+            zone: self.zone,
+            point,
+            bounds: [self.bounds.min.into(), self.bounds.max.into()],
+            face,
+        })
     }
 
     /// Continuous sphere contact against retained damaged meshes or box surfaces.

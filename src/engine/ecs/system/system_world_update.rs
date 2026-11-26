@@ -129,12 +129,16 @@ impl SystemWorld {
         cpu_profile.mark(Phase::FrameDispatch);
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
-        let mesh_bounds_visible = self
-            .editor_context
-            .shared_state()
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .bounds_visible;
+        let (mesh_bounds_visible, body_support_enabled, walking_gait_enabled, debug_avatar_selection) = {
+            let state = self.editor_context.shared_state();
+            let state = state.lock().expect("editor context state mutex poisoned");
+            (
+                state.bounds_visible,
+                state.active_editor.is_some() && state.body_support_visible,
+                state.active_editor.is_some() && state.walking_gait_visible,
+                state.selected_component,
+            )
+        };
         self.bounds_visualization.tick_with_queue(
             world,
             &mut self.gltf_bounds_visualization,
@@ -436,6 +440,14 @@ impl SystemWorld {
         self.attachment.sync_mounted_avatars(world);
         // The body solver picks each avatar's mode and torso pitch; the upper
         // body solver writes the torso before head/neck placement reads it.
+        let (support_debug, walking_debug) = self.body_solver.prepare_debug(
+            world,
+            &self.camera,
+            body_support_enabled,
+            walking_gait_enabled,
+            debug_avatar_selection,
+        );
+        self.lower_body_ik.set_debug_targets(support_debug, walking_debug);
         self.body_solver.tick(
             world,
             queue,
@@ -444,6 +456,7 @@ impl SystemWorld {
             &self.attachment,
             dt_sec,
         );
+        self.body_solver.draw_debug(world, visuals, queue, dt_sec);
         self.body_solver.apply_body_yaw(world);
         self.body_solver.apply_posture_colliders(world);
         self.upper_body_ik.tick(world, queue, &self.body_solver);
@@ -464,6 +477,7 @@ impl SystemWorld {
             &self.humanoid_bone_map,
             dt_sec,
         );
+        self.lower_body_ik.draw_walking_debug(world, visuals, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.ik.tick(world, queue, dt_sec);
         if let Some(started) = phase_started {

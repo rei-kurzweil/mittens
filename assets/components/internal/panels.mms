@@ -270,6 +270,8 @@ export fn editor_settings_panel_body(config) {
             if config.show_zones {
                 editor_settings_visibility_row("editor_settings_zones_visibility", "show zones", "ZonesVisibility", "zones_toggle_slot")
             }
+            editor_settings_visibility_row("editor_settings_body_support_visibility", "Body support", "BodySupportVisibility", "body_support_toggle_slot")
+            editor_settings_visibility_row("editor_settings_walking_gait_visibility", "Walking gait", "WalkingGaitVisibility", "walking_gait_toggle_slot")
 
             if config.show_bvh {
                 editor_settings_visibility_row("editor_settings_bvh_visibility", "Show BVH snapshot", "BvhVisibility", "bvh_toggle_slot")

@@ -619,6 +619,147 @@ fn crawling_with_a_head_drop_keeps_the_knees_below_the_hips() {
 }
 
 #[test]
+fn avatar_overlays_track_selected_gait_and_retained_floor() {
+    use crate::engine::ecs::component::TextComponent;
+
+    let mut source = twilight_rooftop_with_lumae();
+    source.push_str("\nT { EditorUI.panels([{ panel = \"settings\" }]) Editor.active() }\n");
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 20);
+    scene
+        .systems
+        .editor_context
+        .shared_state()
+        .lock()
+        .unwrap()
+        .selected_component = Some(head);
+    let support = named(&scene, "editor_settings_body_support_visibility");
+    let walking = named(&scene, "editor_settings_walking_gait_visibility");
+    let click_toggle = |scene: &mut Universe, button| {
+        scene.command_queue.push_event(
+            button,
+            EventSignal::Click {
+                raycaster: button,
+                renderable: button,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        );
+    };
+    let text = |scene: &Universe, name| {
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(scene, name))
+            .unwrap()
+            .text
+            .clone()
+    };
+    let outline_beams = |scene: &Universe| {
+        let outline = named(scene, "body_support_surface_outline");
+        scene
+            .world
+            .children_of(outline)
+            .iter()
+            .filter(|&&id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .is_some_and(|transform| transform.transform.scale[2] > 0.)
+            })
+            .count()
+    };
+    click_toggle(&mut scene, support);
+    click_toggle(&mut scene, walking);
+    hold_head(&mut scene, head, 1.644, 12);
+    let standing = text(&scene, "body_support_debug_readout");
+    assert!(standing.contains("FLOOR 16.00 m | LIVE"), "{standing}");
+    assert!(
+        standing.is_ascii() && standing.lines().count() == 3,
+        "{standing}"
+    );
+    let readout = named(&scene, "body_support_debug_readout");
+    let label_transform = scene.world.parent_of(readout).unwrap();
+    let actual_scale = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(label_transform)
+        .unwrap()
+        .transform
+        .scale[0];
+    let standing_height = scene
+        .systems
+        .upper_body_ik
+        .spine(named(&scene, "remote_avatar"))
+        .unwrap()
+        .head_rest_height;
+    assert!(
+        (actual_scale - standing_height * 0.06).abs() < 1e-4,
+        "font scale {actual_scale}"
+    );
+    assert_eq!(
+        outline_beams(&scene),
+        21,
+        "12 bounds, 8 corner marks, and one probe"
+    );
+    let root = named(&scene, "remote_root");
+    let start = position(&scene, root);
+    let mut saw_swing = false;
+    for frame in 1..=24 {
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation: [start[0] + frame as f32 * 0.025, start[1], start[2]],
+                rotation_quat_xyzw: [0., 0., 0., 1.],
+                scale: [1.; 3],
+            },
+        );
+        hold_head(&mut scene, head, 1.644, 1);
+        let gait = text(&scene, "walking_gait_debug_readout");
+        assert!(gait.contains("remote_avatar"), "{gait}");
+        saw_swing |= gait.contains("effective/planned") && gait.contains("Body Z");
+    }
+    assert!(saw_swing, "gait readout shows a tracked swing");
+    click_toggle(&mut scene, walking);
+    hold_head(&mut scene, head, 0.7, 38);
+    let crawl = text(&scene, "body_support_debug_readout");
+    assert!(
+        crawl.starts_with("CRAWL |") && crawl.contains("BASE ") && crawl.contains(" | HEAD +"),
+        "{crawl}"
+    );
+
+    scene.systems.rx.push_intent_now(
+        root,
+        IntentValue::UpdateTransform {
+            component_id: root,
+            translation: [1000., ROOF, 0.],
+            rotation_quat_xyzw: [0., 0., 0., 1.],
+            scale: [1.; 3],
+        },
+    );
+    hold_head(&mut scene, head, 0.7, 12);
+    let remembered = text(&scene, "body_support_debug_readout");
+    assert!(
+        remembered.contains("FLOOR 16.00 m | REMEMBERED"),
+        "{remembered}"
+    );
+    assert_eq!(
+        outline_beams(&scene),
+        0,
+        "retained floor has no live outline"
+    );
+    click_toggle(&mut scene, support);
+    hold_head(&mut scene, head, 0.7, 4);
+    assert!(!scene.world.all_components().any(|id| matches!(
+        scene.world.component_label(id),
+        Some("body_support_debug_readout" | "walking_gait_debug_readout")
+    )));
+}
+
+#[test]
 fn downed_pose_releases_the_crawl_ankle_rotation() {
     use crate::engine::ecs::component::BoneRestPoseComponent;
 

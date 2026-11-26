@@ -5,6 +5,7 @@
 //! `ik_system` remains at the parent level for chain-solver kinds.
 
 pub mod body;
+mod debug_draw;
 pub mod head_neck_body_constraint;
 mod head_pose_body_xz_follow;
 pub mod lower_body;

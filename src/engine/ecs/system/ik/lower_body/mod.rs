@@ -7,6 +7,7 @@ mod rig;
 mod support;
 mod system;
 mod walking;
+mod walking_debug;
 
 use crate::engine::ecs::ComponentId;
 pub use system::LowerBodyIkSystem;
@@ -28,6 +29,8 @@ pub enum LowerBodyStatus {
 pub struct FootState {
     pub support: Option<ComponentId>,
     pub support_height: Option<f32>,
+    /// X/Z of the probe that supplied `support`.
+    pub support_probe: Option<[f32; 2]>,
     pub base_sole: [f32; 3],
     pub solved_sole: [f32; 3],
     pub penetration: f32,

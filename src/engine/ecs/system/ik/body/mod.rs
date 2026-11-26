@@ -12,6 +12,9 @@ use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
 use std::collections::HashMap;
 
+mod debug_overlay;
+mod support_outline;
+
 /// Vertical is everything an upright avatar does today. Horizontal is on hands
 /// and knees.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -58,6 +61,7 @@ const HORIZONTAL_YAW_THRESHOLD: f32 = 10.0 * std::f32::consts::PI / 180.0;
 #[derive(Debug, Default)]
 pub struct BodySolverSystem {
     avatars: HashMap<ComponentId, BodyInstance>,
+    debug: debug_overlay::DebugOverlay,
 }
 
 #[derive(Debug, Default)]
@@ -193,6 +197,13 @@ impl BodySolverSystem {
             };
             let mounted = attachments.is_avatar_mounted(id);
             let flying = !mounted && avatar.posture == BodyPosture::Auto && is_flying(world, id);
+            let feet = (!mounted && !flying).then(|| lower.feet(id)).flatten();
+            let sampled = feet.and_then(|feet| {
+                feet.iter()
+                    .filter_map(|foot| foot.support_height.map(|height| (height, foot.support)))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+            });
+            let knees = !flying && instance.weight >= 0.5;
             if mounted && !instance.mounted {
                 // Feet stop reporting support while riding. The seat may carry
                 // the rider to an entirely different floor before dismount.
@@ -201,13 +212,7 @@ impl BodySolverSystem {
                 instance.weight = 0.0;
             } else if flying {
                 instance.support = None;
-            } else if !mounted
-                && let Some(height) = lower.feet(id).and_then(|feet| {
-                    feet.iter()
-                        .filter_map(|f| f.support_height)
-                        .min_by(f32::total_cmp)
-                })
-            {
+            } else if let Some((height, _)) = sampled {
                 instance.support = Some(height);
             }
             instance.mounted = mounted;
@@ -215,6 +220,13 @@ impl BodySolverSystem {
             let scale = (0..3).map(|r| root[0][r] * root[0][r]).sum::<f32>().sqrt();
             let head_above = instance.support.map(|floor| head[3][1] - floor);
             let standing = spine.head_rest_height * scale;
+            let lower_status = lower.status(id);
+            let enter = if lower_status == LowerBodyStatus::Limited {
+                ENTER_LIMITED_HEAD_FRACTION * standing
+            } else {
+                ENTER_HEAD_FRACTION * standing
+            };
+            let exit = EXIT_HEAD_FRACTION * standing;
             let (next, reason) = match avatar.posture {
                 BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
                 BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
@@ -228,23 +240,22 @@ impl BodySolverSystem {
                     (BodyMode::Vertical, "no_neck_constraint")
                 }
                 BodyPosture::Auto => match (instance.mode, head_above) {
-                    (_, None) => (instance.mode, ""),
-                    _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, ""),
+                    (_, None) => (instance.mode, "no floor"),
+                    _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, "minimum dwell"),
                     (BodyMode::Vertical, Some(above)) => {
-                        let limited = lower.status(id) == LowerBodyStatus::Limited;
                         if above < ENTER_HEAD_FRACTION * standing {
                             (BodyMode::Horizontal, "head_height")
-                        } else if limited && above < ENTER_LIMITED_HEAD_FRACTION * standing {
+                        } else if above < enter {
                             (BodyMode::Horizontal, "crouch_exhausted")
                         } else {
-                            (BodyMode::Vertical, "")
+                            (BodyMode::Vertical, "above crawl threshold")
                         }
                     }
                     (BodyMode::Horizontal, Some(above)) => {
-                        if above > EXIT_HEAD_FRACTION * standing {
+                        if above > exit {
                             (BodyMode::Vertical, "head_height")
                         } else {
-                            (BodyMode::Horizontal, "")
+                            (BodyMode::Horizontal, "below stand threshold")
                         }
                     }
                 },
@@ -282,6 +293,35 @@ impl BodySolverSystem {
                 instance.held_pitch = 0.0;
             }
             instance.pitch = instance.weight * instance.held_pitch;
+            if self.debug.target == Some(id) {
+                let source_foot = sampled.and_then(|(height, _)| {
+                    feet?.iter().find(|foot| foot.support_height == Some(height) && foot.support.is_some())
+                });
+                let contacts = feet.map_or([None; 2], |feet| {
+                    feet.map(|foot| {
+                        let point = if knees { foot.knee } else { foot.solved_sole };
+                        foot.support_height
+                            .or(instance.support)
+                            .map(|floor| debug_overlay::Contact {
+                                point,
+                                floor,
+                                sampled: foot.support.is_some(),
+                            })
+                    })
+                });
+                self.debug.sample = Some(debug_overlay::Sample {
+                    head: [head[3][0], head[3][1], head[3][2]],
+                    standing,
+                    floor: instance.support,
+                    source: source_foot.and_then(|foot| foot.support),
+                    surface: source_foot.and_then(|foot| lower.support_surface(id, foot)),
+                    contacts,
+                    enter,
+                    exit,
+                    mode: instance.mode,
+                    mounted,
+                });
+            }
             if debug_body_solver_enabled() {
                 instance.debug_elapsed += dt;
                 if instance.debug_elapsed >= 0.5 {
@@ -291,7 +331,9 @@ impl BodySolverSystem {
                     let hip_target = instance
                         .support
                         .map(|floor| floor + (spine.thigh_length + KNEE_RADIUS) * scale);
-                    let knees = lower.feet(id).map(|feet| [feet[0].knee[1], feet[1].knee[1]]);
+                    let knees = lower
+                        .feet(id)
+                        .map(|feet| [feet[0].knee[1], feet[1].knee[1]]);
                     // Wall clock, so lines from both machines line up.
                     let unix_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -345,7 +387,11 @@ pub(crate) fn hip_joint_height(
     let mut turned_so_far = 0.0;
     for (i, segment) in spine.segments().iter().enumerate() {
         turned_so_far += shares.get(i).copied().unwrap_or(0.0);
-        let angle = if i < spine.count { turned_so_far } else { pitch };
+        let angle = if i < spine.count {
+            turned_so_far
+        } else {
+            pitch
+        };
         let turned = quat_rotate_vec3(quat_from_axis_angle(spine.pitch_axis, angle), *segment);
         head_above_hips += rise(root, turned);
     }

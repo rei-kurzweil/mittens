@@ -265,6 +265,7 @@ pub(super) fn solve(
         FootState {
             support: support.map(|s| s.zone),
             support_height: Some(support.map_or(floors[i], |s| s.height)),
+            support_probe: support.map(|s| s.probe),
             base_sole: goal.sole,
             solved_sole: solution.sole,
             penetration: 0.0,

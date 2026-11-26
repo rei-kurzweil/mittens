@@ -1,16 +1,19 @@
 //! The only lower-body scheduler and pose writer. Per-avatar state lives here.
 use super::leg::solve_leg;
 use super::rig::*;
+use super::walking_debug::{WalkingFrame, WalkingOverlay};
 use super::{FootGoal, FootPhase, FootState, LowerBodyStatus, crouch, support::SupportQuery};
 use super::{WalkingDiagnostics, walking::WalkingState};
 use crate::engine::ecs::component::{
     AvatarControlComponent, InputComponent, InputXRComponent, WalkingIkComponent,
 };
-use crate::engine::ecs::system::collidable_bvh::CollidableBvh;
+use crate::engine::ecs::system::collidable_bvh::{CollidableBvh, SupportSurface};
 use crate::engine::ecs::system::static_contact_system::StaticContactSystem;
 use crate::engine::ecs::system::{AttachmentSystem, HumanoidBoneMapSystem};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
+use crate::engine::graphics::VisualWorld;
 use crate::utils::math::{mat4_mul, quat_rotate_vec3, vec3_len, vec3_sub};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -18,6 +21,11 @@ pub struct LowerBodyIkSystem {
     pub(super) avatars: HashMap<ComponentId, LowerBodyInstance>,
     traversal: Vec<usize>,
     candidates: Vec<usize>,
+    support_target: Option<ComponentId>,
+    support_hits: RefCell<Vec<SupportSurface>>,
+    walking_target: Option<ComponentId>,
+    walking_frame: Option<WalkingFrame>,
+    walking_overlay: WalkingOverlay,
 }
 #[derive(Debug, Default)]
 pub(super) struct LowerBodyInstance {
@@ -48,6 +56,62 @@ impl LowerBodyIkSystem {
     }
     pub fn feet(&self, id: ComponentId) -> Option<&[FootState; 2]> {
         self.avatars.get(&id)?.feet.as_ref()
+    }
+    pub(crate) fn set_debug_targets(
+        &mut self,
+        support: Option<ComponentId>,
+        walking: Option<ComponentId>,
+    ) {
+        if self.support_target != support {
+            self.support_hits.get_mut().clear();
+        }
+        self.support_target = support;
+        self.walking_target = walking;
+    }
+
+    pub(in crate::engine::ecs::system::ik) fn support_surface(
+        &self,
+        id: ComponentId,
+        foot: &FootState,
+    ) -> Option<SupportSurface> {
+        if self.support_target != Some(id) {
+            return None;
+        }
+        let zone = foot.support?;
+        let height = foot.support_height?;
+        let [x, z] = foot.support_probe?;
+        self.support_hits
+            .borrow()
+            .iter()
+            .copied()
+            .rev()
+            .find(|hit| {
+                hit.zone == zone
+                    && hit.point[0] == x
+                    && hit.point[2] == z
+                    && (hit.point[1] - height).abs() < 0.001
+            })
+    }
+
+    pub(crate) fn draw_walking_debug(
+        &mut self,
+        world: &mut World,
+        visuals: &VisualWorld,
+        emit: &mut dyn SignalEmitter,
+        dt: f32,
+    ) {
+        let target = self.walking_target.and_then(|id| {
+            let instance = self.avatars.get(&id)?;
+            Some((id, instance.status, instance.feet))
+        });
+        self.walking_overlay.draw(
+            world,
+            visuals,
+            emit,
+            target,
+            self.walking_frame.as_ref(),
+            dt,
+        );
     }
     /// Kneel each avatar the body solver has mostly blended into horizontal.
     pub fn sync_modes(&mut self, body: &crate::engine::ecs::system::ik::body::BodySolverSystem) {
@@ -102,6 +166,8 @@ impl LowerBodyIkSystem {
         maps: &HumanoidBoneMapSystem,
         dt_sec: f32,
     ) {
+        self.support_hits.get_mut().clear();
+        self.walking_frame = None;
         if self.avatars.is_empty() {
             return;
         }
@@ -189,6 +255,8 @@ impl LowerBodyIkSystem {
                     index,
                     &mut self.traversal,
                     &mut self.candidates,
+                    (self.support_target == Some(id)).then_some(&self.support_hits),
+                    (self.walking_target == Some(id)).then_some(&mut self.walking_frame),
                     emit,
                     dt_sec,
                 ),
@@ -303,6 +371,8 @@ fn solve_frame(
     index: &CollidableBvh,
     stack: &mut Vec<usize>,
     candidates: &mut Vec<usize>,
+    support_trace: Option<&RefCell<Vec<SupportSurface>>>,
+    walking_frame: Option<&mut Option<WalkingFrame>>,
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
 ) -> Result<[FootState; 2], LowerBodyStatus> {
@@ -376,9 +446,14 @@ fn solve_frame(
         padding,
         stack,
         candidates,
+        support_trace,
     )?;
     let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
+    let mut frame = walking_frame.map(|slot| slot.insert(WalkingFrame::new(body, soles)));
     if let Some(kneel_floor) = kneeling.filter(|_| !flying) {
+        if let Some(frame) = &mut frame {
+            frame.trace.reason = "kneeling";
+        }
         walking.reset();
         return super::kneel::solve(
             rig,
@@ -412,11 +487,18 @@ fn solve_frame(
             walking_config,
             dt_sec,
             &ground,
+            frame.as_mut().map(|frame| &mut frame.trace),
         )
     } else {
+        if let Some(frame) = &mut frame {
+            frame.trace.reason = if flying { "flying" } else { "walking disabled" };
+        }
         walking.reset();
         None
     };
+    if let Some(frame) = frame {
+        walking.complete_trace(&mut frame.trace);
+    }
     let goals = std::array::from_fn::<_, 2, _>(|i| {
         gait.map(|g| g[i].foot).unwrap_or_else(|| {
             if walking_config.enabled && !supported {
@@ -472,11 +554,16 @@ fn solve_frame(
             }
             leg.active = support.is_some();
             let knee = mat4_mul(bases[i], leg.rest[1].to_matrix().unwrap());
-            (soles[i], leg.rest_flexion, [knee[3][0], knee[3][1], knee[3][2]])
+            (
+                soles[i],
+                leg.rest_flexion,
+                [knee[3][0], knee[3][1], knee[3][2]],
+            )
         };
         FootState {
             support: support.map(|s| s.zone),
             support_height: support.map(|s| s.height),
+            support_probe: support.map(|s| s.probe),
             base_sole: soles[i],
             solved_sole,
             penetration,
