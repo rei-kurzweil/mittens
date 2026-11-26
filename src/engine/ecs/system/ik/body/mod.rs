@@ -153,6 +153,18 @@ impl BodySolverSystem {
         }
     }
 
+    /// Horizontal posture collides as a low crawling sphere, vertical as
+    /// the standing capsule (`set_crawling_collider`).
+    pub fn apply_posture_colliders(&self, world: &mut World) {
+        for (&id, instance) in &self.avatars {
+            crate::engine::ecs::system::avatar_control_system::capsule::set_crawling_collider(
+                world,
+                id,
+                instance.mode == BodyMode::Horizontal,
+            );
+        }
+    }
+
     pub fn tick(
         &mut self,
         world: &World,

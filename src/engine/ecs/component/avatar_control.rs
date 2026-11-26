@@ -1,7 +1,7 @@
 #[path = "eye_blink_state.rs"]
 mod blink;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{Component, ComponentRef, CollisionResponse};
+use crate::engine::ecs::component::{CollisionResponse, CollisionShape, Component, ComponentRef};
 
 /// How AVC treats retained eye-tracker gaze while the avatar head is moving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -377,6 +377,11 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_route_response: Option<CollisionResponse>,
     pub(crate) capsule_world_scale: f32,
     pub(crate) capsule_reset_contact_history: bool,
+    /// The standing capsule and its centre height, kept for switching back
+    /// from the crawling collider.
+    pub(crate) capsule_standing: Option<(CollisionShape, f32)>,
+    /// Runtime: the capsule zone is the low crawling sphere.
+    pub(crate) capsule_crawling: bool,
 
     /// Runtime contact readiness, published after capsule transforms settle.
     pub(crate) capsule_ready: bool,
@@ -784,6 +789,8 @@ impl Default for AvatarControlComponent {
             capsule_route_response: None,
             capsule_world_scale: 1.0,
             capsule_reset_contact_history: false,
+            capsule_standing: None,
+            capsule_crawling: false,
             capsule_ready: false,
             component: None,
         }

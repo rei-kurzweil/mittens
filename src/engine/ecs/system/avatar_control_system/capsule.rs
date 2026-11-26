@@ -279,6 +279,8 @@ pub(super) fn try_init_or_route_capsule(
         avc.capsule_sample_id = sample;
         avc.capsule_vertical_source = vertical_source;
         avc.capsule_world_scale = world_scale;
+        avc.capsule_standing = Some((inferred.shape, inferred.center_y));
+        avc.capsule_crawling = false;
     }
     refresh_capsule_routing(avc_id, world);
     // Untracked rigs do not emit head/body splice transforms. Publish the new
@@ -351,6 +353,68 @@ pub(super) fn publish_capsule_readiness(
                 },
             );
         }
+    }
+}
+
+/// The crawling collider's radius, as a share of the standing capsule's.
+const CRAWL_RADIUS_FRACTION: f32 = 0.75;
+
+/// Crawling and hands-and-knees (horizontal posture) collide as a low,
+/// narrow sphere resting where the standing capsule's base was, instead of
+/// the full-height capsule, so the avatar fits under what a kneeling body
+/// would. The torso detail spheres, which follow the pitched hips and chest,
+/// give it length along the body. Standing back up restores the capsule;
+/// it doesn't yet check for headroom first.
+pub(crate) fn set_crawling_collider(world: &mut World, avc_id: ComponentId, crawling: bool) {
+    let Some(avc) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+        return;
+    };
+    if avc.capsule_crawling == crawling {
+        return;
+    }
+    let (Some((standing, center_y)), Some(capsule_transform)) =
+        (avc.capsule_standing, avc.capsule_transform_id)
+    else {
+        return;
+    };
+    let CollisionShape::CapsuleY {
+        radius,
+        half_segment,
+    } = standing
+    else {
+        return;
+    };
+    let Some(zone) = world
+        .children_of(capsule_transform)
+        .iter()
+        .copied()
+        .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+    else {
+        return;
+    };
+    let crawl_radius = radius * CRAWL_RADIUS_FRACTION;
+    let bottom = center_y - radius - half_segment;
+    let (shape, y) = if crawling {
+        (CollisionShape::Sphere { radius: crawl_radius }, bottom + crawl_radius)
+    } else {
+        (standing, center_y)
+    };
+    if let Some(zone) = world.get_component_by_id_as_mut::<ZoneComponent>(zone) {
+        zone.shape = shape;
+    }
+    if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(capsule_transform) {
+        // The capsule's parent fork drops rotation and scale, so its world
+        // matrix is a translation: move the cached one with the local offset
+        // until the next propagation recomputes it.
+        let delta = y - t.transform.translation[1];
+        t.transform.translation[1] = y;
+        t.transform.recompute_model();
+        t.transform.matrix_world[3][1] += delta;
+    }
+    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        avc.capsule_crawling = crawling;
+        // The shape changed under the same zone; forget its old contacts.
+        avc.capsule_reset_contact_history = true;
     }
 }
 

@@ -1008,3 +1008,40 @@ fn xr_routes_to_transform_above_input_xr() {
     attach(&mut world, driven, avc);
     assert_eq!(automatic_avc_movement_target(&world, avc), Some(outer));
 }
+
+#[test]
+fn crawling_swaps_the_capsule_for_a_low_sphere_on_the_same_floor_and_back() {
+    use crate::engine::ecs::system::avatar_control_system::capsule::set_crawling_collider;
+    let mut f = XrCapsuleFixture::new(1.6, 1.0);
+    let capsule = f.avatar().capsule_transform_id.unwrap();
+    let zone = f
+        .world
+        .children_of(capsule)
+        .iter()
+        .copied()
+        .find(|id| f.world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+        .unwrap();
+    let shape = |f: &XrCapsuleFixture| f.world.get_component_by_id_as::<ZoneComponent>(zone).unwrap().shape;
+    let CollisionShape::CapsuleY { radius, half_segment } = shape(&f) else {
+        panic!("standing collider should be a capsule");
+    };
+    let standing_center = f.position(capsule)[1];
+    let floor = standing_center - radius - half_segment;
+
+    set_crawling_collider(&mut f.world, f.avatar, true);
+    let CollisionShape::Sphere { radius: crawl } = shape(&f) else {
+        panic!("crawling collider should be a sphere");
+    };
+    assert!((crawl - radius * 0.75).abs() < 1e-5);
+    assert!((f.position(capsule)[1] - crawl - floor).abs() < 1e-4, "the sphere rests where the capsule's base was");
+    for _ in 0..3 {
+        f.tick();
+    }
+    assert!(f.avatar().capsule_crawling);
+    assert!(matches!(shape(&f), CollisionShape::Sphere { .. }), "nothing else restores the capsule");
+
+    set_crawling_collider(&mut f.world, f.avatar, false);
+    assert_eq!(shape(&f), CollisionShape::CapsuleY { radius, half_segment });
+    f.tick();
+    assert!((f.position(capsule)[1] - standing_center).abs() < 1e-3);
+}

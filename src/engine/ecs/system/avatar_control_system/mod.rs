@@ -1,7 +1,7 @@
 mod arm_ik;
 mod body_operator;
 pub(crate) mod camera_view;
-mod capsule;
+pub(crate) mod capsule;
 mod detail_collision;
 mod eye_blink;
 mod eyes;

@@ -439,6 +439,7 @@ impl SystemWorld {
             dt_sec,
         );
         self.body_solver.apply_body_yaw(world);
+        self.body_solver.apply_posture_colliders(world);
         self.upper_body_ik.tick(world, queue, &self.body_solver);
         self.lower_body_ik.sync_modes(&self.body_solver);
         queue.flush(world, self, visuals, render_assets);
