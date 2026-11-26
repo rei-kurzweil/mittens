@@ -41,6 +41,9 @@ import { ship_input_controller } from "../assets/components/ship_input_controlle
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
+import { practice_target } from "../assets/components/target_practice.mms"
+import { mitten_antagonist } from "../assets/components/characters/target_combat.mms"
+import { button } from "../assets/components/button.mms"
 
 // Sakura Twilight with five single-storey buildings, six pistols, one
 // pickup, and one radio tower. The same street and ground connect the
@@ -216,6 +219,9 @@ pickups.root
 T.position(roof_x + 2.55, roof_height, -1.35) {
     vehicle_respawn_pedestal(hardware, pickups.respawn)
 }
+// The NPC Mitten, spawned from pedestals on the main roof (see below). Each
+// player has their own: she isn't synced to the peer yet.
+let mitten_npc = { current = null spawns = 0 }
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
@@ -228,7 +234,10 @@ fn make_pistol(index) {
     let options = weapon_options("arena.pistol." + index)
     options.ammunition = 96
     options.shared_impacts = pistol_impacts
-    options.on_hit = combat_health.pistol_hit
+    options.on_hit = fn(hit) {
+        combat_health.pistol_hit(hit)
+        if mitten_npc.current && hit.source_user != null { mitten_npc.current.pistol_hit(hit) }
+    }
     return ship_machine_pistol(label, options)
 }
 let pistols = [
@@ -251,6 +260,7 @@ fn make_launcher(label, id) {
         // Until rockets have their own explosion sound, use the damage cue.
         arena_sounds.damage(1.0)
         combat_health.rocket_splash(point)
+        if mitten_npc.current { mitten_npc.current.rocket_splash(point) }
     }
     return shared_sta_launcher(label, options)
 }
@@ -350,6 +360,52 @@ local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
+
+// Spawn and Remove pedestals for Mitten on the main roof, beside the lighting
+// pedestal and facing the spawn. She appears on the other roof (row 1), the
+// one with the second pistol rack and rocket launcher, and isn't spawned by
+// default. She uses her own pistol (no armory: the scene's pistols are
+// networked), aims at the local player and hurts them through combat_health.
+fn mitten_pedestal(name, label, x, z, tint, action) {
+    let control = button(label, { compact = true background_color = tint color = [0.12, 0.07, 0.15, 1.0] })
+    let face = T.position(-0.29, 1.17, 0.23).scale(0.086, 0.086, 0.086) {
+        name = name + "_control"
+        LayoutRoot { available_width(7.0) available_height(2.0) control }
+    }
+    on(control, "Click", fn(event) { action() })
+    return T.position(x, roof_height, z).rotation(0.0, Math.pi, 0.0) {
+        name = name
+        box([0.0, 0.08, 0.0], [0.50, 0.16, 0.48], white)
+        box([0.0, 0.58, 0.0], [0.22, 0.84, 0.26], white)
+        box([0.0, 1.10, 0.0], [0.65, 0.20, 0.40], white)
+        face
+    }
+}
+fn spawn_mitten() {
+    if mitten_npc.current { return }
+    let weapon_name = "sakura_twilight_mitten_pistol"
+    if mitten_npc.spawns > 0 { weapon_name = weapon_name + "_" + mitten_npc.spawns }
+    mitten_npc.spawns = mitten_npc.spawns + 1
+    let target = practice_target({
+        prefix = "sakura_twilight_mitten" avatar = "mitten" use_xr = true use_desktop = false
+        position = [row[1].x + 2.5, storey_height, row_z + 2.0] yaw = Math.pi
+        combat = mitten_antagonist player_alive = combat_health.alive
+        health_view = local.health_view player = local.shield_mount on_damage = arena_sounds.damage
+        on_player_hit = fn(points) { combat_health.local_hit(points) }
+        world_damage = false weapon_name = weapon_name
+    })
+    target.root
+    mitten_npc.current = target
+}
+fn remove_mitten() {
+    if !mitten_npc.current { return }
+    mitten_npc.current.remove()
+    mitten_npc.current = null
+}
+mitten_pedestal("sakura_twilight_spawn_mitten", "Spawn Mitten", roof_x + 2.6, 3.4,
+    [0.59, 0.77, 0.57, 1.0], spawn_mitten)
+mitten_pedestal("sakura_twilight_remove_mitten", "Remove Mitten", roof_x + 3.31, 3.4,
+    [0.85, 0.50, 0.55, 1.0], remove_mitten)
 respawn.at = [roof_x + spawn_x, roof_height, 0.0]
 local.root.attach(washroom_probe_frame)
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])

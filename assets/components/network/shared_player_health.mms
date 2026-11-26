@@ -110,6 +110,21 @@ export fn shared_player_health(socket) {
         let peer_shield = state.shields.remote_equipped()
         if peer_shield && within_blast(point, state.shields.remote_mount) { peer_shield.take_damage(50.0) }
     }
+    // A hit on the local player decided on this machine, such as a local
+    // NPC's shot: a charged worn shield takes it (10 per point), otherwise
+    // health drops. The peer sees the new points as usual.
+    fn local_hit(points) {
+        if state.points <= 0.0 || points <= 0.0 { return }
+        let shield = null
+        if state.shields { shield = state.shields.local_equipped() }
+        if shield && shield.integrity() > 0.0 {
+            shield.take_damage(points * 10.0)
+            announce_damage(false, true)
+            return
+        }
+        set_points(Math.clamp(state.points - points, 0.0, full))
+        announce_damage(true, false)
+    }
     fn receive_shield(sample) {
         if !state.shields || sample.shield == 0.0 { return false }
         let shield = state.shields.local_equipped()
@@ -188,5 +203,6 @@ export fn shared_player_health(socket) {
         bind_death = fn(callback) { state.on_death = callback }
         bind_damage = fn(callback) { state.on_damage = callback }
         pistol_hit = pistol_hit rocket_hit = rocket_hit rocket_splash = rocket_splash can_fire = can_fire reset = reset
+        local_hit = local_hit alive = fn() { return state.points > 0.0 }
     }
 }
