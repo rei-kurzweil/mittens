@@ -14,7 +14,9 @@ let DISC_RADIUS = 0.022
 
 // A wearable with 100 integrity. Four seconds without a hit starts recovery
 // in 20-point steps, once per second. Zero integrity opens the bullet path.
-export fn energy_shield(name, beats_per_second) {
+// options (optional): { worn = true } for a shield worn from the start (an
+// NPC's), which skips building the loose pickup only to remove it.
+export fn energy_shield(name, beats_per_second, options) {
     let state = { integrity = 100.0 worn = false opponent = false visual = null proxy = null pickup = null grab = null }
     let material = ui_unlit_material()
     let root = T { name = name Selectable.off() material }
@@ -86,7 +88,6 @@ export fn energy_shield(name, beats_per_second) {
         visibility.play()
         return true
     }
-    let glow_material = emissive_surface()
     let step_beats = PULSE_SECONDS * beats_per_second / 3.0
     fn glow() {
         return EM.on().intensity(PULSE_LOW) {
@@ -119,11 +120,11 @@ export fn energy_shield(name, beats_per_second) {
                 T.position(0.0, 0.0, side * 0.0185).rotation(0.0, face * Math.pi, 0.0) {
                     Raycastable.disabled()
                     T.scale(DISC_RADIUS * 2.0, DISC_RADIUS * 2.0, 1.0) {
-                        R.circle_2d() { glow_material C.rgba(GLOW_BLUE[0], GLOW_BLUE[1], GLOW_BLUE[2], 1.0) glows[0][face] }
+                        R.circle_2d() { emissive_surface() C.rgba(GLOW_BLUE[0], GLOW_BLUE[1], GLOW_BLUE[2], 1.0) glows[0][face] }
                     }
                     for ring in range(2) {
                         R.partial_annulus_2d(RINGS[ring][0], RINGS[ring][1], 0.0, 6.2831853, 48) {
-                            glow_material C.rgba(GLOW_BLUE[0], GLOW_BLUE[1], GLOW_BLUE[2], 1.0) glows[ring + 1][face]
+                            emissive_surface() C.rgba(GLOW_BLUE[0], GLOW_BLUE[1], GLOW_BLUE[2], 1.0) glows[ring + 1][face]
                         }
                     }
                 }
@@ -137,12 +138,12 @@ export fn energy_shield(name, beats_per_second) {
         state.grab = grab
         state.pickup = pickup
     }
-    loose_pickup()
+    if options && options["worn"] == true { state.worn = true } else { loose_pickup() }
     root.set_worn = fn(worn, opponent) {
         if worn != state.worn {
             if worn {
-                state.grab.remove_subtree()
-                state.pickup.remove_subtree()
+                if state.grab { state.grab.remove_subtree() }
+                if state.pickup { state.pickup.remove_subtree() }
                 state.grab = null
                 state.pickup = null
             } else {

@@ -249,7 +249,7 @@ export fn practice_target(options) {
     }
     fn wear_shield() {
         drop_shield()
-        let shield = energy_shield(options.prefix + "_shield", 2.0)
+        let shield = energy_shield(options.prefix + "_shield", 2.0, { worn = true })
         npc.shield_mount.attach(shield)
         shield.set_worn(true, true)
         state.shield = shield

@@ -297,7 +297,7 @@ export fn shared_npc(options) {
     // holding a pistol that never fires.
     fn wear_shield(puppet) {
         if puppet.shield { puppet.shield.remove_subtree() }
-        let shield = energy_shield(options.prefix + "_puppet_shield", 2.0)
+        let shield = energy_shield(options.prefix + "_puppet_shield", 2.0, { worn = true })
         puppet.player.shield_mount.attach(shield)
         shield.set_worn(true, true)
         puppet.shield = shield
