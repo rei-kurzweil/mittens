@@ -138,6 +138,8 @@ mod miku_rig_report;
 #[cfg(test)]
 mod sakura_twilight_tests;
 #[cfg(test)]
+mod mms_scene_bench;
+#[cfg(test)]
 mod sakura_combat_tests;
 #[cfg(test)]
 mod target_practice_tests;
