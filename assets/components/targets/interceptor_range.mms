@@ -42,7 +42,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     // it before your health.
     let shields = shield_pickups("interceptor", [[spawn_x - 1.3, 0.0, spawn_z - 1.65], [2.3, 0.0, -8.2]],
         local, ["[name='local_left_pointer']", "[name='local_right_pointer']", "[name='local_desktop_pointer']"])
-    // Downed for 50 s: lying on the ground, unable to move.
+    // Downed for 30 s: lying on the ground, unable to move.
     let player_down = player_down_hooks(local, null)
     let player = practice_health(local.health, local.shield_mount, {
         on_damage = sounds.damage on_respawn = player_down.up

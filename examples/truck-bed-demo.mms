@@ -208,7 +208,7 @@ T.position(-12.0, 3.2, -2.0).rotation(0.0, Math.pi / 4.0, 0.0) {
 // go to wear it. Shots drain it before your health.
 let shields = shield_pickups("demo", [[-2.2, 0.0, -1.0], [2.2, 0.0, -1.0]], local, ["[name='local_left_pointer']", "[name='local_right_pointer']", "[name='local_desktop_pointer']"])
 shields.root
-// Downed for 50 s: lying on the ground, unable to move.
+// Downed for 30 s: lying on the ground, unable to move.
 let player_down = player_down_hooks(local, fn() { return { desktop = query("#local_desktop_locomotion") } })
 let player = practice_health(local.health, local.shield_mount, {
     on_damage = sounds.damage

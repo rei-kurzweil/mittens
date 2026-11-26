@@ -19,9 +19,11 @@ let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
 let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
 // A pistol point's worth of shield, as on Mitten's own shield.
 let SHIELD_PER_POINT = 10.0
-// Down for 50 s (the death burst, player_death at 2 beats per second, lasts
-// the first six), lying on the ground (downed.mms).
-let RESPAWN_SECONDS = 50.0
+// Players are down for 30 s and NPCs for a minute (the death burst,
+// player_death at 2 beats per second, lasts the first six), lying on the
+// ground (downed.mms). practice_health's respawn_seconds option overrides it.
+let RESPAWN_SECONDS = 30.0
+let NPC_RESPAWN_SECONDS = 60.0
 let AIM_TURN_SECONDS = 0.6
 let SHOT_HALF_WIDTH = 0.35
 // A solid this close in front of the player's chest is the player's own
@@ -65,7 +67,7 @@ fn noise(value) {
 }
 
 // bar: a health_bar. center: the transform splash distance is measured from.
-// on_damage(cue), on_death() and on_respawn() are optional.
+// on_damage(cue), on_death(), on_respawn() and respawn_seconds are optional.
 // hit(points) is a shot that lands and blast(point) a rocket explosion; with
 // a charged energy shield worn (wear_shields(source), source() returning the
 // worn shield or null) shots drain the shield instead of health, and a blast
@@ -85,7 +87,9 @@ export fn practice_health(bar, center, options) {
         return null
     }
     let events = T {}
-    let revive = after_seconds(events, RESPAWN_SECONDS, "Revive")
+    let respawn_seconds = RESPAWN_SECONDS
+    if options && options["respawn_seconds"] != null { respawn_seconds = options.respawn_seconds }
+    let revive = after_seconds(events, respawn_seconds, "Revive")
     let timers = T { events revive }
     timers
     fn alive() { return state.points > 0.0 }
@@ -144,6 +148,7 @@ export fn practice_health(bar, center, options) {
         if on_respawn { on_respawn() }
     })
     return { root = timers alive = alive damage = damage blast_at = blast_at hit = hit blast = blast
+        fraction = fn() { return state.points / FULL }
         wear_shields = fn(source) { state.shields = source } }
 }
 
@@ -169,6 +174,10 @@ export fn practice_health(bar, center, options) {
 //   retreat(here, player) optional route to cover after a shield or body hit.
 //   on_player_hit(points)  called for each shot that lands on the player
 //   on_down()    called each time the NPC goes down
+//   on_lie_down(kind) called once the downed body lies "back" or "side"
+//   on_respawn() called each time the NPC gets back up
+//   on_shot(pose, mode) called for each shot the NPC fires (muzzle pose,
+//                "semi"/"burst"/"auto"), e.g. to replay it on a peer
 //   health_view (the bar faces it), on_damage(cue)
 //   seated       sit (Mitten's floor-seated pose, no leg IK) instead of
 //                standing, e.g. in a vehicle seat; position is then the root
@@ -249,10 +258,10 @@ export fn practice_target(options) {
         refresh_motion = null resume_motion = null }
     // Each fall alternates lying on the back and curling on the side. The
     // body lies down a moment after going down, once a vehicle has let go.
-    let fall = { count = 0 }
+    let fall = { count = 0 kind = null }
     let lie_timer = after_seconds(events, 0.1, "LieDown")
     let health = practice_health(npc.health, npc.shield_mount, {
-        on_damage = on_damage
+        on_damage = on_damage respawn_seconds = NPC_RESPAWN_SECONDS
         on_death = fn() {
             drop_shield()
             if hooks.death { hooks.death() }
@@ -267,9 +276,11 @@ export fn practice_target(options) {
         on_respawn = fn() {
             lie_timer.pause()
             get_up(npc)
+            fall.kind = null
             wear_shield()
             if hooks.respawn { hooks.respawn() }
             hooks.resume_motion()
+            if options["on_respawn"] { options.on_respawn() }
         }
     })
     wear_shield()
@@ -313,6 +324,24 @@ export fn practice_target(options) {
             on_damage(2.0)
         }
         if blast.health > 0.0 || shield_hit { seek_cover() }
+    }
+    // Damage decided on another machine, such as a peer's shots at a replica
+    // of this NPC: shield takes shield_amount while charged (once it has
+    // broken here, a point per SHIELD_PER_POINT reaches health instead), and
+    // health takes points.
+    fn take_damage(points, shield_amount) {
+        if !health.alive() { return }
+        let shield = state.shield
+        if shield_amount > 0.0 {
+            if shield && shield.integrity() > 0.0 {
+                shield.take_damage(shield_amount)
+                if on_damage { on_damage(2.0) }
+            } else {
+                points = points + shield_amount / SHIELD_PER_POINT
+            }
+        }
+        if points > 0.0 { health.damage(points, 1.0) }
+        seek_cover()
     }
 
     // Turning: the head target carries the whole rig (body, both arms and
@@ -359,6 +388,7 @@ export fn practice_target(options) {
     // The right arm is held out with the pistol; the left arm relaxes.
     let combat = { controller = null gun = null }
     fn shot(pose, mode) {
+        if options["on_shot"] { options.on_shot(pose, mode) }
         if combat.controller && combat.controller["shot"] { combat.controller.shot(pose, mode) }
         if armory && !combat.gun.has_ammo() { emit_data(events, "GunEmpty") }
     }
@@ -737,7 +767,10 @@ export fn practice_target(options) {
             let kind = "back"
             if fall.count % 2 == 1 { kind = "side" }
             fall.count = fall.count + 1
-            lie_down(npc, kind, null)
+            if lie_down(npc, kind, null) {
+                fall.kind = kind
+                if options["on_lie_down"] { options.on_lie_down(kind) }
+            }
         }
     })
 
@@ -814,6 +847,10 @@ export fn practice_target(options) {
             if hooks.remove_ground { hooks.remove_ground() }
         }
         root = frame npc = npc pistol_hit = pistol_hit rocket_splash = rocket_splash alive = health.alive
+        take_damage = take_damage health_fraction = health.fraction
+        // "back" or "side" while lying down, else null.
+        lying = fn() { return fall.kind }
+        armed = fn() { return combat.gun != null && combat.gun.ready() }
         set_vehicle_chassis = fn(chassis) { if hooks.set_chassis { hooks.set_chassis(chassis) } }
         center = fn() { return npc.shield_mount.world_trs().translation }
         shield_integrity = fn() {
