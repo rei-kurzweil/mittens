@@ -260,11 +260,17 @@ on(hull, "GLTFInitialized", fn(event) {
         part_mesh.attach(contact)
     }
 })
-// The building under the hangar: 7 x 7 x 9 chunks.
-destroyable_box("building", [0.0, roof_y / 2.0 - 0.25, 0.0], [27.9, roof_y - 0.5, 33.9],
-    [0.043, 0.036, 0.061], far_anime, 4.0)
+// The building under the hangar: 7 x 7 x 9 chunks. Rays (shots, pointers)
+// only hit geometry under an enabled Raycastable, so the hangar, the building
+// and the hull each enable it; without it shots passed through cover.
+T {
+    Raycastable.enabled()
+    destroyable_box("building", [0.0, roof_y / 2.0 - 0.25, 0.0], [27.9, roof_y - 0.5, 33.9],
+        [0.043, 0.036, 0.061], far_anime, 4.0)
+}
 T.position(0.0, roof_y, 0.0) {
     name = "interceptor_rooftop_hangar"
+    Raycastable.enabled()
     shell_panel("deck", [0.0, -0.25, 0.0], [28.0, 0.5, 34.0], [0.19, 0.19, 0.25], hangar_anime)
     shell_panel("ceiling", [0.0, 7.64, 0.0], [20.6, 0.36, 24.9], ceiling, hangar_shell)
     for side in [-1, 1] {
@@ -303,6 +309,7 @@ T.position(0.0, roof_y, 0.0) {
 // hull is about 4 x 2 x 4.8 m); a mover ignores its own hull's collision.
 let hull_body = T.position(0.0, roof_y, 0.0).rotation(0.0, -0.24, 0.0) {
     name = "interceptor_display"
+    Raycastable.enabled()
     T.position(0.0, 1.09, -1.1968) {
         // Keep the original GLB primitive available for cuts and collision.
         Destroyable.threshold(HULL_THRESHOLD)
