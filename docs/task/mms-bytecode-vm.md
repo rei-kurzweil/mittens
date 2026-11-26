@@ -77,3 +77,40 @@ muzzle rotation). Native helpers would remove most of it, whatever the VM:
   after; allocations per handler call.
 - Closures in loops capture per-iteration values (a regression test).
 - Error messages keep source line and column.
+
+## Prerequisites and the AOT tier (2026-11-26)
+
+Decided direction: no VM or MMS → Rust pipeline yet. These come first, in
+order, and each speeds up the tree walker on its own:
+
+1. **Closures capture by reference.** `Evaluator::snapshot()` deep-copies every
+   visible binding when a function is created, and every call clones that map
+   again (`(*captured_env).clone()` at the call and callback paths). Replace it
+   with shared scope cells so creation and calls cost O(params), not O(visible
+   bindings). See `mms-shared-closure-captured-env.md` (traced 2026-06, still
+   unimplemented). Also drop the per-evaluation `IfStatement` clone for
+   `else if`.
+2. **Heap arrays** (`mms-shared-array-values.md`): arrays become heap handles
+   like tables. Changes `let b = a` to alias; audit scripts relying on copies.
+   Consider `Arc<str>` strings in the same pass.
+3. **Name resolution to slots** (Proposal step 1 above), with builtins and host
+   operation IDs resolved once.
+4. **Type inference** per the type-system epic, plus typed signatures for host
+   bindings in `RuntimeSpec`; without them every host value is dynamic and so
+   is everything derived from it.
+
+Then the execution tier: AOT-compile MMS reachable from an example's entry
+point to Rust, falling back to the tree walker for anything not compiled.
+Constraints for that tier:
+
+- compiled and interpreted code share one `Value` representation and heap, so
+  closures and handlers cross the boundary without conversion (steps 1–2 set
+  this model);
+- compiled modules are keyed by source hash; a live edit or mismatch runs the
+  module interpreted;
+- inferred-dynamic code compiles to `Value` operations with runtime checks;
+  only typed code gets native arithmetic, fixed field offsets and direct calls;
+- differential tests compare host request streams between tiers.
+
+A bytecode VM remains an option if step 1–3 results leave interpreted-only
+paths (live panels, REPL) hot.
