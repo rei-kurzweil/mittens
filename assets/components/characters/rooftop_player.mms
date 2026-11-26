@@ -210,18 +210,26 @@ export fn make_rooftop_player(options) {
         }
     }
     let eye_tracking = XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
+    // The lay pivot sits between AVC's model frame and the model, so a paused
+    // body can be laid down without tipping the root or capsule (downed.mms).
+    // It stays at identity whenever AVC is running.
+    let lay = { frame = null model_frame = null }
     fn mount_body(avatar, spec, choice) {
         let model_frame = T {
             // The wearer can aim through their own hands and body.
             if track_hands { Raycastable.disabled() Selectable.off() }
         }
+        let lay_frame = T { name = prefix + "_lay" }
         let model_mount = spec.model
         if spec["staging"] {
             model_mount = spec.staging
             model_mount.update_transform([0, 0, 0])
         }
         // The imported scene already includes its axis conversion, as in the cafeteria.
-        model_frame.attach(model_mount)
+        lay_frame.attach(model_mount)
+        model_frame.attach(lay_frame)
+        lay.frame = lay_frame
+        lay.model_frame = model_frame
         avatar.attach(model_frame)
         avatar.attach(left_driver)
         avatar.attach(right_driver)
@@ -529,6 +537,14 @@ export fn make_rooftop_player(options) {
         set_riding_enabled = set_riding_enabled
         // false holds the legs in their authored pose (seated); true walks.
         set_legs_enabled = fn(enabled) { state.avatar.set_legs_enabled(enabled) }
+        // For downed.mms: the current body, head target and model, the lay
+        // pivot, and the XR head driver and stick locomotion (null off XR).
+        avatar = fn() { return state.avatar }
+        head_target = fn() { return state.head }
+        current_model = fn() { return state.model }
+        lay = lay
+        xr_input = fn() { if local_player && use_xr { return driver } return null }
+        gamepad = gamepad
         flying = flying set_remote_flying = set_remote_flying
         camera_view = { enabled = third_person_enabled set = set_third_person }
         avatar_id = avatar_id on_avatar_changed = on_avatar_changed bind_avatar = bind_avatar cancel_avatar_load = cancel_avatar_load

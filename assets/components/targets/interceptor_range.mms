@@ -4,6 +4,7 @@ import { arena_audio } from "../arena_audio.mms"
 import { practice_health, practice_target } from "../target_practice.mms"
 import { mitten_antagonist } from "../characters/target_combat.mms"
 import { mitten_armory } from "../characters/mitten_equipment.mms"
+import { player_down_hooks } from "../characters/downed.mms"
 import { interceptor_path_finding } from "./interceptor_paths.mms"
 import { shared_sta_launcher } from "../weapons/shared_sta_launcher.mms"
 import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
@@ -35,7 +36,11 @@ fn mitten_pedestal(name, label, x, z, tint, material, action) {
 
 export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, material) {
     let sounds = arena_audio()
-    let player = practice_health(local.health, local.shield_mount, { on_damage = sounds.damage })
+    // Downed for 50 s: lying on the ground, unable to move.
+    let player_down = player_down_hooks(local, null)
+    let player = practice_health(local.health, local.shield_mount, {
+        on_damage = sounds.damage on_death = player_down.down on_respawn = player_down.up
+    })
     let npc = { current = null spawns = 0 }
     fn range_pistol(label) {
         return ship_machine_pistol(label, {

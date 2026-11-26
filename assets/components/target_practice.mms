@@ -6,6 +6,7 @@ import { after_seconds, practice_combat } from "./characters/target_combat.mms"
 import { mitten_weapon_slot } from "./characters/mitten_equipment.mms"
 import { mitten_driver } from "./characters/mitten_driver.mms"
 import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_grip.mms"
+import { lie_down, get_up } from "./characters/downed.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -15,8 +16,9 @@ import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_gri
 let FULL = 10.0
 let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
 let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
-// The death burst (player_death at 2 beats per second) lasts six seconds.
-let RESPAWN_SECONDS = 6.0
+// Down for 50 s (the death burst, player_death at 2 beats per second, lasts
+// the first six), lying on the ground (downed.mms).
+let RESPAWN_SECONDS = 50.0
 let AIM_TURN_SECONDS = 0.6
 let SHOT_HALF_WIDTH = 0.35
 // A solid this close in front of the player's chest is the player's own
@@ -206,6 +208,10 @@ export fn practice_target(options) {
     }
     let hooks = { death = null respawn = null set_chassis = null remove_ground = null eject = null approach = null
         refresh_motion = null resume_motion = null }
+    // Each fall alternates lying on the back and curling on the side. The
+    // body lies down a moment after going down, once a vehicle has let go.
+    let fall = { count = 0 }
+    let lie_timer = after_seconds(events, 0.1, "LieDown")
     let health = practice_health(npc.health, npc.shield_mount, {
         on_damage = on_damage
         on_death = fn() {
@@ -216,9 +222,12 @@ export fn practice_target(options) {
                 npc.velocity.translate([-linear[0], 0.0, -linear[2]])
             }
             hooks.refresh_motion()
+            lie_timer.play()
             if options["on_down"] { options.on_down() }
         }
         on_respawn = fn() {
+            lie_timer.pause()
+            get_up(npc)
             wear_shield()
             if hooks.respawn { hooks.respawn() }
             hooks.resume_motion()
@@ -529,6 +538,7 @@ export fn practice_target(options) {
         npc.locomotion
         health.root
         events
+        lie_timer
         if retry { retry }
         if cover_hold { cover_hold cover_cooldown }
         if bearing { bearing }
@@ -672,6 +682,12 @@ export fn practice_target(options) {
         if event == "CoverReady" { cover.cooldown = false }
         if event == "CoverHoldDone" { cover.hold = false }
         if event == "CheckBearing" { check_bearing() }
+        if event == "LieDown" && !health.alive() {
+            let kind = "back"
+            if fall.count % 2 == 1 { kind = "side" }
+            fall.count = fall.count + 1
+            lie_down(npc, kind, null)
+        }
     })
 
     fn resume_motion() {
