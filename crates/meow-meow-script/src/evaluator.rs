@@ -650,26 +650,63 @@ impl<'a, H: Host> Evaluator<'a, H> {
     fn eval_index(&mut self, base: &Expression, index: &Expression) -> Result<Value, EvalError> {
         let base = self.eval_expr(base)?;
         let index = self.eval_expr(index)?;
-        match (base, index) {
-            (Value::Array(values), Value::Number(index)) => {
-                Ok(values.get(index as usize).cloned().unwrap_or(Value::Null))
+        index_value(base, index)
+    }
+
+    /// `receiver.push(value)` on an array appends in place when `receiver`
+    /// names a variable or a table entry, so the array isn't copied, and
+    /// returns the new length. Any other array, such as a literal, is pushed
+    /// as a temporary. A receiver that isn't an array comes back evaluated for
+    /// ordinary method dispatch, so a table's own `push` field still works.
+    fn push_to_array(&mut self, receiver: &Expression, args: &[Value]) -> Result<Pushed, EvalError> {
+        match self.push_in_place(receiver, args)? {
+            Pushed::Receiver(Value::Array(mut items)) => {
+                push_value(&mut items, args).map(Pushed::Length)
             }
-            (Value::Map(values), Value::String(key))
-            | (Value::Map(values), Value::Identifier(key)) => {
-                Ok(values.get(&key).cloned().unwrap_or(Value::Null))
+            pushed => Ok(pushed),
+        }
+    }
+
+    fn push_in_place(&mut self, receiver: &Expression, args: &[Value]) -> Result<Pushed, EvalError> {
+        match receiver {
+            Expression::Identifier(name) => {
+                if let Some(slot) = self
+                    .scopes
+                    .iter_mut()
+                    .rev()
+                    .find_map(|scope| scope.get_mut(&name.0))
+                {
+                    if let Value::Array(items) = slot {
+                        return push_value(items, args).map(Pushed::Length);
+                    }
+                }
+                self.eval_expr(receiver).map(Pushed::Receiver)
             }
-            (Value::RecordType(ty), Value::String(key))
-            | (Value::RecordType(ty), Value::Identifier(key)) => Ok(ty
-                .0
-                .get(&key)
-                .copied()
-                .map(Value::TypeTag)
-                .unwrap_or(Value::Null)),
-            (Value::Object(id), Value::String(key))
-            | (Value::Object(id), Value::Identifier(key)) => id
-                .with_map(|values| values.get(&key).cloned().unwrap_or(Value::Null))
-                .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
-            _ => Err(EvalError::Runtime("invalid index operation".into())),
+            Expression::BinaryOp {
+                op: BinOpKind::Dot,
+                lhs,
+                rhs,
+            } => {
+                let Expression::Identifier(key) = rhs.as_ref() else {
+                    return self.eval_expr(receiver).map(Pushed::Receiver);
+                };
+                let base = self.eval_expr(lhs)?;
+                if let Some(length) = push_to_entry(&base, &key.0, args)? {
+                    return Ok(Pushed::Length(length));
+                }
+                self.field_value(base, &key.0).map(Pushed::Receiver)
+            }
+            Expression::Index { base, index } => {
+                let base = self.eval_expr(base)?;
+                let index = self.eval_expr(index)?;
+                if let Value::String(key) | Value::Identifier(key) = &index {
+                    if let Some(length) = push_to_entry(&base, key, args)? {
+                        return Ok(Pushed::Length(length));
+                    }
+                }
+                index_value(base, index).map(Pushed::Receiver)
+            }
+            _ => self.eval_expr(receiver).map(Pushed::Receiver),
         }
     }
 
@@ -740,54 +777,59 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     ));
                 }
             };
-            return match lhs {
-                Value::Identifier(name) if name == "Math" => match key.as_str() {
-                    "pi" => Ok(Value::Number(std::f64::consts::PI)),
-                    "tau" => Ok(Value::Number(std::f64::consts::TAU)),
-                    "e" => Ok(Value::Number(std::f64::consts::E)),
-                    _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
-                },
-                Value::Identifier(namespace)
-                    if self
-                        .catalog
-                        .as_ref()
-                        .is_some_and(|catalog| catalog.has_namespace(&namespace)) =>
-                {
-                    let child = format!("{namespace}.{key}");
-                    if self
-                        .catalog
-                        .as_ref()
-                        .is_some_and(|catalog| catalog.has_namespace(&child))
-                    {
-                        Ok(Value::Identifier(child))
-                    } else {
-                        Err(EvalError::Runtime(format!(
-                            "unknown namespace table entry '{child}'"
-                        )))
-                    }
-                }
-                Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
-                Value::RecordType(ty) => Ok(ty
-                    .0
-                    .get(key)
-                    .copied()
-                    .map(Value::TypeTag)
-                    .unwrap_or(Value::Null)),
-                Value::Object(id) => id
-                    .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
-                    .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
-                Value::ComponentObject { id, .. } => {
-                    self.validate_field_receiver(id)?;
-                    Ok(self.component_field(id, key).unwrap_or(Value::Null))
-                }
-                other => Err(EvalError::Runtime(format!(
-                    "field access requires a table; receiver was {other:?}"
-                ))),
-            };
+            return self.field_value(lhs, key);
         }
         let lhs = self.eval_expr(lhs)?;
         let rhs = self.eval_expr(rhs)?;
         binary_values(op, lhs, rhs)
+    }
+
+    /// `base.key` for an already evaluated `base`.
+    fn field_value(&mut self, base: Value, key: &str) -> Result<Value, EvalError> {
+        match base {
+            Value::Identifier(name) if name == "Math" => match key {
+                "pi" => Ok(Value::Number(std::f64::consts::PI)),
+                "tau" => Ok(Value::Number(std::f64::consts::TAU)),
+                "e" => Ok(Value::Number(std::f64::consts::E)),
+                _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
+            },
+            Value::Identifier(namespace)
+                if self
+                    .catalog
+                    .as_ref()
+                    .is_some_and(|catalog| catalog.has_namespace(&namespace)) =>
+            {
+                let child = format!("{namespace}.{key}");
+                if self
+                    .catalog
+                    .as_ref()
+                    .is_some_and(|catalog| catalog.has_namespace(&child))
+                {
+                    Ok(Value::Identifier(child))
+                } else {
+                    Err(EvalError::Runtime(format!(
+                        "unknown namespace table entry '{child}'"
+                    )))
+                }
+            }
+            Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
+            Value::RecordType(ty) => Ok(ty
+                .0
+                .get(key)
+                .copied()
+                .map(Value::TypeTag)
+                .unwrap_or(Value::Null)),
+            Value::Object(id) => id
+                .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
+                .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+            Value::ComponentObject { id, .. } => {
+                self.validate_field_receiver(id)?;
+                Ok(self.component_field(id, key).unwrap_or(Value::Null))
+            }
+            other => Err(EvalError::Runtime(format!(
+                "field access requires a table; receiver was {other:?}"
+            ))),
+        }
     }
 
     fn eval_call(&mut self, callee: &Expression, args: &[Expression]) -> Result<Value, EvalError> {
@@ -878,7 +920,14 @@ impl<'a, H: Host> Evaluator<'a, H> {
                 Expression::Identifier(name) => name.0.clone(),
                 _ => return Err(EvalError::Runtime("invalid method name".into())),
             };
-            let receiver = self.eval_expr(lhs)?;
+            let receiver = if method == "push" {
+                match self.push_to_array(lhs, &args)? {
+                    Pushed::Length(length) => return Ok(length),
+                    Pushed::Receiver(receiver) => receiver,
+                }
+            } else {
+                self.eval_expr(lhs)?
+            };
             return match receiver {
                 Value::EventBinding(callback) => {
                     self.event_binding_method(callback, &method, &args)
@@ -2180,6 +2229,61 @@ fn number_array(value: &Value, context: &str) -> Result<Vec<f64>, EvalError> {
             ))),
         })
         .collect()
+}
+
+/// `base[index]` for already evaluated values.
+fn index_value(base: Value, index: Value) -> Result<Value, EvalError> {
+    match (base, index) {
+        (Value::Array(values), Value::Number(index)) => {
+            Ok(values.get(index as usize).cloned().unwrap_or(Value::Null))
+        }
+        (Value::Map(values), Value::String(key))
+        | (Value::Map(values), Value::Identifier(key)) => {
+            Ok(values.get(&key).cloned().unwrap_or(Value::Null))
+        }
+        (Value::RecordType(ty), Value::String(key))
+        | (Value::RecordType(ty), Value::Identifier(key)) => Ok(ty
+            .0
+            .get(&key)
+            .copied()
+            .map(Value::TypeTag)
+            .unwrap_or(Value::Null)),
+        (Value::Object(id), Value::String(key))
+        | (Value::Object(id), Value::Identifier(key)) => id
+            .with_map(|values| values.get(&key).cloned().unwrap_or(Value::Null))
+            .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+        _ => Err(EvalError::Runtime("invalid index operation".into())),
+    }
+}
+
+/// The result of `push_to_array`.
+enum Pushed {
+    /// The new length after an array push.
+    Length(Value),
+    /// A receiver that isn't an array, for ordinary method dispatch.
+    Receiver(Value),
+}
+
+fn push_value(items: &mut Vec<Value>, args: &[Value]) -> Result<Value, EvalError> {
+    let [value] = args else {
+        return Err(EvalError::Runtime("push expects exactly one value".into()));
+    };
+    items.push(value.clone());
+    Ok(Value::Number(items.len() as f64))
+}
+
+/// Pushes onto `base[key]` in place when `base` is a table whose entry is an
+/// array. `None` means there was no array there.
+fn push_to_entry(base: &Value, key: &str, args: &[Value]) -> Result<Option<Value>, EvalError> {
+    let Value::Object(id) = base else {
+        return Ok(None);
+    };
+    id.with_map_mut(|map| match map.get_mut(key) {
+        Some(Value::Array(items)) => Some(push_value(items, args)),
+        _ => None,
+    })
+    .ok_or_else(|| EvalError::Runtime("stale table reference".into()))?
+    .transpose()
 }
 
 fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalError> {
