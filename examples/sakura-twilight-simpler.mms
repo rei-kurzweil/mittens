@@ -43,6 +43,7 @@ import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
 import { practice_target } from "../assets/components/target_practice.mms"
 import { mitten_antagonist } from "../assets/components/characters/target_combat.mms"
+import { npc_target_switch, shared_npc } from "../assets/components/network/npc_replication.mms"
 import { button } from "../assets/components/button.mms"
 
 // Sakura Twilight with five single-storey buildings, six pistols, one
@@ -219,9 +220,9 @@ pickups.root
 T.position(roof_x + 2.55, roof_height, -1.35) {
     vehicle_respawn_pedestal(hardware, pickups.respawn)
 }
-// The NPC Mitten, spawned from pedestals on the main roof (see below). Each
-// player has their own: she isn't synced to the peer yet.
-let mitten_npc = { current = null spawns = 0 }
+// The NPC Mitten, spawned from pedestals on the main roof (see below). The
+// host runs her (current); link replicates her to the client as a puppet.
+let mitten_npc = { current = null spawns = 0 link = null }
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
         left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
@@ -236,7 +237,12 @@ fn make_pistol(index) {
     options.shared_impacts = pistol_impacts
     options.on_hit = fn(hit) {
         combat_health.pistol_hit(hit)
-        if mitten_npc.current && hit.source_user != null { mitten_npc.current.pistol_hit(hit) }
+        // The host hits Mitten herself; the client hits her puppet, which
+        // reports the damage to the host.
+        if hit.source_user != null {
+            if mitten_npc.current { mitten_npc.current.pistol_hit(hit) }
+            if mitten_npc.link { mitten_npc.link.pistol_hit(hit) }
+        }
     }
     return ship_machine_pistol(label, options)
 }
@@ -260,6 +266,7 @@ fn make_launcher(label, id) {
         // Until rockets have their own explosion sound, use the damage cue.
         arena_sounds.damage(1.0)
         combat_health.rocket_splash(point)
+        // Explosions replay on both peers; only the host's Mitten takes them.
         if mitten_npc.current { mitten_npc.current.rocket_splash(point) }
     }
     return shared_sta_launcher(label, options)
@@ -296,14 +303,14 @@ let remote = make_rooftop_player({
     opaque_bucket = "near" show_health = true health_view = local.health_view shield_mount = true
 })
 combat_health.bind(local.health, remote.health, remote.hit_zone)
-// Dying leaves the local player lying where they fell for 50 s, unable to
+// Dying leaves the local player lying where they fell for 30 s, unable to
 // move (downed.mms, which also releases any seat). Then they get up back at
 // their spawn on the main rooftop, by the dock, with full health; choosing an
 // avatar also restores health. The peer sees the move through the replicated
 // root. The lying body itself isn't replicated yet: the peer sees the head go
 // down with the body hanging from it.
 // Animation lengths are in beats: 2 per second at 120 bpm.
-let RESPAWN_BEATS = 50.0 * 2.0
+let RESPAWN_BEATS = 30.0 * 2.0
 let respawn = { at = null }
 let respawn_events = T { name = "sakura_twilight_respawn_events" }
 respawn_events
@@ -365,7 +372,9 @@ local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
 // pedestal and facing the spawn. She appears on the other roof (row 1), the
 // one with the second pistol rack and rocket launcher, and isn't spawned by
 // default. She uses her own pistol (no armory: the scene's pistols are
-// networked), aims at the local player and hurts them through combat_health.
+// networked), aims at the nearer living player and hurts them through
+// combat_health. She's host-authoritative: the host runs her and the client
+// sees a puppet (npc_replication.mms), whose pedestals ask the host.
 fn mitten_pedestal(name, label, x, z, tint, action) {
     let control = button(label, { compact = true background_color = tint color = [0.12, 0.07, 0.15, 1.0] })
     let face = T.position(-0.29, 1.17, 0.23).scale(0.086, 0.086, 0.086) {
@@ -381,6 +390,18 @@ fn mitten_pedestal(name, label, x, z, tint, action) {
         face
     }
 }
+let mitten_position = [row[1].x + 2.5, storey_height, row_z + 2.0]
+// The host's Mitten aims at whichever player is nearer: the local one, or
+// the peer's, whose hits travel through combat_health's damage reports.
+let mitten_aim = npc_target_switch("sakura_twilight_mitten_aim", [
+    { mount = local.shield_mount alive = combat_health.alive hit = combat_health.local_hit },
+    { mount = remote.shield_mount alive = combat_health.remote_alive hit = combat_health.remote_hit },
+], fn() {
+    if mitten_npc.current { return mitten_npc.current.center() }
+    return null
+})
+mitten_aim.root
+// Host only: the real Mitten. Her hooks feed the replication link.
 fn spawn_mitten() {
     if mitten_npc.current { return }
     let weapon_name = "sakura_twilight_mitten_pistol"
@@ -388,24 +409,46 @@ fn spawn_mitten() {
     mitten_npc.spawns = mitten_npc.spawns + 1
     let target = practice_target({
         prefix = "sakura_twilight_mitten" avatar = "mitten" use_xr = true use_desktop = false
-        position = [row[1].x + 2.5, storey_height, row_z + 2.0] yaw = Math.pi
-        combat = mitten_antagonist player_alive = combat_health.alive
-        health_view = local.health_view player = local.shield_mount on_damage = arena_sounds.damage
-        on_player_hit = fn(points) { combat_health.local_hit(points) }
+        position = mitten_position yaw = Math.pi
+        combat = mitten_antagonist player_alive = mitten_aim.alive
+        health_view = local.health_view player = mitten_aim.root on_damage = arena_sounds.damage
+        on_player_hit = mitten_aim.hit
         world_damage = false weapon_name = weapon_name
+        on_shot = fn(pose, mode) { mitten_npc.link.shot(pose, mode) }
+        on_lie_down = fn(kind) { mitten_npc.link.down(kind) }
+        on_respawn = fn() { mitten_npc.link.respawned() }
     })
     target.root
     mitten_npc.current = target
+    mitten_aim.start()
+    mitten_npc.link.spawned()
 }
 fn remove_mitten() {
     if !mitten_npc.current { return }
+    mitten_aim.stop()
     mitten_npc.current.remove()
     mitten_npc.current = null
+    mitten_npc.link.removed()
+}
+mitten_npc.link = shared_npc({
+    socket = socket name = "mitten" host = net.is_host()
+    prefix = "sakura_twilight_mitten" avatar = "mitten" position = mitten_position
+    health_view = local.health_view on_damage = arena_sounds.damage
+    current = fn() { return mitten_npc.current } spawn = spawn_mitten remove = remove_mitten
+})
+mitten_npc.link.root
+// The host spawns and removes her; the client asks the host to.
+fn press_mitten(wanted) {
+    if !net.is_host() {
+        mitten_npc.link.request(wanted)
+        return
+    }
+    if wanted { spawn_mitten() } else { remove_mitten() }
 }
 mitten_pedestal("sakura_twilight_spawn_mitten", "Spawn Mitten", roof_x + 2.6, 3.4,
-    [0.59, 0.77, 0.57, 1.0], spawn_mitten)
+    [0.59, 0.77, 0.57, 1.0], fn() { press_mitten(true) })
 mitten_pedestal("sakura_twilight_remove_mitten", "Remove Mitten", roof_x + 3.31, 3.4,
-    [0.85, 0.50, 0.55, 1.0], remove_mitten)
+    [0.85, 0.50, 0.55, 1.0], fn() { press_mitten(false) })
 respawn.at = [roof_x + spawn_x, roof_height, 0.0]
 local.root.attach(washroom_probe_frame)
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
@@ -603,6 +646,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
     pistol_impacts.connect(group, address)
+    mitten_npc.link.connect(group, address)
     pickups.connect(group, address)
     hand_curls.connect(group, address)
     lighting.connect(socket, group, address)
@@ -657,6 +701,8 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     for item in shared_objects { item.disconnect() }
     for item in pistols { item.disconnect() }
     pistol_impacts.disconnect()
+    // The client's Mitten puppet goes with the host.
+    mitten_npc.link.disconnect()
     pickups.disconnect()
     hand_curls.disconnect()
     lighting.disconnect()

@@ -73,20 +73,37 @@ export fn shared_player_health(socket) {
         state.sent = sent
         send()
     }
+    // Damage to the peer's worn shield, reported per shield (its wear key).
+    fn record_shield_hit(shield, amount) {
+        shield.take_damage(amount)
+        let key = shield.wear_key()
+        if key != state.shield_sent_key {
+            state.shield_sent_key = key
+            state.shield_sent = 0.0
+        }
+        state.shield_sent = state.shield_sent + amount
+        send()
+    }
     fn pistol_hit(hit) {
         let shield = hit.renderable.energy_shield
         if shield && state.shields && shield == state.shields.remote_equipped() {
-            shield.take_damage(10.0)
-            let key = shield.wear_key()
-            if key != state.shield_sent_key {
-                state.shield_sent_key = key
-                state.shield_sent = 0.0
-            }
-            state.shield_sent = state.shield_sent + 10.0
-            send()
+            record_shield_hit(shield, 10.0)
             return
         }
         record_hit(hit.renderable.player_hit_zone, 1.0)
+    }
+    // A hit on the peer's player decided on this machine, such as this
+    // host's NPC shooting them: a charged worn shield takes it (10 per
+    // point), otherwise their health, through the same cumulative reports.
+    fn remote_hit(points) {
+        if points <= 0.0 || state.remote_life == 0.0 || state.remote_points <= 0.0 { return }
+        let shield = null
+        if state.shields { shield = state.shields.remote_equipped() }
+        if shield && shield.integrity() > 0.0 {
+            record_shield_hit(shield, points * 10.0)
+            return
+        }
+        record_hit(state.hit_zone, points)
     }
     fn rocket_hit(hit) { record_hit(hit.other_zone, 5.0) }
     fn within_blast(point, mount) {
@@ -204,5 +221,7 @@ export fn shared_player_health(socket) {
         bind_damage = fn(callback) { state.on_damage = callback }
         pistol_hit = pistol_hit rocket_hit = rocket_hit rocket_splash = rocket_splash can_fire = can_fire reset = reset
         local_hit = local_hit alive = fn() { return state.points > 0.0 }
+        // The peer's player, while one is connected and alive.
+        remote_hit = remote_hit remote_alive = fn() { return state.remote_life > 0.0 && state.remote_points > 0.0 }
     }
 }
