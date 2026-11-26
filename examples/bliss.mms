@@ -20,7 +20,7 @@ let start_in_third_person = false
 
 import { f32, vec3 } from "types"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
-import { cartoon_grass } from "../assets/components/materials/cartoon_grass.mms"
+import { cartoon_grass, cartoon_grass_dome } from "../assets/components/materials/cartoon_grass.mms"
 import { anime_surface } from "../assets/components/materials/anime_surface.mms"
 import { sky_cloud_banks } from "../assets/components/backgrounds/clouds.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
@@ -95,11 +95,14 @@ let HILLS = [
     [-120.0, 150.0, 150.0, 7.0], [0.0, -250.0, 160.0, 7.6], [-255.0, 20.0, 130.0, 6.2],
     [255.0, -55.0, 140.0, 6.6], [30.0, 225.0, 150.0, 7.0], [55.0, -70.0, 70.0, 3.3],
 ]
-// The collision sphere whose cap has this base radius and height:
-// [radius, depth of its centre].
+// The collision sphere fitted to the drawn dome: its cap is 2.4% taller and
+// 1.2% wider than the hill's nominal one, which keeps it within about 0.25 m
+// of the dome's mesh everywhere, above and below. [radius, depth of centre].
 fn hill_sphere(hill) {
-    let radius = (hill[2] * hill[2] + hill[3] * hill[3]) / (2.0 * hill[3])
-    return [radius, radius - hill[3]]
+    let top = hill[3] * 1.024
+    let rim = hill[2] * 1.012
+    let radius = (rim * rim + top * top) / (2.0 * top)
+    return [radius, radius - top]
 }
 
 // The ground's height at (x, z): the highest hill cap there, or 0.
@@ -121,10 +124,11 @@ fn hill_height(x, z) {
 // Pastel green that stays green: linear [0.40, 0.89, 0.29] shows as #99db85
 // where lit, and the green-tinted shade keeps slopes away from the sun at
 // #69a461 instead of grey. The lower lit threshold keeps sunny slopes lit.
-let grass = cartoon_grass("far", {
+let GRASS = {
     albedo = [0.40, 0.89, 0.29] shade_color = [0.32, 0.42, 0.40] lit_threshold = 1.2
     fade_near = 10.0 fade_far = 18.0
-})
+}
+let grass = cartoon_grass("far", GRASS)
 T {
     name = "bliss_ground"
     T.position(0.0, -0.5, 0.0).scale(1000.0, 1.0, 1000.0) {
@@ -140,9 +144,13 @@ T {
         // A sphere mesh (radius 0.5) scaled to a dome whose top 60% shows.
         let dome_height = hill[3] / (1.0 - DOME_SINK)
         let dome_radius = hill[2] / Math.sqrt(1.0 - DOME_SINK * DOME_SINK)
-        T.position(hill[0], -DOME_SINK * dome_height, hill[1]).scale(dome_radius * 2.0, dome_height * 2.0, dome_radius * 2.0) {
+        let center = [hill[0], -DOME_SINK * dome_height, hill[1]]
+        // Lit and tufted from the ellipsoid's own normal; the grass pattern
+        // follows world position, so it matches the ground's.
+        let dome_grass = cartoon_grass_dome("far", center, [dome_radius, dome_height, dome_radius], GRASS)
+        T.position(center[0], center[1], center[2]).scale(dome_radius * 2.0, dome_height * 2.0, dome_radius * 2.0) {
             R.sphere() {
-                grass C.rgba(1.0, 1.0, 1.0, 1.0)
+                dome_grass C.rgba(1.0, 1.0, 1.0, 1.0)
                 Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
                 TextureFiltering.linear()
             }
