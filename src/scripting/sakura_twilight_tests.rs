@@ -138,6 +138,7 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
             .unwrap()
             .flight_enabled()
     );
+    check_input_settings(&mut scene);
     let labels: Vec<_> = scene
         .world
         .all_components()
@@ -833,25 +834,31 @@ fn check_input_settings(scene: &mut Universe) {
             .text
             .clone()
     }
-    assert_eq!(stick_mode(scene), XrStickMode::Strafe);
+    assert_eq!(stick_mode(scene), XrStickMode::Inherit);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "strafe"), "(o) Left stick only");
-    assert_eq!(label(scene, "turn"), "( ) Right stick turns");
+    assert_eq!(label(scene, "orbit"), "(o) Orbit in third person");
+    assert_eq!(label(scene, "turn"), "( ) Turn player");
     click(scene, named(scene, "input_stick_mode_turn"));
     assert_eq!(
         scene.systems.input_settings.xr_stick_mode(),
         XrStickMode::Turn
     );
-    assert_eq!(stick_mode(scene), XrStickMode::Turn);
-    assert_eq!(label(scene, "strafe"), "( ) Left stick only");
-    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
+    assert_eq!(stick_mode(scene), XrStickMode::Inherit);
+    assert_eq!(label(scene, "orbit"), "( ) Orbit in third person");
+    assert_eq!(label(scene, "turn"), "(o) Turn player");
 
     // Clicking the dock item again closes the panel; reopening reflects the setting.
     open_dock_items(scene, &["input"]);
     assert!(!has_label(scene, "sakura_twilight_input_settings"));
-    assert_eq!(stick_mode(scene), XrStickMode::Turn);
+    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Turn);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
+    assert_eq!(label(scene, "turn"), "(o) Turn player");
+    click(scene, named(scene, "input_stick_mode_strafe"));
+    assert_eq!(label(scene, "strafe"), "(o) Off");
+    click(scene, named(scene, "input_stick_mode_orbit"));
+    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Orbit);
+    assert_eq!(label(scene, "orbit"), "(o) Orbit in third person");
+    open_dock_items(scene, &["input"]);
 }
 
 fn check_mirror_controls(scene: &mut Universe) {

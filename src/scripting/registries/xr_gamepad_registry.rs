@@ -28,7 +28,7 @@ pub(super) fn apply(
         "stick_mode" => {
             let mode = arg_str(args, 0)?;
             input.stick_mode = XrStickMode::parse(mode)
-                .ok_or_else(|| format!("unknown XrStickMode: {mode} (expected strafe or turn)"))?;
+                .ok_or_else(|| format!("unknown XrStickMode: {mode} (expected default, orbit, strafe, or turn)"))?;
         }
         "turn_speed" => input.turn_speed = arg_f32(args, 0)?,
         "speed" => input.speed = arg_f32(args, 0)?,

@@ -669,7 +669,7 @@ pub(crate) fn invoke_component_method(
                 return Err(format!("set_stick_mode(): expected one string, got {args:?}"));
             };
             let mode = crate::engine::ecs::component::XrStickMode::parse(mode)
-                .ok_or_else(|| format!("set_stick_mode(): expected strafe or turn, got {mode}"))?;
+                .ok_or_else(|| format!("set_stick_mode(): expected default, orbit, strafe, or turn, got {mode}"))?;
             world
                 .get_component_by_id_as_mut::<InputXRGamepadComponent>(id)
                 .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?

@@ -321,12 +321,8 @@ export fn make_rooftop_player(options) {
         // (require_leg_rockets_for_flight).
         gamepad = InputXRGamepad {
             name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(options["flying"] == true)
-            stick_mode(InputSettings.xr.stick_mode())
         }
         driver = InputXR.on() { gamepad }
-        on_global("DataEvent", fn(event) {
-            if event == "InputSettingsChanged" { gamepad.set_stick_mode(InputSettings.xr.stick_mode()) }
-        })
     }
     driver.attach(head)
     root.attach(driver)

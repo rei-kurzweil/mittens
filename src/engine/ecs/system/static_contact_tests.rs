@@ -16,6 +16,7 @@ fn add_zone(
     let zone = world.add_component(ZoneComponent::new(shape));
     let collidable = world.add_component(match mode {
         CollidableMode::Static => CollidableComponent::static_(),
+        CollidableMode::Obstacle => CollidableComponent::obstacle(),
         CollidableMode::Slide => CollidableComponent::slide(),
         CollidableMode::Sensor => CollidableComponent::sensor(),
     });

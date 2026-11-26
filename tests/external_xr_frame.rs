@@ -32,7 +32,7 @@ fn external_frame_drives_avatar_free_controller_and_locomotion() {
     let source = r##"
         T.position(0.0, -0.1, 0.0).scale(20.0, 0.2, 20.0) { Zone.cube([0.5,0.5,0.5]) { Collidable.static() } }
         T.position(1.0, 1.0, 0.0).scale(0.2, 2.0, 4.0) { Zone.cube([0.5,0.5,0.5]) { Collidable.static() } }
-        Gravity { let player_velocity = Velocity { T {
+        Gravity { Velocity { T {
             name = "player"
             T.position(0.0, 0.85, 0.0) { Zone.capsule_y(0.25, 0.6) { Collidable.slide().movement_target("/#player") } }
             InputXR.on() {
@@ -40,14 +40,7 @@ fn external_frame_drives_avatar_free_controller_and_locomotion() {
                 T { CXR {} }
                 XRHand.new(true, "Left", "Aim") { T { name = "left_driver" Pointer {} } }
             }
-        } }
-            player_velocity
-            on_global("XrButtonDown", fn(event) {
-                if event.control == "ButtonB" && player_velocity.grounded() {
-                    player_velocity.translate_world([0.0, 4.5, 0.0])
-                }
-            })
-        }
+        } } }
     "##;
     let mut universe = Universe::new(World::default());
     universe

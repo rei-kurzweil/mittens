@@ -1,4 +1,4 @@
-//! Opt-in XR flight mode. Physics remains responsible for solid contacts.
+//! XR jump and opt-in flight mode. Physics remains responsible for solid contacts.
 use super::{VelocitySystem, XrGamepadState};
 use crate::engine::ecs::component::{
     GravityComponent, GravityMode, InputXRGamepadComponent, PoseInputComponent, SerializeComponent,
@@ -52,12 +52,7 @@ impl XrFlying {
         self.states.retain(|&id, state| {
             let (valid, flying) = world
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
-                .map(|c| {
-                    (
-                        c.enabled && c.locomotion && (c.enable_flying || c.flight_enabled()),
-                        c.is_flying(),
-                    )
-                })
+                .map(|c| (c.enabled && c.locomotion, c.is_flying()))
                 .unwrap_or((false, false));
             state.down = false;
             state.last_tap = None;
@@ -93,7 +88,7 @@ impl XrFlying {
             return false;
         };
         let flight_enabled = config.flight_enabled();
-        if !config.enabled || !config.locomotion || !(config.enable_flying || flight_enabled) {
+        if !config.enabled || !config.locomotion {
             self.stop(world, id);
             return false;
         }

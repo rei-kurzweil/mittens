@@ -1,6 +1,6 @@
 use crate::engine::Universe;
-use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::external_xr_frame::ExternalXrFrame;
+use crate::engine::ecs::system::{TransformSystem, XrGamepadState, XrHandGamepadState};
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, KeyboardEvent, SignalEmitter, World,
 };
@@ -26,7 +26,7 @@ fn setup_at_scale(xr: bool, scale: f32) -> Universe {
         let head = T.position(0, 1.6, 0) { name = "view_test_head" body }
         T.scale(__SCALE__, __SCALE__, __SCALE__) {
             name = "view_test_root"
-            if use_xr { InputXR.on() { head } } else { I { head } }
+            if use_xr { InputXR.on() { InputXRGamepad {} head } } else { I { head } }
         }
         on_global("KeyUp", fn(event) {
             if event.code == "KeyV" { body.set_third_person(true) }
@@ -139,6 +139,13 @@ fn third_person_desktop_frames_origin_and_follows_root_without_moving_head() {
 }
 
 fn supply_xr_frame(scene: &mut Universe, head: [f32; 3], yaw: f32) {
+    scene
+        .systems
+        .xr
+        .set_external_frame(Some(xr_frame(head, yaw)));
+}
+
+fn xr_frame(head: [f32; 3], yaw: f32) -> ExternalXrFrame {
     let half_yaw = yaw * 0.5;
     let views = [-0.032, 0.032].map(|eye_x| openxr::View {
         pose: openxr::Posef {
@@ -161,10 +168,10 @@ fn supply_xr_frame(scene: &mut Universe, head: [f32; 3], yaw: f32) {
             angle_down: -0.7,
         },
     });
-    scene.systems.xr.set_external_frame(Some(ExternalXrFrame {
+    ExternalXrFrame {
         views: Some(views),
         ..Default::default()
-    }));
+    }
 }
 
 #[test]
@@ -222,6 +229,39 @@ fn third_person_xr_frames_a_scaled_rig_at_its_own_scale() {
     assert!(
         (tiny_distance - full_distance * 0.1).abs() < 1e-3,
         "{tiny_distance} vs {full_distance}"
+    );
+}
+
+#[test]
+fn right_stick_orbits_the_rendered_xr_view_without_turning_the_rig() {
+    let mut scene = setup(true);
+    let root = named(&scene, "view_test_root");
+    let head = named(&scene, "view_test_head");
+    let root_before = TransformSystem::world_model(&scene.world, root);
+    let head_before = TransformSystem::world_model(&scene.world, head);
+    let first = eyes(&scene, CameraTarget::Xr)[0];
+    let mut frame = xr_frame([0.0, 1.65, 0.0], 0.0);
+    frame.gamepad = XrGamepadState {
+        active: true,
+        hands: [[0.0, 0.0], [1.0, 0.0]].map(|stick| XrHandGamepadState {
+            thumbstick: Some(stick),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    for _ in 0..10 {
+        scene.systems.xr.set_external_frame(Some(frame));
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let eye = &eyes(&scene, CameraTarget::Xr)[0];
+    assert!(vec3_len(vec3_sub(eye_position(eye), eye_position(&first))) > 0.5);
+    assert_eq!(
+        TransformSystem::world_model(&scene.world, root),
+        root_before
+    );
+    assert_eq!(
+        TransformSystem::world_model(&scene.world, head),
+        head_before
     );
 }
 

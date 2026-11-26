@@ -1,10 +1,10 @@
-// Importable input settings. InputSettingsSystem owns the preferences; scenes
-// apply them to their own input components on InputSettingsChanged.
+// Importable panel for the current session's input defaults.
 import { info_panel } from "../ui/info_panel.mms"
 
 let STICK_MODES = [
-    { id = "strafe" label = "Left stick only" },
-    { id = "turn" label = "Right stick turns" },
+    { id = "orbit" label = "Orbit in third person" },
+    { id = "turn" label = "Turn player" },
+    { id = "strafe" label = "Off" },
 ]
 
 fn radio_text(mode, selected) {
@@ -18,7 +18,7 @@ fn stick_mode_button(mode) {
         Grabbable.off()
         Raycastable.click_only() { interaction_priority(120.0) }
         Style {
-            display("flex") width(13.0) height(2.4)
+            display("flex") width(9.0) height(2.4)
             align_items("center") padding_xy(0.5, 0.0) font_size(0.62)
             background_color([0.88, 0.81, 0.66, 1.0]) background_z(0.01)
         }
@@ -58,13 +58,13 @@ fn input_settings_content() {
                     display("flex") width(8.0) height(3.2)
                     align_items("center") padding_xy(0.35, 0.0) font_size(0.62)
                 }
-                T.position(0.0, 0.0, 0.03) { Text { "Sticks" } }
+                T.position(0.0, 0.0, 0.03) { Text { "Right stick" } }
             }
             for mode in STICK_MODES { stick_mode_button(mode) }
         }
         T {
             Style { display("block") width(100%) font_size(0.55) }
-            Text { "The left stick always moves and strafes." }
+            Text { "The left stick moves and strafes." }
         }
     }
 }

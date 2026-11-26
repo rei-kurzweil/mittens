@@ -8,7 +8,9 @@ Narrows the posture table in
 Follow-up for `body_solver_scene_tests.rs` — group posture and crawling cases
 apart from collision and mounted recovery. Share explicit rig fixtures so scene
 defaults can change independently. Preserve test frame counts and pose tolerances,
-and keep the production solver's fixed-step path out of the split.
+and keep the production solver's fixed-step path out of the split. Validate
+stationary kneeling, alternating crawl steps, and transitions at both normal
+and tiny avatar scales.
 
 ## Implementation status (2026-11-16)
 

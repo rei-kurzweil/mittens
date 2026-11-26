@@ -568,6 +568,127 @@ fn low_hips_sit_back_behind_the_knees_instead_of_sinking_them() {
 }
 
 #[test]
+fn crawling_with_a_head_drop_keeps_the_knees_below_the_hips() {
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            &twilight_rooftop_with_lumae(),
+            "examples/twilight_rooftop.mms",
+        )
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    let root = named(&scene, "remote_root");
+    hold_head(&mut scene, head, 1.644, 30);
+    let legs = [
+        [HumanoidSlot::LeftUpperLeg, HumanoidSlot::LeftLowerLeg],
+        [HumanoidSlot::RightUpperLeg, HumanoidSlot::RightLowerLeg],
+    ]
+    .map(|leg| leg.map(|slot| bone(&scene, avatar, slot)));
+    let start = position(&scene, root);
+    let move_root = |scene: &mut Universe, distance: f32, scale: f32| {
+        let mut translation = start;
+        translation[2] -= distance * scale;
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation,
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [scale; 3],
+            },
+        );
+    };
+    for scale in [1.0, 0.1] {
+        move_root(&mut scene, 0.0, scale);
+        hold_head(&mut scene, head, 1.644, 60);
+        hold_head(&mut scene, head, 0.7, 60);
+        for frame in 1..=90 {
+            move_root(&mut scene, 0.006 * frame as f32, scale);
+            hold_head(&mut scene, head, 0.7 - 0.006 * frame as f32, 1);
+            assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+            for leg in legs {
+                let [hip, knee] = leg.map(|joint| position(&scene, joint));
+                assert!(
+                    knee[1] < hip[1],
+                    "scale {scale}, frame {frame}: knee {knee:?} above hip {hip:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn downed_pose_releases_the_crawl_ankle_rotation() {
+    use crate::engine::ecs::component::BoneRestPoseComponent;
+
+    let mut source = twilight_rooftop_with_lumae();
+    source.push_str(
+        r#"
+        import { lie_down } from "../assets/components/characters/downed.mms"
+        let down_test = T { name = "down_test" }
+        on(down_test, "DataEvent", fn(event) { lie_down(remote, "back", null) })
+        down_test
+    "#,
+    );
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 30);
+    hold_head(&mut scene, head, 0.7, 90);
+    let feet =
+        [HumanoidSlot::LeftFoot, HumanoidSlot::RightFoot].map(|slot| bone(&scene, avatar, slot));
+    let dot_with_rest = |scene: &Universe, foot| {
+        let rest = scene
+            .world
+            .children_of(foot)
+            .iter()
+            .find_map(|&child| {
+                scene
+                    .world
+                    .get_component_by_id_as::<BoneRestPoseComponent>(child)
+            })
+            .unwrap()
+            .rotation;
+        let rotation = scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(foot)
+            .unwrap()
+            .transform
+            .rotation;
+        rotation
+            .into_iter()
+            .zip(rest)
+            .map(|(a, b)| a * b)
+            .sum::<f32>()
+            .abs()
+    };
+    for foot in feet {
+        assert!(
+            dot_with_rest(&scene, foot) < 0.99,
+            "crawl rotates the ankle"
+        );
+    }
+    scene.command_queue.push_event(
+        named(&scene, "down_test"),
+        EventSignal::DataEvent {
+            name: "Down".into(),
+            payload: None,
+        },
+    );
+    scene.update(1.0 / 60.0, &Default::default());
+    for foot in feet {
+        assert!(
+            dot_with_rest(&scene, foot) > 0.999,
+            "downed ankle uses its rest rotation"
+        );
+    }
+}
+
+#[test]
 fn body_solver_flowchart_example_has_a_card_for_every_note() {
     let source = std::fs::read_to_string("examples/body-solver-flowchart.mms").unwrap();
     let notes =

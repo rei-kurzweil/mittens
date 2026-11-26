@@ -16,19 +16,24 @@
 // returns the view.
 //
 // Pose angles are rest-relative Euler rotations (radians) for VRoid J_Bip
-// bones, first guesses to tune. Signs assume the model faces +Z.
+// bones. Signs assume the model faces +Z. Zero offsets on the feet clear the
+// ankle rotations left by the paused leg solver, including the crawl pose.
 let POSES = {
     back = [
         ["J_Bip_L_UpperArm", [0.0, 0.0, -1.15]],
         ["J_Bip_R_UpperArm", [0.0, 0.0, 1.15]],
         ["J_Bip_L_LowerLeg", [0.15, 0.0, 0.0]],
         ["J_Bip_R_LowerLeg", [0.15, 0.0, 0.0]],
+        ["J_Bip_L_Foot", [0.0, 0.0, 0.0]],
+        ["J_Bip_R_Foot", [0.0, 0.0, 0.0]],
     ]
     side = [
         ["J_Bip_L_UpperLeg", [-1.3, 0.0, 0.0]],
         ["J_Bip_R_UpperLeg", [-1.1, 0.0, 0.0]],
         ["J_Bip_L_LowerLeg", [1.6, 0.0, 0.0]],
         ["J_Bip_R_LowerLeg", [1.5, 0.0, 0.0]],
+        ["J_Bip_L_Foot", [0.0, 0.0, 0.0]],
+        ["J_Bip_R_Foot", [0.0, 0.0, 0.0]],
         ["J_Bip_L_UpperArm", [-0.7, 0.0, -1.0]],
         ["J_Bip_R_UpperArm", [-0.7, 0.0, 1.0]],
         ["J_Bip_L_LowerArm", [0.0, -1.1, 0.0]],

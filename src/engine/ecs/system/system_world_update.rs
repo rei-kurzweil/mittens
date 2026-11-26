@@ -315,8 +315,14 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
         let xr_locomotion_started = self.vr_perf_enabled.then(Instant::now);
-        self.input_xr_gamepad
-            .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
+        self.input_xr_gamepad.tick_with_settings(
+            world,
+            visuals,
+            &self.xr,
+            self.input_settings.xr_stick_mode(),
+            queue,
+            dt_sec,
+        );
         queue.flush(world, self, visuals, render_assets);
         if let Some(started) = xr_locomotion_started {
             self.vr_perf_pre_xr.xr_locomotion = started.elapsed();
