@@ -83,6 +83,20 @@ export fn mitten_armory(stations, paths) {
         return best
     }
 
+    // A loaded weapon in the player's hand, for an NPC with nothing else to take.
+    fn held_by_player() {
+        for station in stations {
+            for weapon in station.weapons {
+                if weapon.rounds() > 0 && weapon.player_holds() { return weapon }
+            }
+        }
+        for i in range(loose.count) {
+            let weapon = loose.items["" + i]
+            if weapon.rounds() > 0 && weapon.player_holds() { return weapon }
+        }
+        return null
+    }
+
     fn available(pickup) {
         if !loaded(pickup.weapon) { return false }
         let grip = pickup.weapon.grip.world_trs().translation
@@ -99,7 +113,8 @@ export fn mitten_armory(stations, paths) {
         weapon.reset_grip()
     }
 
-    return { root = root nearest = nearest available = available path = path take = take restore = restore forward = forward }
+    return { root = root nearest = nearest available = available held_by_player = held_by_player path = path
+        take = take restore = restore forward = forward }
 }
 
 export fn mitten_weapon_slot(mount, armory, can_fire, on_shot, on_disarmed, upright_grip) {

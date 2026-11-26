@@ -191,6 +191,18 @@ export fn ship_machine_pistol(label, options) {
     let grip_rest = grip.trs()
     assembly.reset_grip = fn() { grip.trs(grip_rest) }
     assembly.player_holds = fn() { return held.active }
+    // An NPC takes the weapon out of the player's hand. Moving the grip off
+    // the pointer ends the hold, but the grab system then sends no GrabEnd, so
+    // the hold is cleared here. Shared (networked) grips aren't supported yet.
+    assembly.take_from_player = fn() {
+        if !held.active || sharing.socket { return false }
+        held.active = false
+        held.pointer = null
+        tool.use_end()
+        assembly.attach(grip)
+        grip.trs(grip_rest)
+        return true
+    }
     assembly.player_grab = player_grab
     assembly.rounds = fn() { return tool.device_state.ammunition }
     assembly.set_scripted_fire = fn(gate, callback) { script.can_fire = gate script.shot = callback }

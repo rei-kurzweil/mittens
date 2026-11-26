@@ -37,6 +37,8 @@ let WANDER_LEAK = 0.8
 let WANDER_MAX_SPEED = 1.5
 // Distance from the driver's door at which the NPC can get back in.
 let BOARD_DISTANCE = 1.4
+// How close an unarmed NPC gets to the player before taking their weapon.
+let TAKE_REACH = 0.9
 let RUN_SPEED = 2.28
 
 // Rotate v by the unit quaternion q (xyzw).
@@ -121,6 +123,8 @@ export fn practice_health(bar, center, options) {
 //   player_alive() optional gate for the antagonist
 //   armory      an optional mitten_armory. Players can take the NPC's weapon,
 //               and the NPC follows the shortest available route to a loaded gun.
+//               With none to collect it rides its vehicle until one turns up, or
+//               without a vehicle walks up to the player and takes theirs.
 //   retreat(here, player) optional route to cover after a shield or body hit.
 //   on_player_hit(points)  called for each shot that lands on the player
 //   on_down()    called each time the NPC goes down
@@ -168,7 +172,9 @@ export fn practice_target(options) {
         let is_active = activity.moving_to_destination || activity.attacking_target
         if was_active != is_active { activity.tick.bypass(!is_active) }
     }
-    let rearm = { phase = null waypoint = 0 route = null pickup = null }
+    // chase: unarmed with nothing to collect and no vehicle, so going for the
+    // player's weapon (route then leads to the player).
+    let rearm = { phase = null waypoint = 0 route = null pickup = null chase = false }
     let retreat = options["retreat"]
     let cover = { route = null waypoint = 0 hold = false cooldown = false }
     let events = T {}
@@ -317,6 +323,7 @@ export fn practice_target(options) {
         rearm.pickup = null
         rearm.route = null
         rearm.waypoint = 0
+        rearm.chase = false
         cover.route = null
         cover.hold = false
         if cover_hold { cover_hold.pause() }
@@ -535,19 +542,36 @@ export fn practice_target(options) {
     }
 
     fn refresh_motion() {
-        let traveling = cover.route || rearm.pickup || rearm.phase == "return"
-        traveling = traveling || (vehicle && !state.seated && !state.waiting_for_seat && rearm.phase != "seek")
+        let traveling = cover.route || rearm.pickup || rearm.phase == "return" || rearm.chase
+        traveling = traveling || (vehicle && !state.seated && !state.waiting_for_seat)
         let turning = driver && state.seated && driver.turning()
         let wandering = physics || (!vehicle && strafe != 0.0)
         set_activity("moving_to_destination", health.alive() && (traveling || turning || wandering))
     }
     hooks.refresh_motion = refresh_motion
 
+    fn player_alive() { return !options["player_alive"] || options.player_alive() }
+
+    // In order: a loaded weapon to collect; else ride the vehicle; else take
+    // the player's weapon. Rechecked every retry, so a weapon that turns up
+    // later still comes first.
     fn find_weapon() {
         if rearm.phase != "seek" || rearm.pickup || !health.alive() { return }
+        if state.seated {
+            // Weapons are reached on foot, so measure height from the ground.
+            let seat = npc.root.world_trs().translation
+            let ground_y = 0.0
+            if vehicle["ground_y"] != null { ground_y = vehicle.ground_y }
+            if armory.nearest([seat[0], ground_y, seat[2]]) { hooks.eject() }
+        }
         rearm.pickup = armory.nearest(npc.root.world_trs().translation)
         rearm.waypoint = 0
-        if !rearm.pickup { retry.play() }
+        rearm.chase = false
+        if !rearm.pickup {
+            rearm.chase = !vehicle && player && player_alive() && armory.held_by_player() != null
+            rearm.route = null
+            retry.play()
+        }
         refresh_motion()
     }
 
@@ -555,6 +579,47 @@ export fn practice_target(options) {
         rearm.phase = null
         combat.controller.start()
         refresh_motion()
+    }
+
+    // Holding a weapon again: back to the vehicle, or to the NPC's post.
+    fn armed(weapon, rack_gun) {
+        combat.gun.equip(weapon, rack_gun)
+        npc.right_driver.set_pose_valid(true)
+        rearm.pickup = null
+        rearm.chase = false
+        if vehicle {
+            rearm.phase = "vehicle"
+        } else {
+            rearm.phase = "return"
+            rearm.waypoint = 0
+            rearm.route = armory.path(npc.root.world_trs().translation, options.position)
+            if !rearm.route { finish_rearm() }
+        }
+        refresh_motion()
+    }
+
+    fn take_player_weapon() {
+        let weapon = armory.held_by_player()
+        rearm.route = null
+        if weapon && weapon.take_from_player() { armed(weapon, false) }
+    }
+
+    // Walk up to the player, replanning when the route runs out or a retry
+    // clears it (every half second), and take their weapon within reach.
+    fn chase_player(dt) {
+        let here = npc.root.world_trs().translation
+        let target = player.world_trs().translation
+        let dx = target[0] - here[0]
+        let dz = target[2] - here[2]
+        if dx * dx + dz * dz < TAKE_REACH * TAKE_REACH {
+            take_player_weapon()
+            return
+        }
+        if !rearm.route {
+            rearm.route = armory.path(here, [target[0], here[1], target[2]])
+            rearm.waypoint = 0
+        }
+        if rearm.route && follow(rearm, rearm.route, dt) { rearm.route = null }
     }
 
     fn advance_rearm(dt) {
@@ -566,24 +631,19 @@ export fn practice_target(options) {
             if follow(rearm, rearm.route, dt) { finish_rearm() }
             return
         }
-        if !rearm.pickup { return }
+        if !rearm.pickup {
+            // Nothing to collect: ride the vehicle, or go for the player's weapon.
+            if vehicle && !state.seated { hooks.approach(dt) }
+            if rearm.chase { chase_player(dt) }
+            return
+        }
         if !armory.available(rearm.pickup) {
             rearm.pickup = null
             find_weapon()
             return
         }
         if !follow(rearm, rearm.pickup.route, dt) { return }
-        combat.gun.equip(rearm.pickup.weapon, true)
-        npc.right_driver.set_pose_valid(true)
-        rearm.pickup = null
-        if vehicle {
-            rearm.phase = "vehicle"
-        } else {
-            rearm.phase = "return"
-            rearm.waypoint = 0
-            rearm.route = armory.path(npc.root.world_trs().translation, options.position)
-            if !rearm.route { finish_rearm() }
-        }
+        armed(rearm.pickup.weapon, true)
     }
 
     fn check_bearing() {
