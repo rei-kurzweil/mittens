@@ -5,6 +5,7 @@ import { practice_health, practice_target } from "../target_practice.mms"
 import { mitten_antagonist } from "../characters/target_combat.mms"
 import { mitten_armory } from "../characters/mitten_equipment.mms"
 import { player_down_hooks } from "../characters/downed.mms"
+import { shield_pickups } from "../shield_pickups.mms"
 import { interceptor_path_finding } from "./interceptor_paths.mms"
 import { shared_sta_launcher } from "../weapons/shared_sta_launcher.mms"
 import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
@@ -36,11 +37,21 @@ fn mitten_pedestal(name, label, x, z, tint, material, action) {
 
 export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, material) {
     let sounds = arena_audio()
+    // Energy shields: one beside the spawn, one by the pistol rack (range
+    // root space, on the roof). Grip one and let go to wear it; shots drain
+    // it before your health.
+    let shields = shield_pickups("interceptor", [[spawn_x - 1.3, 0.0, spawn_z - 1.65], [2.3, 0.0, -8.2]],
+        local, ["[name='local_left_pointer']", "[name='local_right_pointer']", "[name='local_desktop_pointer']"])
     // Downed for 50 s: lying on the ground, unable to move.
     let player_down = player_down_hooks(local, null)
     let player = practice_health(local.health, local.shield_mount, {
-        on_damage = sounds.damage on_death = player_down.down on_respawn = player_down.up
+        on_damage = sounds.damage on_respawn = player_down.up
+        on_death = fn() {
+            shields.put_back()
+            player_down.down()
+        }
     })
+    player.wear_shields(shields.worn)
     let npc = { current = null spawns = 0 }
     fn range_pistol(label) {
         return ship_machine_pistol(label, {
@@ -72,7 +83,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             position = [spawn_side * 6.35, roof_y, -13.25] yaw = Math.pi strafe = 0.0
             combat = mitten_antagonist player_alive = player.alive
             health_view = local.health_view player = local.shield_mount on_damage = sounds.damage
-            on_player_hit = fn(points) { player.damage(points, 1.0) }
+            on_player_hit = fn(points) { player.hit(points) }
             world_damage = false weapon_name = weapon_name
             armory = armory retreat = paths.retreat
         })
@@ -91,8 +102,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         on_explosion = fn(point) {
             sounds.damage(1.0)
             if npc.current { npc.current.rocket_splash(point) }
-            let blast = player.blast_at(point)
-            if blast { player.damage(blast.health, 1.0) }
+            player.blast(point)
         }
     })
     launcher.bind_pointer(query("#local_left_pointer"))
@@ -102,6 +112,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         sounds.root
         armory.root
         paths.root
+        shields.root
         tripod_light("interceptor_tripod_key", [-4.55, 0.0, 2.65], [0.0, roof_y + 1.15, 0.0],
             SL.color(0.89, 0.72, 0.55).intensity(1.95).distance(8.0).angle(0.46).penumbra(0.46),
             { tint = [0.85, 0.68, 0.53] intensity = 1.7 })
