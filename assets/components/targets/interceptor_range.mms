@@ -4,7 +4,7 @@ import { arena_audio } from "../arena_audio.mms"
 import { practice_health, practice_target } from "../target_practice.mms"
 import { mitten_antagonist } from "../characters/target_combat.mms"
 import { mitten_armory } from "../characters/mitten_equipment.mms"
-import { interceptor_navigation } from "./interceptor_navigation.mms"
+import { interceptor_path_finding } from "./interceptor_paths.mms"
 import { shared_sta_launcher } from "../weapons/shared_sta_launcher.mms"
 import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
 import { sta_ammo_cabinet } from "../sta_ammo_cabinet.mms"
@@ -48,12 +48,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         range_pistol("interceptor_rack_pistol_2")]
     let spawn_left = range_pistol("interceptor_spawn_pistol_left")
     let spawn_right = range_pistol("interceptor_spawn_pistol_right")
-    let navigation = interceptor_navigation(roof_y)
+    let paths = interceptor_path_finding(roof_y)
     let armory = mitten_armory([
         { weapons = pistols approach = [0.0, roof_y, -8.25] },
         { weapons = [spawn_left] approach = [-4.6, roof_y, 4.55] },
         { weapons = [spawn_right] approach = [4.6, roof_y, 4.55] },
-    ], navigation.plan)
+    ], paths.plan)
     // The encounter is per player. Each participant can clear their own range.
     let spawn_side = -1.0
     if spawn_x > 0.0 { spawn_side = 1.0 }
@@ -69,7 +69,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             health_view = local.health_view player = local.shield_mount on_damage = sounds.damage
             on_player_hit = fn(points) { player.damage(points, 1.0) }
             world_damage = false weapon_name = weapon_name
-            armory = armory retreat = navigation.retreat
+            armory = armory retreat = paths.retreat
         })
         target.root
         npc.current = target
@@ -133,5 +133,5 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         ship_input_controller(false, [launcher.grip], all_pistols, armory.forward)
     }
     spawn()
-    return { root = root launcher = launcher }
+    return { root = root launcher = launcher paths = paths armory = armory }
 }

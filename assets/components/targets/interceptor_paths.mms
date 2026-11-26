@@ -44,7 +44,7 @@ fn distance(a, b) {
     return Math.sqrt(x * x + z * z)
 }
 
-export fn interceptor_navigation(roof_y) {
+export fn interceptor_path_finding(roof_y) {
     let nodes = [[-11.35, roof_y, -13.5], [11.35, roof_y, -13.5],
         [-5.9, roof_y, -13.5], [5.9, roof_y, -13.5],
         [-5.9, roof_y, -5.0], [5.9, roof_y, -5.0],
