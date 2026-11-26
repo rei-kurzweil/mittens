@@ -1476,6 +1476,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ParentChanged",
         "AttachmentChanged",
         "RayIntersected",
+        "RayMissed",
         "Scrolling",
         "TextInputChanged",
         "TextInputFocusChanged",

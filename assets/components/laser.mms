@@ -3,6 +3,8 @@ import { emissive_surface } from "./materials/emissive_surface.mms"
 // Independent hitscan projectile slot. The caller owns muzzle, sound and cadence.
 // launch({ pose, source_tool, source_user, on_hit }) takes copied world TRS.
 // Reuse a slot after its short animation finishes; concurrent shots need separate slots.
+// The beam waits for the raycast (about a frame), then runs from the muzzle to
+// the hit, or its full length on a miss, so it never shows through cover.
 export fn laser(options) {
     let label = "laser"
     if options["name"] != null { label = options.name }
@@ -34,10 +36,7 @@ export fn laser(options) {
 
     let animation = Animation.paused().length(0.04 * beats_per_second) {
         name = label + "_shot"
-        Keyframe.at(0.0) {
-            beam.update_transform([0.0, 0.0, -origin_offset - length / 2.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-            emission.set_intensity(12.0)
-        }
+        Keyframe.at(0.0) {}
         Keyframe.at(0.04 * beats_per_second) {
             beam.update_transform([0.0, 0.0, -origin_offset - length / 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
             emission.off()
@@ -52,10 +51,23 @@ export fn laser(options) {
         animation
     }
     root
-    let flight_state = { pending_hit = false context = null }
+    // waiting: a shot whose raycast hasn't answered yet. pending_hit: that
+    // shot is a local one, so a hit reaches on_hit.
+    let flight_state = { pending_hit = false waiting = false context = null }
+
+    // The beam from the muzzle, `distance` long.
+    fn show(distance) {
+        beam.update_transform([0.0, 0.0, -origin_offset - distance / 2.0], [0.0, 0.0, 0.0],
+            [1.0, 1.0, distance / length])
+        emission.set_intensity(12.0)
+        animation.play()
+    }
 
     on(raycaster, "RayIntersected", fn(event) {
-        if event.raycaster == raycaster && flight_state.pending_hit {
+        if event.raycaster != raycaster || !flight_state.waiting { return }
+        flight_state.waiting = false
+        show(event.distance)
+        if flight_state.pending_hit {
             flight_state.pending_hit = false
             let context = flight_state.context
             let hit = {
@@ -67,6 +79,12 @@ export fn laser(options) {
             if context.on_hit != null { context.on_hit(hit) }
         }
     })
+    on(raycaster, "RayMissed", fn(event) {
+        if !flight_state.waiting { return }
+        flight_state.waiting = false
+        flight_state.pending_hit = false
+        show(length)
+    })
 
     fn launch(spec) {
         // Copy the launch context so later tool/user changes cannot retag a hit.
@@ -74,14 +92,18 @@ export fn laser(options) {
         if spec["damage"]!=null {damage=spec.damage}
         flight_state.context = { source_tool = spec.source_tool source_user = spec.source_user damage=damage on_hit = spec.on_hit }
         flight_state.pending_hit = true
+        flight_state.waiting = true
         root.world_trs(spec.pose)
         raycaster.request_raycast()
-        animation.play()
     }
 
+    // A remote shot: its own raycast sets the beam's length, but no hit is
+    // reported, since the shooter's peer owns the hit.
     fn play_visual(pose) {
+        flight_state.pending_hit = false
+        flight_state.waiting = true
         root.world_trs(pose)
-        animation.play()
+        raycaster.request_raycast()
     }
 
     return { root = root animation = animation raycaster = raycaster launch = launch play_visual = play_visual }

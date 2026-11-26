@@ -183,6 +183,17 @@ impl RayCastSystem {
                         },
                     );
                 }
+                if hits.is_empty() && cast_requested {
+                    rx.push_event(
+                        rcid,
+                        EventSignal::RayMissed {
+                            raycaster: rcid,
+                            origin,
+                            dir,
+                            max_distance,
+                        },
+                    );
+                }
 
                 let best = hits.first().copied();
                 match mode {

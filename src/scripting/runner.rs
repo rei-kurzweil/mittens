@@ -566,6 +566,33 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                 ),
             ]))
         }
+        Some(crate::engine::ecs::EventSignal::RayMissed {
+            raycaster,
+            origin,
+            dir,
+            max_distance,
+        }) => {
+            let vector = |values: [f32; 3]| {
+                Value::Array(
+                    values
+                        .into_iter()
+                        .map(|v| Value::Number(v as f64))
+                        .collect(),
+                )
+            };
+            Value::Map(HashMap::from([
+                (
+                    "raycaster".into(),
+                    Value::ComponentObject {
+                        id: *raycaster,
+                        component_type: "Raycast".into(),
+                    },
+                ),
+                ("origin".into(), vector(*origin)),
+                ("direction".into(), vector(*dir)),
+                ("max_distance".into(), Value::Number(*max_distance as f64)),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::AttachmentChanged {
             parent,
             parent_type,

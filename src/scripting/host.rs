@@ -1072,6 +1072,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "ParentChanged" => SignalKind::ParentChanged,
         "AttachmentChanged" => SignalKind::AttachmentChanged,
         "RayIntersected" => SignalKind::RayIntersected,
+        "RayMissed" => SignalKind::RayMissed,
         "Scrolling" => SignalKind::Scrolling,
         "TextInputChanged" => SignalKind::TextInputChanged,
         "TextInputFocusChanged" => SignalKind::TextInputFocusChanged,
