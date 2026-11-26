@@ -1,5 +1,6 @@
 import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
 import { mitten_model } from "mitten.mms"
+import { succubus_avatar } from "succubus/avatar.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../arm_ik/vroid.mms"
 import { ambient_eye_saccades } from "../animations/ambient_eye_saccades.mms"
 import { looping_blink } from "../animations/looping_blink.mms"
@@ -39,10 +40,9 @@ fn vroid_face() {
 let model_uris = {
     lumae = "assets/components/characters/lumae/lumae.glb"
     miku = "assets/models/local/third_party/TDA_Hatsune_Miku/tda_miku_with_bones.glb"
-    succubus = "assets/models/local/succubus.glb"
 }
 
-// pose (Mitten only): "relaxed" starts untracked arms in the relaxed rest
+// pose (Mitten and the succubus): "relaxed" starts untracked arms in the relaxed rest
 // pose; "seated" starts the whole body in the floor-seated pose, a stand-in
 // for sitting in a vehicle seat until a chair pose is captured.
 fn make_mitten(model_name, track_hands, bucket, target_meters, pose) {
@@ -85,17 +85,14 @@ fn make_miku(model_name, track_hands, bucket, target_meters, relaxed) {
     return { model = model eye_height = MIKU_EYE_GLB * MIKU_ASSUMED_SCALE import_scale = MIKU_ASSUMED_SCALE }
 }
 
-fn make_succubus(model_name, track_hands, bucket, target_meters, relaxed) {
-    let model = GLTF.new(model_uris.succubus) {
-        if target_meters != null { target_height(target_meters) }
-        name = model_name
-        if track_hands { HandTracking.new().source("openxr") }
-        bisket_anime_shading(bucket)
-        vroid_humanoid_bone_map()
-        vroid_face()
-    }
-    install_vroid_equipment(model)
-    return { model = model eye_height = 1.659 sole_offset = [0.0, 0.055684, 0.091826] }
+// The succubus shares mitten's skeleton, so mitten's poses apply.
+fn make_succubus(model_name, track_hands, bucket, target_meters, pose) {
+    let children = null
+    if pose == "relaxed" { children = [bisket_relaxed_pose()] }
+    if pose == "seated" { children = [mitten_seated_pose()] }
+    let model = succubus_avatar({ name = model_name xr = track_hands tail_wag = "feline"
+        material = bisket_anime_shading(bucket) target_height = target_meters gltf_children = children })
+    return { model = model eye_height = model.eye_height sole_offset = model.sole_offset }
 }
 
 let factories = { mitten = make_mitten lumae = make_lumae miku = make_miku succubus = make_succubus }
@@ -112,7 +109,7 @@ export fn make_rooftop_player(options) {
     // A non-local player that walks under its own gravity and slides against
     // the world (an NPC), instead of following a peer's replicated root.
     let physical = !local_player && options["physics"] == true
-    // Mitten bodies start in the relaxed rest pose (arms down), or seated
+    // Mitten and succubus bodies start in the relaxed rest pose (arms down), or seated
     // (legs then keep the pose: no crouch or walking IK), when set.
     let seated = options["seated_pose"] == true
     let relaxed_pose = null

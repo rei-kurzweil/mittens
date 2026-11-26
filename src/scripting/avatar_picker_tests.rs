@@ -393,3 +393,53 @@ fn tiny_heights_scale_the_rig(xr: bool) {
         );
     }
 }
+
+#[test]
+fn rooftop_succubus_wears_mitten_colliders_from_its_avatar_script() {
+    let succubus = "assets/models/local/succubus.glb";
+    if !std::path::Path::new(succubus).is_file() {
+        return;
+    }
+    let path = "examples/twilight_rooftop.mms";
+    let source = std::fs::read_to_string(path)
+        .unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
+    let mut scene = Universe::new(World::default());
+    scene.load_mms_source_at_path(&source, path).unwrap();
+    let mut uploader = Uploader::default();
+    for _ in 0..4 {
+        prepare(&mut scene, &mut uploader);
+    }
+    open_dock(&mut scene, &mut uploader, "avatar");
+    let button = named(&scene, "avatar_picker_succubus");
+    let background = scene.world.find_component(button, "#__bg").unwrap();
+    let renderable = scene
+        .world
+        .find_component(background, "renderable")
+        .unwrap();
+    scene.command_queue.push_event(
+        renderable,
+        EventSignal::Click {
+            raycaster: named(&scene, "local_desktop_pointer"),
+            renderable,
+            hit_point: TransformSystem::world_position(&scene.world, renderable).unwrap(),
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..8 {
+        prepare(&mut scene, &mut uploader);
+    }
+    let model = named(&scene, "local_model");
+    let gltf = scene
+        .world
+        .get_component_by_id_as::<GLTFComponent>(model)
+        .unwrap();
+    assert_eq!(gltf.uri, succubus);
+    assert!(gltf.spawned);
+    // The peer is a mitten too, so look under this model only.
+    assert!(
+        scene.world.find_component(model, "#bisket_collider_head").is_some(),
+        "mitten's colliders ride on the succubus model"
+    );
+}
