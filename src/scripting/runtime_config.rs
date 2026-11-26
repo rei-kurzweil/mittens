@@ -530,7 +530,30 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         );
                     }
                 }
-                "InputXR" => no_arg_constructors(component, &["on", "off"]),
+                "InputXR" => {
+                    no_arg_constructors(component, &["on", "off"]);
+                    // Holds the head at a transform, letting through a share
+                    // of the headset's motion (0 freezes, 1 follows).
+                    host_method(
+                        component,
+                        canonical,
+                        "lock_head",
+                        method(
+                            vec![
+                                mms::ValueType::Component,
+                                mms::ValueType::F32,
+                                mms::ValueType::F32,
+                            ],
+                            mms::ValueType::Null,
+                        ),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "unlock_head",
+                        method(vec![], mms::ValueType::Null),
+                    );
+                }
                 "Velocity" => {
                     host_method(
                         component,

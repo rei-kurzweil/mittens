@@ -269,6 +269,39 @@ pub(crate) fn invoke_component_method(
             acceleration.bind_drive_wheel(*steering, *spin, arg_f32(args, 2)?, *front)?;
             Ok(Value::Null)
         }
+        ("InputXR" | "InputVR" | "input_xr", "lock_head") => {
+            let [
+                Value::ComponentObject { id: target, .. },
+                Value::Number(translation),
+                Value::Number(rotation),
+            ] = args
+            else {
+                return Err(
+                    "lock_head(): expected (target transform, translation_follow, rotation_follow)"
+                        .into(),
+                );
+            };
+            if !translation.is_finite() || !rotation.is_finite() {
+                return Err("lock_head(): follow amounts must be finite".into());
+            }
+            if world.get_component_by_id_as::<TransformComponent>(*target).is_none() {
+                return Err("lock_head(): the target must be a Transform".into());
+            }
+            let lock = crate::engine::ecs::component::HeadLock {
+                target: *target,
+                translation_follow: *translation as f32,
+                rotation_follow: *rotation as f32,
+                anchor: None,
+            };
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, Some(lock))
+                .map_err(|error| format!("lock_head(): {error}"))?;
+            Ok(Value::Null)
+        }
+        ("InputXR" | "InputVR" | "input_xr", "unlock_head") => {
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, None)
+                .map_err(|error| format!("unlock_head(): {error}"))?;
+            Ok(Value::Null)
+        }
         ("Velocity" | "velocity", "reset") => {
             if !args.is_empty() {
                 return Err("reset(): expected no arguments".into());

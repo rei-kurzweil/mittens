@@ -2137,6 +2137,12 @@ impl OpenXRSystem {
             world_from_head[3][2],
         ];
         let desired_world_rot = math::mat_to_quat(world_from_head);
+        let (desired_world_pos, desired_world_rot) = super::xr_head_lock::locked_head_pose(
+            world,
+            input_xr_cid,
+            Self::corrected_head_pose(head_pose, correction),
+        )
+        .unwrap_or((desired_world_pos, desired_world_rot));
 
         let local_translation = Self::world_to_local_translation(world, tcid, desired_world_pos);
         let parent_world_rot =
