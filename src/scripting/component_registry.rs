@@ -2274,6 +2274,10 @@ fn create_component(
                 crate::engine::ecs::component::CollisionContextComponent::new()
                     .passthrough(arg_bool(args, 0)?)
             ),
+            Some("overlay") => add!(
+                crate::engine::ecs::component::CollisionContextComponent::new()
+                    .overlay(arg_bool(args, 0)?)
+            ),
             _ => add!(crate::engine::ecs::component::CollisionContextComponent::new()),
         },
         "Mountable" => match ctor {
@@ -3633,6 +3637,7 @@ fn apply_call(
         match method {
             "passthrough" => context.passthrough = arg_bool(args, 0)?,
             "enabled" => context.enabled = arg_bool(args, 0)?,
+            "overlay" => context.overlay = arg_bool(args, 0)?,
             "exclude" => {
                 use crate::engine::ecs::component::CollisionContextComponent as Context;
                 let reference = arg_component_ref(world, args, 0)?;

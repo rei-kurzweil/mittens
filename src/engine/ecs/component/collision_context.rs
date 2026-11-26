@@ -8,11 +8,17 @@ use super::{Component, ComponentRef};
 /// the world, except for zones under this context's frame (the vehicle's own
 /// exterior), or under `exclude` when set: a context on a tilting chassis can
 /// still exclude the whole vehicle root.
+///
+/// An `overlay` context is instead queried by every mover near its frame, in
+/// addition to the mover's own space: a layer of extra colliders, such as an
+/// avatar's limbs, that only matter up close. A mover never collides with
+/// overlay zones under its own body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollisionContextComponent {
     pub passthrough: bool,
     pub enabled: bool,
     pub exclude: Option<ComponentRef>,
+    pub overlay: bool,
 }
 
 impl Default for CollisionContextComponent {
@@ -27,7 +33,13 @@ impl CollisionContextComponent {
             passthrough: true,
             enabled: true,
             exclude: None,
+            overlay: false,
         }
+    }
+
+    pub fn overlay(mut self, value: bool) -> Self {
+        self.overlay = value;
+        self
     }
 
     pub fn exclude(mut self, value: ComponentRef) -> Self {
@@ -70,6 +82,9 @@ impl Component for CollisionContextComponent {
         }
         if !self.enabled {
             expression = expression.with_call("enabled", vec![b(false)]);
+        }
+        if self.overlay {
+            expression = expression.with_call("overlay", vec![b(true)]);
         }
         if let Some(value) = &self.exclude {
             let reference = match value {

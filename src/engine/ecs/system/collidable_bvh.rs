@@ -691,6 +691,11 @@ impl CollidableBvh {
         }
     }
 
+    /// Every context with surfaces.
+    pub(crate) fn context_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.contexts.keys().copied()
+    }
+
     /// The frame whose local coordinates a context's surfaces use.
     pub fn context_frame(&self, context: ComponentId) -> Option<ComponentId> {
         self.contexts.get(&context).map(|tree| tree.frame)

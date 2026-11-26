@@ -1002,8 +1002,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "CollisionContext" => {
                     component
                         .constructor("passthrough", booleans(1))
+                        .constructor("overlay", booleans(1))
                         .builder_call("passthrough", booleans(1))
                         .builder_call("enabled", booleans(1))
+                        .builder_call("overlay", booleans(1))
                         .builder_call("exclude", any(1));
                 }
                 "Mountable" => {

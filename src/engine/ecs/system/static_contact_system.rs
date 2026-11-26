@@ -12,6 +12,13 @@ use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
 
 type Frame = [[f32; 4]; 4];
 
+/// Spaces one mover queries: its home (the world or its outbound context),
+/// the world again for a passthrough context, then nearby overlay contexts.
+const MAX_SPACES: usize = 8;
+/// Overlay contexts whose frame is farther than this from a mover are skipped.
+const OVERLAY_REACH: f32 = 8.0;
+type Spaces = [Option<Space>; MAX_SPACES];
+
 /// A collision space one mover queries: the world, or a collision context in
 /// its frame's local coordinates. Positions convert with `to_space`, local
 /// displacements back with `to_world`; `exclude` skips zones under a root
@@ -86,6 +93,8 @@ pub struct StaticContactSystem {
     broad_phase: CollidableBvh,
     /// Outbound collision context per movement target (a rider's root).
     outbound: HashMap<ComponentId, ComponentId>,
+    /// This pass's enabled overlay contexts, with their frames converted.
+    overlay_spaces: Vec<Space>,
     /// Carried rider roots by the vehicle (movement target) carrying them; a
     /// vehicle's own movers never collide with its riders.
     riders: HashMap<ComponentId, Vec<ComponentId>>,
@@ -115,6 +124,7 @@ impl Default for StaticContactSystem {
             body_offsets: HashMap::new(),
             broad_phase: CollidableBvh::with_contexts(),
             outbound: HashMap::new(),
+            overlay_spaces: Vec::new(),
             riders: HashMap::new(),
             traversal: Vec::new(),
             found: Vec::new(),
@@ -177,7 +187,35 @@ impl StaticContactSystem {
     }
 
     /// The spaces a mover driving `target` queries, outbound first.
-    fn spaces(&self, world: &World, target: ComponentId) -> [Option<Space>; 2] {
+    fn spaces(&self, world: &World, target: ComponentId) -> Spaces {
+        let mut spaces = [None; MAX_SPACES];
+        let [home, passthrough] = self.home_spaces(world, target);
+        spaces[0] = home;
+        spaces[1] = passthrough;
+        spaces
+    }
+
+    /// Add the overlay contexts near a mover's world centre to its spaces,
+    /// skipping its own home context, while slots remain.
+    fn add_overlays(&self, spaces: &mut Spaces, center: [f32; 3]) {
+        let home = spaces[0].and_then(|space| space.context);
+        for overlay in &self.overlay_spaces {
+            if overlay.context == home {
+                continue;
+            }
+            let origin = [overlay.to_world[3][0], overlay.to_world[3][1], overlay.to_world[3][2]];
+            let d2: f32 = (0..3).map(|i| (origin[i] - center[i]).powi(2)).sum();
+            if d2 > OVERLAY_REACH * OVERLAY_REACH {
+                continue;
+            }
+            let Some(slot) = spaces.iter_mut().find(|slot| slot.is_none()) else {
+                return;
+            };
+            *slot = Some(*overlay);
+        }
+    }
+
+    fn home_spaces(&self, world: &World, target: ComponentId) -> [Option<Space>; 2] {
         let Some(context) = self.outbound.get(&target).copied() else {
             return [Some(Space::world(None)), None];
         };
@@ -295,6 +333,36 @@ impl StaticContactSystem {
         for context in outbound {
             self.broad_phase.prepare_context(context);
         }
+        // Overlay contexts are queried by every nearby mover; convert their
+        // frames once per pass.
+        let overlays: Vec<_> = self
+            .broad_phase
+            .context_ids()
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<CollisionContextComponent>(id)
+                    .is_some_and(|context| context.enabled && context.overlay)
+            })
+            .collect();
+        self.overlay_spaces.clear();
+        for context in overlays {
+            self.broad_phase.prepare_context(context);
+            let Some(frame) = self.broad_phase.context_frame(context) else {
+                continue;
+            };
+            let Some(to_world) = TransformSystem::world_model(world, frame) else {
+                continue;
+            };
+            let Some(to_space) = mat4_inverse(to_world) else {
+                continue;
+            };
+            self.overlay_spaces.push(Space {
+                context: Some(context),
+                to_space,
+                to_world,
+                exclude: None,
+            });
+        }
         let mut candidates = std::mem::take(&mut self.candidates);
         let mut additional = std::mem::take(&mut self.additional);
         let mut changed = Vec::new();
@@ -325,7 +393,7 @@ impl StaticContactSystem {
                 .and_then(|c| c.query_owner)
                 .filter(|id| world.get_component_record(*id).is_some())
                 .unwrap_or(target);
-            let spaces = self.spaces(world, target);
+            let mut spaces = self.spaces(world, target);
             let home = spaces[0].expect("outbound space");
             // A carried rider tilts with its deck; its shape is taken in the
             // deck's coordinates, where it is still upright.
@@ -340,6 +408,7 @@ impl StaticContactSystem {
                 self.body_offsets.get(&target).copied().unwrap_or([0.0; 3])
             };
             let center = std::array::from_fn(|i| cached_center[i] + offset[i]);
+            self.add_overlays(&mut spaces, center);
             let carried = self.riders.get(&target).cloned();
             let carried = carried.as_deref();
             // The previous center was stored relative to the outbound space, so
@@ -577,7 +646,7 @@ impl StaticContactSystem {
     /// each found with the mover's bounds in that space's coordinates.
     fn query_candidates(
         &mut self,
-        spaces: &[Option<Space>; 2],
+        spaces: &Spaces,
         previous: [f32; 3],
         center: [f32; 3],
         shape: crate::engine::ecs::component::CollisionShape,
