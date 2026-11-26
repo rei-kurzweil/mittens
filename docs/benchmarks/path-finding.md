@@ -51,26 +51,36 @@ cargo run --release -- load examples/path-finding-benchmark.mms
 
 ## Results
 
-### Before: MMS A* (commit `TODO`)
+Recorded on the VR PC with desktop XR (`cargo run --release`). The desktop
+renderer reports no GPU samples to the benchmark service, so GPU columns are
+omitted. At 90 Hz the frame budget is 11.1 ms.
 
-| Device | plan ms/call | plan worst frame | retreat ms/call | nearest ms/call | nearest worst frame | idle cpu mean / max | nearest-frames cpu mean / max |
-|---|---|---|---|---|---|---|---|
-| GTX 1080 desktop | | | | | | | |
-| Focus 3 (XR2) | | | | | | | |
+### Before: MMS A* (commit `040640c1`, 2026-11-25)
+
+| Call | ms/call | Worst frame | Calls / frames |
+|---|---|---|---|
+| `plan` | 2.553 | 47.858 | 630 / 45 |
+| `retreat` | 3.668 | 10.033 | 90 / 45 |
+| `nearest` | 12.533 | 22.135 | 45 / 45 |
+
+| Window | CPU update mean | CPU update max | Updates |
+|---|---|---|---|
+| idle-frames | 10.927 | 12.638 | 359 |
+| nearest-frames | 19.211 | 34.843 | 203 |
+
+- One `armory.nearest` decision (12.5 ms) costs more than a whole frame.
+- Calling it every frame adds 8.3 ms to the mean CPU update.
+- The idle scene is already at 10.9 ms CPU without any path finding, so
+  planning spikes drop frames.
 
 Fingerprints:
 
 ```text
-fingerprint plan: ...
-fingerprint retreat: ...
-fingerprint nearest: ...
+fingerprint plan: calls 210 unreachable 0 length 4354.22 waypoints 410 score 0
+fingerprint retreat: calls 30 unreachable 0 length 589.46 waypoints 74 score 0
+fingerprint nearest: calls 15 unreachable 0 length 136.15 waypoints 21 score 150.5
 ```
 
 ### After: PathFindingSystem (commit `TODO`)
 
-| Device | plan ms/call | plan worst frame | retreat ms/call | nearest ms/call | nearest worst frame | idle cpu mean / max | nearest-frames cpu mean / max |
-|---|---|---|---|---|---|---|---|
-| GTX 1080 desktop | | | | | | | |
-| Focus 3 (XR2) | | | | | | | |
-
-Fingerprints match before: TODO
+Same tables, run on the same machine. Fingerprints must match the before run.
