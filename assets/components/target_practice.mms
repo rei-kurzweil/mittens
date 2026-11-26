@@ -17,6 +17,8 @@ import { lie_down, get_up } from "./characters/downed.mms"
 let FULL = 10.0
 let INNER_BLAST = { radius = 2.0 shield = 50.0 health = 4.9 }
 let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
+// A pistol point's worth of shield, as on Mitten's own shield.
+let SHIELD_PER_POINT = 10.0
 // Down for 50 s (the death burst, player_death at 2 beats per second, lasts
 // the first six), lying on the ground (downed.mms).
 let RESPAWN_SECONDS = 50.0
@@ -64,9 +66,24 @@ fn noise(value) {
 
 // bar: a health_bar. center: the transform splash distance is measured from.
 // on_damage(cue), on_death() and on_respawn() are optional.
+// hit(points) is a shot that lands and blast(point) a rocket explosion; with
+// a charged energy shield worn (wear_shields(source), source() returning the
+// worn shield or null) shots drain the shield instead of health, and a blast
+// takes its shield share from the shield while its health share always gets
+// through. damage(amount, cue) is health damage itself.
 export fn practice_health(bar, center, options) {
-    let state = { points = FULL }
+    let state = { points = FULL shields = null }
     fn callback(name) { if options { return options[name] } return null }
+    fn cue(value) {
+        let on_damage = callback("on_damage")
+        if on_damage { on_damage(value) }
+    }
+    fn worn_shield() {
+        if !state.shields { return null }
+        let shield = state.shields()
+        if shield && shield.integrity() > 0.0 { return shield }
+        return null
+    }
     let events = T {}
     let revive = after_seconds(events, RESPAWN_SECONDS, "Revive")
     let timers = T { events revive }
@@ -99,6 +116,26 @@ export fn practice_health(bar, center, options) {
         if d2 <= OUTER_BLAST.radius * OUTER_BLAST.radius { return OUTER_BLAST }
         return null
     }
+    fn hit(points) {
+        if !alive() || points <= 0.0 { return }
+        let shield = worn_shield()
+        if shield {
+            shield.take_damage(points * SHIELD_PER_POINT)
+            cue(2.0)
+            return
+        }
+        damage(points, 1.0)
+    }
+    fn blast(point) {
+        let ring = blast_at(point)
+        if !ring || !alive() { return }
+        let shield = worn_shield()
+        if shield && ring.shield > 0.0 {
+            shield.take_damage(ring.shield)
+            if ring.health <= 0.0 { cue(2.0) }
+        }
+        if ring.health > 0.0 { damage(ring.health, 1.0) }
+    }
     on(events, "DataEvent", fn(event) {
         if event != "Revive" { return }
         state.points = FULL
@@ -106,7 +143,8 @@ export fn practice_health(bar, center, options) {
         let on_respawn = callback("on_respawn")
         if on_respawn { on_respawn() }
     })
-    return { root = timers alive = alive damage = damage blast_at = blast_at }
+    return { root = timers alive = alive damage = damage blast_at = blast_at hit = hit blast = blast
+        wear_shields = fn(source) { state.shields = source } }
 }
 
 // A rooftop player that wanders (or, without physics, strafes left and

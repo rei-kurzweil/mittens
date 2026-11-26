@@ -8,6 +8,7 @@ import { make_rooftop_player } from "../assets/components/characters/rooftop_pla
 import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { practice_health, practice_target } from "../assets/components/target_practice.mms"
 import { player_down_hooks } from "../assets/components/characters/downed.mms"
+import { shield_pickups } from "../assets/components/shield_pickups.mms"
 import { mitten_antagonist } from "../assets/components/characters/target_combat.mms"
 import { mitten_armory } from "../assets/components/characters/mitten_equipment.mms"
 import { arena_audio } from "../assets/components/arena_audio.mms"
@@ -203,6 +204,10 @@ T.position(-12.0, 3.2, -2.0).rotation(0.0, Math.pi / 4.0, 0.0) {
     T.position(-2.6, 0.55, 0.02).scale(0.5, 0.5, 0.5) { player_kills }
     T.position(0.6, 0.55, 0.02).scale(0.5, 0.5, 0.5) { npc_kills }
 }
+// Two energy shields on stands either side of the spawn: grip one and let
+// go to wear it. Shots drain it before your health.
+let shields = shield_pickups("demo", [[-2.2, 0.0, -1.0], [2.2, 0.0, -1.0]], local, ["[name='local_left_pointer']", "[name='local_right_pointer']", "[name='local_desktop_pointer']"])
+shields.root
 // Downed for 50 s: lying on the ground, unable to move.
 let player_down = player_down_hooks(local, fn() { return { desktop = query("#local_desktop_locomotion") } })
 let player = practice_health(local.health, local.shield_mount, {
@@ -210,10 +215,12 @@ let player = practice_health(local.health, local.shield_mount, {
     on_death = fn() {
         kills.npc = kills.npc + 1
         npc_kills.set_text("NPC\n" + kills.npc)
+        shields.put_back()
         player_down.down()
     }
     on_respawn = player_down.up
 })
+player.wear_shields(shields.worn)
 fn can_fire(user) { return player.alive() }
 
 let encounter = { target = null }
@@ -247,7 +254,7 @@ let target = practice_target({
     }
     player = local.shield_mount
     combat = mitten_antagonist player_alive = player.alive armory = armory
-    on_player_hit = fn(points) { player.damage(points, 1.0) }
+    on_player_hit = fn(points) { player.hit(points) }
 })
 encounter.target = target
 chassis.attach(target.root)
@@ -275,8 +282,7 @@ launcher_options.on_explosion = fn(point) {
     // Until rockets have their own explosion sound, use the damage cue.
     sounds.damage(1.0)
     target.rocket_splash(point)
-    let blast = player.blast_at(point)
-    if blast { player.damage(blast.health, 1.0) }
+    player.blast(point)
 }
 let launcher = shared_sta_launcher("demo_sta_launcher", launcher_options)
 T.position(1.6, 0.0, -1.4) {

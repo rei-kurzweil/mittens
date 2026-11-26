@@ -81,51 +81,31 @@ AL.rgb(0.42, 0.50, 0.62)
 T.position(SUN[0], SUN[1], SUN[2]) { DL.color(1.0, 0.96, 0.86).intensity(1.6) }
 T.position(-0.5, 0.4, 0.6) { DL.color(0.62, 0.74, 1.0).intensity(0.45) }
 
-// Hills: one huge sphere is the flat ground (its top at GROUND_Y) and large
-// spheres sunk below it leave gentle caps, fused with a wide smooth blend so
-// every slope rounds into the ground. The same field gives hill_height.
-let GROUND_Y = -0.03
-// Big enough to curve less than 0.1 m across the hills.
-let GROUND_RADIUS = 50000.0
-let HILL_BLEND = 4.0
-let HILL_TOP = 8.0
+// Ground and hills: a flat grass slab (its top at y = 0) and, for each hill,
+// one large sphere sunk into it, so the ground cuts the sphere into a gentle
+// cap. Each hill is its own small implicit surface bounded around its cap,
+// one sphere per field.
 // [x, z, radius, depth]: the cap rises radius - depth above the ground.
-// Kept far enough in that their blended skirts are flat by the field's edge.
 let HILLS = [
     [20.0, -24.0, 38.0, 33.0], [-26.0, -18.0, 40.0, 34.0], [30.0, 18.0, 36.0, 32.0],
     [-22.0, 26.0, 42.0, 36.5], [2.0, -34.0, 44.0, 37.0], [-38.0, 2.0, 36.0, 32.0],
     [38.0, -2.0, 38.0, 34.0], [8.0, 38.0, 40.0, 35.0],
 ]
-// Implicit fields bake at most 128 cells per axis: four 64 m chunks at 0.5 m.
 let HILL_VOXEL = 0.5
-let HILL_EXTENT = 64.0
 
-fn smooth_min(a, b, blend) {
-    let h = Math.clamp(0.5 + 0.5 * (b - a) / blend, 0.0, 1.0)
-    return b * (1.0 - h) + a * h - blend * h * (1.0 - h)
-}
-
-fn hill_field(x, y, z) {
-    let ground_dy = y - GROUND_Y + GROUND_RADIUS
-    let field = Math.sqrt(x * x + ground_dy * ground_dy + z * z) - GROUND_RADIUS
+// The ground's height at (x, z): the highest hill cap there, or 0.
+fn hill_height(x, z) {
+    let height = 0.0
     for hill in HILLS {
         let dx = x - hill[0]
-        let dy = y + hill[3]
         let dz = z - hill[1]
-        field = smooth_min(field, Math.sqrt(dx * dx + dy * dy + dz * dz) - hill[2], HILL_BLEND)
+        let inside = hill[2] * hill[2] - dx * dx - dz * dz
+        if inside > 0.0 {
+            let cap = Math.sqrt(inside) - hill[3]
+            if cap > height { height = cap }
+        }
     }
-    return field
-}
-
-// The ground's height at (x, z), by bisecting the field.
-fn hill_height(x, z) {
-    let low = -0.3
-    let high = HILL_TOP
-    for iteration in range(20) {
-        let y = (low + high) / 2.0
-        if hill_field(x, y, z) < 0.0 { low = y } else { high = y }
-    }
-    return high
+    return height
 }
 
 // Pastel green that stays green: linear [0.40, 0.89, 0.29] shows as #99db85
@@ -136,38 +116,31 @@ let grass = cartoon_grass("far", {
     fade_near = 10.0 fade_far = 18.0
 })
 T {
-    name = "bliss_hills"
-    for chunk in range(4) {
-        let x0 = -HILL_EXTENT
-        let z0 = -HILL_EXTENT
-        if chunk % 2 == 1 { x0 = 0.0 }
-        if chunk >= 2 { z0 = 0.0 }
-        ImplicitSurface.bounds(x0, -0.3, z0, x0 + HILL_EXTENT, HILL_TOP, z0 + HILL_EXTENT)
-            .voxel_size(HILL_VOXEL).smooth_min_radius(HILL_BLEND).clip_floor(-0.08).uv_scale(0.25) {
-            name = "bliss_hills_" + chunk
+    name = "bliss_ground"
+    T.position(0.0, -0.5, 0.0).scale(600.0, 1.0, 600.0) {
+        R.cube() {
             grass C.rgba(1.0, 1.0, 1.0, 1.0)
             Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
             TextureFiltering.linear()
-            // This zone receives the baked triangles, so feet and wheels touch
-            // the same surface that is drawn.
-            Zone.cube([HILL_EXTENT / 2.0, HILL_TOP, HILL_EXTENT / 2.0]) { Collidable.static().friction(0.8) {} }
-            T.position(0.0, GROUND_Y - GROUND_RADIUS, 0.0) { ImplicitSphere.radius(GROUND_RADIUS) }
-            for hill in HILLS {
-                T.position(hill[0], -hill[3], hill[1]) { ImplicitSphere.radius(hill[2]) }
-            }
         }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
     }
-    // Flat grass out to the horizon around the hills, just under the field's
-    // edge (the ground sphere has curved a few centimetres down by then).
-    for strip in [[0.0, -182.0, 600.0, 236.0], [0.0, 182.0, 600.0, 236.0],
-        [-182.0, 0.0, 236.0, 128.0], [182.0, 0.0, 236.0, 128.0]] {
-        T.position(strip[0], GROUND_Y - 0.53, strip[1]).scale(strip[2], 1.0, strip[3]) {
-            R.cube() {
+    for index in range(len(HILLS)) {
+        let hill = HILLS[index]
+        let reach = Math.sqrt(hill[2] * hill[2] - hill[3] * hill[3]) + 1.0
+        let top = hill[2] - hill[3] + 0.5
+        T.position(hill[0], 0.0, hill[1]) {
+            ImplicitSurface.bounds(-reach, -0.3, -reach, reach, top, reach)
+                .voxel_size(HILL_VOXEL).clip_floor(-0.08).uv_scale(0.25) {
+                name = "bliss_hill_" + index
                 grass C.rgba(1.0, 1.0, 1.0, 1.0)
                 Texture.with_uri("assets/textures/grass/cartoon-grass-tufts.png")
                 TextureFiltering.linear()
+                // This zone receives the baked triangles, so feet and wheels
+                // touch the same surface that is drawn.
+                Zone.cube([reach, top, reach]) { Collidable.static().friction(0.8) {} }
+                T.position(0.0, -hill[3], 0.0) { ImplicitSphere.radius(hill[2]) }
             }
-            Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
         }
     }
 }

@@ -140,7 +140,7 @@ let target = practice_target({
     }
     // It turns to you every five seconds and fires; step aside to dodge.
     player = local.shield_mount
-    on_player_hit = fn(points) { player.damage(points, 1.0) }
+    on_player_hit = fn(points) { player.hit(points) }
 })
 target.root
 
@@ -167,8 +167,7 @@ launcher_options.on_explosion = fn(point) {
     // Until rockets have their own explosion sound, use the damage cue.
     sounds.damage(1.0)
     target.rocket_splash(point)
-    let blast = player.blast_at(point)
-    if blast { player.damage(blast.health, 1.0) }
+    player.blast(point)
 }
 let launcher = shared_sta_launcher("practice_sta_launcher", launcher_options)
 T.position(1.6, 0.0, -1.4) {
