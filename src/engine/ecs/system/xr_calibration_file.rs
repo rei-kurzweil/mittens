@@ -1,5 +1,6 @@
 //! Explicit, synchronous persistence for the shared user floor calibration.
-use std::{fs, io::Write, path::PathBuf};
+use crate::utils::user_config;
+use std::{fs, path::PathBuf};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,23 +18,7 @@ pub(super) fn validate(meters: f64) -> Result<(), &'static str> {
 
 /// Shared across scenes; never depends on the process working directory.
 pub fn default_file() -> Result<PathBuf, String> {
-    let env_path = |name| {
-        std::env::var_os(name)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-    };
-    #[cfg(target_os = "windows")]
-    let base = env_path("APPDATA");
-    #[cfg(target_os = "macos")]
-    let base = env_path("HOME").map(|p| p.join("Library/Application Support"));
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base = env_path("XDG_CONFIG_HOME")
-        .filter(|p| p.is_absolute())
-        .or_else(|| env_path("HOME").map(|p| p.join(".config")));
-    let base = base
-        .filter(|p| p.is_absolute())
-        .ok_or("cannot determine an absolute user config directory")?;
-    Ok(base.join("mittens/xr-calibration.json"))
+    Ok(user_config::directory()?.join("xr-calibration.json"))
 }
 
 /// Local filenames or local file URLs only. URL parsing handles percent escapes.
@@ -85,34 +70,13 @@ pub fn load(file: &str) -> Result<f64, String> {
 pub fn save(file: &str, meters: f64) -> Result<(), String> {
     validate(meters)?;
     let path = local_path(file)?;
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-    let temporary = parent.join(format!(".xr-calibration-{}.tmp", uuid::Uuid::new_v4()));
-    let data = serde_json::to_vec_pretty(&Calibration {
+    let mut data = serde_json::to_vec_pretty(&Calibration {
         version: 1,
         floor_correction_meters: meters,
     })
     .map_err(|e| e.to_string())?;
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|e| format!("cannot create calibration temporary file: {e}"))?;
-    let result = (|| {
-        output.write_all(&data)?;
-        output.write_all(b"\n")?;
-        output.sync_all()?;
-        drop(output);
-        fs::rename(&temporary, &path)
-    })();
-    if let Err(e) = result {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!("cannot save {}: {e}", path.display()));
-    }
-    Ok(())
+    data.push(b'\n');
+    user_config::write_atomic(&path, &data)
 }
 
 #[cfg(test)]

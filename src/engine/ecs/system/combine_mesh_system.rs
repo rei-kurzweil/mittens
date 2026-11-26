@@ -37,6 +37,7 @@ struct CombinedOutput {
     root_model: [[f32; 4]; 4],
     collapsed: bool,
     fallback_material: MaterialHandle,
+    occlusion: Option<u64>,
 }
 
 impl CombineMeshSystem {
@@ -240,6 +241,7 @@ impl CombineMeshSystem {
                 root_model,
                 collapsed: !keep_transforms,
                 fallback_material: material,
+                occlusion,
             };
             Self::bind_material(visuals, &output, material_source);
             if let Some(key) = occlusion {
@@ -284,6 +286,22 @@ impl CombineMeshSystem {
             visuals.remove(output.handle);
         }
         mesh_bounds.remove(root);
+    }
+
+    /// The baked texture only matches the combined mesh's atlas UVs.
+    pub(crate) fn unpacked_appearance(
+        &self,
+        root: ComponentId,
+        visuals: &VisualWorld,
+    ) -> Option<crate::engine::graphics::visual_world::VisualInstance> {
+        let output = self.outputs.get(&root)?;
+        let mut style = *visuals.instance(output.handle)?;
+        if let Some(texture) = output.occlusion.and_then(|key| self.occlusion.texture(key))
+            && style.texture == Some(texture)
+        {
+            style.texture = None;
+        }
+        Some(style)
     }
 
     fn bind_material(

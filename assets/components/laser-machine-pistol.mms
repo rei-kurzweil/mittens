@@ -68,6 +68,7 @@ export fn laser_machine_pistol(options) {
             if device_state.burst_mode=="auto" {damage=1.5}
             let pose = aim.world_trs()
             projectile.launch({ pose = pose source_tool = device_state.tool source_user = device_state.user damage=damage on_hit = on_hit })
+            if options["on_shot"] { options.on_shot(pose, device_state.burst_mode) }
             if network { network.shot(index, pose, device_state.burst_mode) }
             emit_data(completion, "ShotFired")
         }

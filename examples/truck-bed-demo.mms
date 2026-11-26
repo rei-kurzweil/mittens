@@ -7,6 +7,8 @@ let start_in_third_person = false
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { practice_health, practice_target } from "../assets/components/target_practice.mms"
+import { mitten_antagonist } from "../assets/components/characters/target_combat.mms"
+import { mitten_armory } from "../assets/components/characters/mitten_equipment.mms"
 import { arena_audio } from "../assets/components/arena_audio.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
@@ -23,14 +25,11 @@ import { pool_tile_material } from "../assets/components/materials/pool_tiles.mm
 import { destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
 import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
-import { vehicle_patrol } from "../assets/components/vehicles/vehicle_patrol.mms"
 import { display_car_desktop, display_car_xr } from "../assets/components/vehicles/display_car.mms"
 
 // Truck bed demo: target practice on a range three times as long, with a
-// road across it. A control script drives a pickup back and forth along the
-// road (through the truck's common vehicle input, not its occupant), while
-// Mitten rides in the driver's seat, shielded, aiming and firing at you the
-// way the target practice NPC does. Climb the crates to the bridge over the
+// road across it. Mitten drives the pickup to bring players into her field
+// of fire, brakes to shoot, and leaves the truck to replace stolen weapons. Climb the crates to the bridge over the
 // road and jump down into the truck bed as it passes: you ride along,
 // walking around the bed while it drives, turns and tilts, and step off with
 // its speed. Items released inside the bed ride along too. The ground,
@@ -153,8 +152,11 @@ let wreck_delay = Animation.paused().length(24.0) {
 }
 wreck_events.attach(wreck_delay)
 // The current truck's parts; Mitten's ride (chassis space) follows it.
-let fleet = { place = null motion = null truck = null chassis = null patrol = null }
-let truck_ride = { chassis = null seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] ground_y = -0.15 }
+let fleet = { place = null truck = null chassis = null }
+let truck_ride = {
+    truck = null chassis = null seat = [-0.33, 0.20, 0.30] door = [-1.95, 0.0, -0.25] ground_y = -0.15
+    turn_bounds = { min_x = -44.0 max_x = 44.0 min_z = -20.0 max_z = 5.0 }
+}
 fn spawn_truck() {
     let motion = pickup_truck([0.55, 0.78, 0.90], null, true, { acceleration_drive = true vehicle_id = "demo_pickup" })
     let place = T.position(-12.0, 0.0, road_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
@@ -163,13 +165,10 @@ fn spawn_truck() {
     }
     place
     let truck = motion.query("#pickup_truck")
-    // Every other run is slower, to make jumping in easier.
-    let patrol = vehicle_patrol(motion, truck, {
-        name = "demo_truck" axis = "x" center = 0.0 drive_seconds = 4.0 slow_throttle = 0.4
-    })
-    patrol
+    truck.set_control_input({ brake = true })
     truck.set_on_wrecked(fn() { wreck_delay.play() })
-    fleet.place = place fleet.motion = motion fleet.truck = truck fleet.patrol = patrol
+    fleet.place = place fleet.truck = truck
+    truck_ride.truck = truck
     fleet.chassis = motion.query("#pickup_chassis_frame")
     truck_ride.chassis = fleet.chassis
 }
@@ -212,6 +211,21 @@ let player = practice_health(local.health, local.shield_mount, {
 })
 fn can_fire(user) { return player.alive() }
 
+let encounter = { target = null }
+fn weapon_options(id) {
+    return { weapon_id = id opaque_bucket = "near" can_fire = can_fire
+        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
+}
+fn make_pistol(index) {
+    let options = weapon_options("demo.pistol." + index)
+    options.ammunition = 128
+    options.on_hit = fn(hit) { if encounter.target && hit.source_user != null { encounter.target.pistol_hit(hit) } }
+    return ship_machine_pistol("demo_machine_pistol_" + index, options)
+}
+let pistols = [make_pistol(1), make_pistol(2), make_pistol(3)]
+let armory = mitten_armory([{ weapons = pistols approach = [-2.2, 0.0, -2.6] }], null)
+armory.root
+
 // Seated in the driver's seat (chassis space): the head lands near the
 // driver's eye point. The script drives; Mitten only aims and fires, and
 // climbs back in after going down.
@@ -227,33 +241,23 @@ let target = practice_target({
         player_kills.set_text("PLAYER\n" + kills.player)
     }
     player = local.shield_mount
+    combat = mitten_antagonist player_alive = player.alive armory = armory
     on_player_hit = fn(points) { player.damage(points, 1.0) }
 })
+encounter.target = target
 chassis.attach(target.root)
 
 // The new truck takes over: Mitten moves to it (into its seat if she's
 // seated), and the wreck's smoke stops with it.
 on(wreck_events, "DataEvent", fn(event) {
     if event != "TruckRebuilt" { return }
-    let old = { place = fleet.place truck = fleet.truck patrol = fleet.patrol }
+    let old = { place = fleet.place truck = fleet.truck }
     spawn_truck()
     target.set_vehicle_chassis(fleet.chassis)
     old.truck.repair_damage()
-    old.patrol.remove_subtree()
     old.place.remove_subtree()
 })
 
-fn weapon_options(id) {
-    return { weapon_id = id opaque_bucket = "near" can_fire = can_fire
-        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
-}
-fn make_pistol(index) {
-    let options = weapon_options("demo.pistol." + index)
-    options.ammunition = 240
-    options.on_hit = target.pistol_hit
-    return ship_machine_pistol("demo_machine_pistol_" + index, options)
-}
-let pistols = [make_pistol(1), make_pistol(2), make_pistol(3)]
 T.position(-2.2, 0.0, -1.4) {
     name = "demo_pistol_rack"
     box([0.0, 0.48, 0.0], [2.5, 0.96, 0.75], pink)
@@ -275,7 +279,7 @@ T.position(1.6, 0.0, -1.4) {
     box([0.0, 0.48, 0.0], [0.55, 0.96, 0.55], pink)
 }
 T.position(2.7, 0.0, -1.6) { sta_ammo_cabinet("demo_sta_ammo_cabinet") }
-ship_input_controller(false, [launcher.grip], pistols)
+ship_input_controller(false, [launcher.grip], pistols, armory.forward)
 
 // The mech, parked left of the spawn and facing the road. Its laser hits
 // count as pistol hits on Mitten and its rockets as rocket splash; both cut

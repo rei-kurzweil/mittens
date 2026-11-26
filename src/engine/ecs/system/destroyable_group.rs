@@ -169,10 +169,7 @@ impl DestroyableGroups {
             if sources.is_empty() {
                 continue;
             }
-            let Some(style) = visuals
-                .instance_handle_for_component(combine)
-                .and_then(|h| visuals.instance(h))
-                .copied()
+            let Some(style) = systems.combine_mesh.unpacked_appearance(combine, visuals)
             else {
                 return false;
             };

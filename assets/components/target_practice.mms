@@ -2,7 +2,10 @@ import { make_rooftop_player } from "./characters/rooftop_player.mms"
 import { energy_shield } from "./energy_sheild.mms"
 import { player_death } from "./player_death.mms"
 import { ship_machine_pistol } from "./weapons/ship_machine_pistol.mms"
-import { pistol_grip } from "./poses/bisket/pistol_grip.mms"
+import { practice_combat } from "./characters/target_combat.mms"
+import { mitten_weapon_slot } from "./characters/mitten_equipment.mms"
+import { mitten_driver } from "./characters/mitten_driver.mms"
+import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_grip.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -16,26 +19,7 @@ let OUTER_BLAST = { radius = 6.0 shield = 25.0 health = 0.0 }
 let BEATS_PER_SECOND = 2.0
 // The death burst (player_death at 2 beats per second) lasts six seconds.
 let RESPAWN_SECONDS = 6.0
-// The NPC alternates PHASE_SECONDS of semi-auto and of full auto. Each
-// cycle it turns to the player (AIM_TURN_SECONDS), then pulls the trigger:
-//   semi: one shot every SEMI_PERIOD_SECONDS, SEMI_POINTS if it lands
-//   auto: AUTO_HOLD_SECONDS bursts AUTO_WAIT_SECONDS apart, AUTO_POINTS per
-//         landed shot at the pistol's auto cadence
-// A shot lands if the player is still within SHOT_HALF_WIDTH of the aimed
-// line (the NPC does not track during a burst).
-let PHASE_SECONDS = 30.0
 let AIM_TURN_SECONDS = 0.6
-// The turn plus a beat before the trigger.
-let AIM_SECONDS = AIM_TURN_SECONDS + 0.1
-let SEMI_PERIOD_SECONDS = 5.0
-// Semi fires on a keyframe shortly after the press; release after this.
-let SEMI_HOLD_SECONDS = 0.3
-let SEMI_POINTS = 1.0
-let AUTO_HOLD_SECONDS = 1.5
-let AUTO_WAIT_SECONDS = 6.0
-let AUTO_POINTS = 0.5
-// laser_machine_pistol's auto cadence.
-let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
 let SHOT_HALF_WIDTH = 0.35
 // A solid this close in front of the player's chest is the player's own
 // body or hitbox, not cover.
@@ -53,11 +37,9 @@ let HAND_YAW = Math.pi / 2.0
 let WANDER_KICK = 1.0
 let WANDER_LEAK = 0.8
 let WANDER_MAX_SPEED = 1.5
-// Out of its vehicle, the NPC walks back to the driver's door in half-second
-// legs at walking pace, and gets in once this close.
-let WALK_SPEED = 1.4
-let WALK_STEP_SECONDS = 0.5
+// Distance from the driver's door at which the NPC can get back in.
 let BOARD_DISTANCE = 1.4
+let RUN_SPEED = 2.28
 
 // A paused one-shot timer: play() it, and `seconds` later it emits `name`
 // as a DataEvent on `events`. Timing runs natively, not in per-frame script.
@@ -133,7 +115,7 @@ export fn practice_health(bar, center, options) {
         let on_respawn = callback("on_respawn")
         if on_respawn { on_respawn() }
     })
-    return { alive = alive damage = damage blast_at = blast_at }
+    return { root = timers alive = alive damage = damage blast_at = blast_at }
 }
 
 // A rooftop player that wanders (or, without physics, strafes left and
@@ -149,6 +131,11 @@ export fn practice_health(bar, center, options) {
 //   player       a transform to aim at: the NPC turns to face it and fires
 //                a machine pistol held in its right hand, alternating 30 s
 //                of single shots every 5 s with 30 s of 1.5 s auto bursts
+//   combat      optional controller factory such as mitten_antagonist
+//   player_alive() optional gate for the antagonist
+//   armory      an optional mitten_armory. Players can take the NPC's weapon,
+//               and the NPC follows the shortest available route to a loaded gun.
+//   retreat(here, player) optional route to cover after a shield or body hit.
 //   on_player_hit(points)  called for each shot that lands on the player
 //   on_down()    called each time the NPC goes down
 //   health_view (the bar faces it), on_damage(cue)
@@ -161,17 +148,22 @@ export fn practice_health(bar, center, options) {
 //                after respawning it walks back to the door, which may be
 //                moving, and gets back in, aiming and firing throughout.
 //                ground_y (default 0) is her root's height off the truck.
+//                truck is the optional drive input target. turn_bounds marks
+//                the limits of the driving area for repositioning.
 //                set_vehicle_chassis(chassis) moves her to another vehicle
 // The NPC's root may ride a moving, turned parent (a truck's chassis): it
 // aims in world space and turns relative to that parent.
 export fn practice_target(options) {
     let physics = options["physics"] == true
+    let armory = options["armory"]
+    let gait = null
+    if armory { gait = { stride = 0.37 step_scale = 1.60 step_height = 0.075 } }
     let npc = make_rooftop_player({
         prefix = options.prefix local_player = false avatar = options.avatar
         use_xr = options.use_xr use_desktop = options.use_desktop opaque_bucket = "near"
         show_health = true health_view = options["health_view"] shield_mount = true
         // The untracked left arm rests in the relaxed pose.
-        physics = physics relaxed_pose = true seated_pose = options["seated"] == true
+        physics = physics relaxed_pose = true seated_pose = options["seated"] == true walking_ik = gait
     })
     let strafe = 2.5
     if options["strafe"] != null { strafe = options.strafe }
@@ -180,6 +172,11 @@ export fn practice_target(options) {
     let on_damage = options["on_damage"]
     let player = options["player"]
     let vehicle = options["vehicle"]
+    let driver = null
+    if vehicle && vehicle["truck"] && player { driver = mitten_driver(vehicle, player) }
+    let rearm = { phase = null waypoint = 0 route = null pickup = null retry = 0.0 }
+    let retreat = options["retreat"]
+    let cover = { route = null waypoint = 0 hold = 0.0 cooldown = 0.0 }
     // yaw is the head's heading relative to the NPC's parent; aim_yaw is the
     // world heading of the last aim, for the shot check; frame is the NPC's
     // root frame once built, whose parent may turn.
@@ -196,7 +193,7 @@ export fn practice_target(options) {
         shield.set_worn(true, true)
         state.shield = shield
     }
-    let hooks = { death = null respawn = null set_chassis = null }
+    let hooks = { death = null respawn = null set_chassis = null remove_ground = null eject = null approach = null }
     let health = practice_health(npc.health, npc.shield_mount, {
         on_damage = on_damage
         on_death = fn() {
@@ -211,15 +208,28 @@ export fn practice_target(options) {
     })
     wear_shield()
 
+    fn seek_cover() {
+        if !retreat || !player || !health.alive() || rearm.phase || cover.route || cover.cooldown > 0.0 { return }
+        let route = retreat(npc.root.world_trs().translation, player.world_trs().translation)
+        if !route || route.length < 0.3 { return }
+        cover.route = route
+        cover.waypoint = 0
+        cover.cooldown = 8.0
+    }
+
     fn pistol_hit(hit) {
         if !health.alive() { return }
         let shield = hit.renderable.energy_shield
         if shield && shield == state.shield {
             shield.take_damage(10.0)
             if on_damage { on_damage(2.0) }
+            seek_cover()
             return
         }
-        if hit.renderable.player_hit_zone == npc.hit_zone { health.damage(1.0, 1.0) }
+        if hit.renderable.player_hit_zone == npc.hit_zone {
+            health.damage(1.0, 1.0)
+            seek_cover()
+        }
     }
     fn rocket_splash(point) {
         let blast = health.blast_at(point)
@@ -234,12 +244,13 @@ export fn practice_target(options) {
         } else if shield_hit && on_damage {
             on_damage(2.0)
         }
+        if blast.health > 0.0 || shield_hit { seek_cover() }
     }
 
     // Turning: the head target carries the whole rig (body, both arms and
     // the pistol). One update_transform per aim; the Transition tweens it.
     let turn = Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() }
-    npc.head.attach(turn)
+    if !options["combat"] { npc.head.attach(turn) }
     fn face(yaw) {
         // Take the short way round from the current heading.
         if yaw - state.yaw > Math.pi { yaw = yaw - 2.0 * Math.pi }
@@ -251,7 +262,9 @@ export fn practice_target(options) {
     // Up/down aim: the right hand swings on the shoulder by `pitch` (positive
     // is up) and tilts with it, tweened like the turn.
     let raise = Transition { duration_beats(AIM_TURN_SECONDS * 2.0) ease_in_out_sine() replace_same_target() }
-    npc.right.attach(raise)
+    if !options["combat"] { npc.right.attach(raise) }
+    let wrist_basis = null
+    if options.avatar == "mitten" { wrist_basis = mitten_right_wrist_basis() }
     fn aim_hand(pitch) {
         state.pitch = pitch
         let translation = [
@@ -259,35 +272,80 @@ export fn practice_target(options) {
             SHOULDER[1] + Math.sin(pitch) * HAND_REACH - HAND_DROP,
             SHOULDER[2] - Math.cos(pitch) * HAND_REACH,
         ]
-        // Pitch about the head's X after the palm-left yaw: qx(pitch) * qy(yaw).
         let sa = Math.sin(pitch / 2.0)
         let ca = Math.cos(pitch / 2.0)
         let sb = Math.sin(HAND_YAW / 2.0)
         let cb = Math.cos(HAND_YAW / 2.0)
+        let rotation = [sa * cb, ca * sb, sa * sb, ca * cb]
+        if wrist_basis {
+            let q = wrist_basis
+            rotation = [ca * q[0] + sa * q[3], ca * q[1] - sa * q[2], ca * q[2] + sa * q[1], ca * q[3] - sa * q[0]]
+        }
         npc.right.trs({
             translation = translation
-            rotation_quat_xyzw = [sa * cb, ca * sb, sa * sb, ca * cb]
+            rotation_quat_xyzw = rotation
             scale = [1.0, 1.0, 1.0]
         })
     }
 
     // The right arm is held out with the pistol; the left arm relaxes.
-    let gun = null
+    let combat = { controller = null gun = null }
+    fn shot(pose, mode) {
+        if combat.controller && combat.controller["shot"] { combat.controller.shot(pose, mode) }
+    }
+    fn disarmed() {
+        if driver { driver.stop() }
+        if hooks.eject { hooks.eject() }
+        if combat.controller { combat.controller.stop() }
+        npc.right_driver.set_pose_valid(false)
+        rearm.phase = "seek"
+        rearm.pickup = null
+        rearm.route = null
+        rearm.waypoint = 0
+        rearm.retry = 0.0
+        cover.route = null
+        cover.hold = 0.0
+    }
+    fn can_attack() {
+        if !health.alive() || !combat.gun.has_ammo() || rearm.phase || cover.route || cover.hold > 0.0 { return false }
+        return !state.seated || !driver || driver.can_fire()
+    }
     if player {
         npc.left_driver.set_pose_valid(false)
         npc.right_driver.set_pose_valid(true)
         aim_hand(0.0)
-        on(npc.model, "GLTFInitialized", fn(event) { pistol_grip(event.gltf, "Right") })
-        gun = ship_machine_pistol(options.prefix + "_pistol", {
-            opaque_bucket = "near" ammunition = 1000000 can_fire = fn(user) { return health.alive() }
+        let weapon_name = options["weapon_name"]
+        if !weapon_name { weapon_name = options.prefix + "_pistol" }
+        let weapon = ship_machine_pistol(weapon_name, {
+            opaque_bucket = "near" ammunition = 128
+            on_hit = fn(hit) { if hit.source_user != null { pistol_hit(hit) } }
+            world_damage = options["world_damage"]
+            left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
         })
-        // The player can't take it out of the NPC's hand.
-        for grab in gun.grip.query_all("grabbable") { grab.remove_subtree() }
-        let gun_mount = T.position(0.0, 0.0, -0.105) {
-            name = options.prefix + "_gun_mount"
-            gun
+        if !armory {
+            for grab in weapon.grip.query_all("grabbable") { grab.remove_subtree() }
         }
-        npc.right.attach(gun_mount)
+        let grip_offset = [0.0, 0.0, -0.105]
+        if wrist_basis { grip_offset = [-0.018, 0.0, -0.105] }
+        let gun_mount = T.position(grip_offset[0], grip_offset[1], grip_offset[2]) {
+            name = options.prefix + "_gun_mount"
+        }
+        let mount = gun_mount
+        if wrist_basis {
+            // Cancel the bone basis for the prop, and follow the solved wrist.
+            let q = wrist_basis
+            mount = T.rotation_quat(-q[0], -q[1], -q[2], q[3]) { gun_mount }
+        }
+        npc.right.attach(mount)
+        on(npc.model, "GLTFInitialized", fn(event) {
+            pistol_grip(event.gltf, "Right")
+            if wrist_basis {
+                let wrist = event.gltf.query("#J_Bip_R_Hand")
+                if wrist { wrist.attach(mount) }
+            }
+        })
+        combat.gun = mitten_weapon_slot(gun_mount, armory, can_attack, shot, disarmed, wrist_basis != null)
+        combat.gun.equip(weapon, false)
     }
     // Shots leave from about shoulder height under the head.
     fn shoulder_world() {
@@ -300,139 +358,80 @@ export fn practice_target(options) {
         let q = state.frame.world_trs().rotation_quat_xyzw
         return 2.0 * Math.atan2(q[1], q[3])
     }
-    // Turn and raise the pistol toward the player, once per aim.
-    fn aim_at_player() {
-        let s = shoulder_world()
+    // The antagonist moves the real muzzle toward the target. The legacy
+    // practice profile takes a single aim sample and lets its rig tween to it.
+    fn aim_at_player(max_step) {
+        let origin = shoulder_world()
+        if max_step != null { origin = combat.gun.muzzle_pose().translation }
         let p = player.world_trs().translation
-        let dx = p[0] - s[0]
-        let dz = p[2] - s[2]
+        let dx = p[0] - origin[0]
+        let dz = p[2] - origin[2]
         state.aim_yaw = Math.atan2(-dx, -dz)
-        face(state.aim_yaw - frame_yaw())
-        aim_hand(Math.atan2(p[1] - s[1], Math.sqrt(dx * dx + dz * dz)))
+        let yaw = state.aim_yaw - frame_yaw()
+        let pitch = Math.atan2(p[1] - origin[1], Math.sqrt(dx * dx + dz * dz))
+        if max_step != null {
+            let delta = yaw - state.yaw
+            yaw = state.yaw + Math.clamp(Math.atan2(Math.sin(delta), Math.cos(delta)), -max_step, max_step)
+            pitch = state.pitch + Math.clamp(pitch - state.pitch, -max_step, max_step)
+        }
+        face(yaw)
+        aim_hand(pitch)
     }
-    // A shot along the aimed line lands if the player is still near it.
-    fn shot_lands() {
+    fn shot_lands(pose) {
         let s = shoulder_world()
-        let p = player.world_trs().translation
-        let d = [p[0] - s[0], p[1] - s[1], p[2] - s[2]]
         let c = Math.cos(state.pitch)
         let f = [-Math.sin(state.aim_yaw) * c, Math.sin(state.pitch), -Math.cos(state.aim_yaw) * c]
+        if pose {
+            s = pose.translation
+            f = rotate(pose.rotation_quat_xyzw, [0.0, 0.0, -1.0])
+        }
+        let p = player.world_trs().translation
+        let d = [p[0] - s[0], p[1] - s[1], p[2] - s[2]]
         let along = d[0] * f[0] + d[1] * f[1] + d[2] * f[2]
         let off = [d[0] - f[0] * along, d[1] - f[1] * along, d[2] - f[2] * along]
         let miss = Math.sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2])
-        if along <= 0.0 || miss >= SHOT_HALF_WIDTH { return false }
-        // Cover blocks it: anything solid on the line well before the player
-        // (crates, the ammo cabinet, a vehicle's hull or cockpit walls).
+        if along <= 0.0 || miss >= SHOT_HALF_WIDTH || (pose && along > 60.0) { return false }
+        // Only check solid cover on a shot that can actually reach the player.
         let distance = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+        if pose { d = f distance = along }
         let hit = Physics.raycast(s, d, distance)
         return hit == null || hit.distance > distance - COVER_MARGIN
     }
 
-    // Combat activity state machine, timed by animations (no per-frame
-    // script): each activity's timer emits a DataEvent when it ends and the
-    // machine enters `next`:
-    //   wait -> aim -> fire -> wait ...    (down while the NPC is dead)
-    // Entering an activity performs its one action: aim turns to the player,
-    // fire presses the trigger, leaving fire releases it. A looping 30 s
-    // phase animation flips semi/auto; the flip applies when a wait begins,
-    // never mid-burst.
-    let combat = { activity = "down" next = "wait" mode = "semi" flip = false }
-    let events = T {}
-    let timers = { wait = null aim = null fire = null }
-    let clocks = null
-    if gun {
-        timers.wait = {
-            semi = after_seconds(events, SEMI_PERIOD_SECONDS - AIM_SECONDS - SEMI_HOLD_SECONDS, "WaitDone")
-            auto = after_seconds(events, AUTO_WAIT_SECONDS, "WaitDone")
+    if combat.gun {
+        let controller = options["combat"]
+        if !controller { controller = practice_combat }
+        combat.controller = controller({
+            name = options.prefix gun = combat.gun aim = aim_at_player shot_lands = shot_lands
+            on_player_hit = options["on_player_hit"] player_alive = options["player_alive"]
+            can_attack = can_attack
+        })
+        hooks.death = fn() {
+            combat.controller.stop()
+            cover.route = null
+            cover.hold = 0.0
         }
-        timers.aim = after_seconds(events, AIM_SECONDS, "AimDone")
-        timers.fire = { semi = after_seconds(events, SEMI_HOLD_SECONDS, "FireDone") }
-        // An auto burst checks each shot at the pistol's cadence.
-        let burst_beats = AUTO_HOLD_SECONDS * BEATS_PER_SECOND
-        let shot_beats = AUTO_SHOT_SECONDS * BEATS_PER_SECOND
-        let burst = Animation.paused().length(burst_beats) {
-            Keyframe.at(0.0) {}
-            for shot in range(Math.floor(AUTO_HOLD_SECONDS / AUTO_SHOT_SECONDS)) {
-                Keyframe.at((shot + 1) * shot_beats) { emit_data(events, "Shot") }
-            }
-            Keyframe.at(burst_beats) { emit_data(events, "FireDone") }
-        }
-        timers.fire.auto = burst
-        let phase = Animation.looping().length(PHASE_SECONDS * BEATS_PER_SECOND) {
-            Keyframe.at(0.0) {}
-            // Just inside the loop: a keyframe on a looping clip's very end may
-            // never fire.
-            Keyframe.at(PHASE_SECONDS * BEATS_PER_SECOND - 0.05) { emit_data(events, "PhaseFlip") }
-        }
-        let timer_root = T {
-            name = options.prefix + "_combat_timers"
-            events timers.wait.semi timers.wait.auto timers.aim timers.fire.semi burst phase
-        }
-        clocks = timer_root
-    }
-    fn check_shot() {
-        let points = SEMI_POINTS
-        if combat.mode == "auto" { points = AUTO_POINTS }
-        if shot_lands() && options["on_player_hit"] { options.on_player_hit(points) }
-    }
-    fn stop_timers() {
-        timers.wait.semi.pause()
-        timers.wait.auto.pause()
-        timers.aim.pause()
-        timers.fire.semi.pause()
-        timers.fire.auto.pause()
-    }
-    fn enter(activity) {
-        if combat.activity == "fire" { gun.fire_end() }
-        combat.activity = activity
-        if activity == "wait" {
-            if combat.flip {
-                combat.flip = false
-                if combat.mode == "semi" { combat.mode = "auto" } else { combat.mode = "semi" }
-                gun.set_mode(combat.mode)
-            }
-            combat.next = "aim"
-            timers.wait[combat.mode].play()
-        }
-        if activity == "aim" {
-            aim_at_player()
-            combat.next = "fire"
-            timers.aim.play()
-        }
-        if activity == "fire" {
-            gun.fire_start()
-            combat.next = "wait"
-            // The first shot leaves with the press; auto keyframes check the rest.
-            check_shot()
-            timers.fire[combat.mode].play()
-        }
-        if activity == "down" {
-            stop_timers()
-            combat.next = "wait"
-        }
-    }
-    on(events, "DataEvent", fn(event) {
-        if combat.activity == "down" { return }
-        if event == "PhaseFlip" { combat.flip = true }
-        if event == "Shot" && combat.activity == "fire" { check_shot() }
-        if event == "WaitDone" || event == "AimDone" || event == "FireDone" { enter(combat.next) }
-    })
-    if gun {
-        hooks.death = fn() { enter("down") }
-        hooks.respawn = fn() { enter("wait") }
-        enter("wait")
+        hooks.respawn = fn() { if !rearm.phase { combat.controller.start() } }
+        combat.controller.start()
     }
 
-    // Vehicle riding (see the vehicle option): eject on death, walk back to
-    // the door after respawning, then get in. Walking tweens the NPC's root
-    // inside its frame, so the walking IK steps the legs, and getting in
-    // tweens it back into the seat.
+    fn walk_to(destination, dt) {
+        let here = npc.root.world_trs().translation
+        let dx = destination[0] - here[0]
+        let dz = destination[2] - here[2]
+        let distance = Math.sqrt(dx * dx + dz * dz)
+        if distance < 0.08 { return true }
+        let step = Math.clamp(RUN_SPEED * dt / distance, 0.0, 1.0)
+        face(Math.atan2(-dx, -dz) - frame_yaw())
+        npc.root.set_translation([here[0] + dx * step, here[1], here[2] + dz * step], "world")
+        return false
+    }
+    // Death and disarming both take Mitten out through the driver's door.
     fn ride_vehicle(ride) {
         state.seated = true
+        if driver { ride.truck.set_remote_occupied(true) }
         let ground = T { name = options.prefix + "_ground" }
         ground
-        let walk = Transition { duration_beats(WALK_STEP_SECONDS * BEATS_PER_SECOND) replace_same_target() }
-        npc.root.attach(walk)
         fn chassis_point(local) {
             let pose = ride.chassis.world_trs()
             let r = rotate(pose.rotation_quat_xyzw, local)
@@ -440,7 +439,9 @@ export fn practice_target(options) {
         }
         fn eject() {
             if !state.seated { return }
+            if driver { driver.stop() }
             state.seated = false
+            if driver { ride.truck.set_remote_occupied(false) }
             let door = chassis_point(ride.door)
             let ground_y = 0.0
             if ride["ground_y"] != null { ground_y = ride.ground_y }
@@ -455,31 +456,23 @@ export fn practice_target(options) {
             state.frame.update_transform(ride.seat, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             npc.root.update_transform([0.0, 0.0, 0.0])
             npc.set_legs_enabled(false)
+            if driver { driver.stop() ride.truck.set_remote_occupied(true) }
         }
-        fn approach() {
-            if state.seated || !health.alive() { return }
+        hooks.approach = fn(dt) {
             let door = chassis_point(ride.door)
             let here = npc.root.world_trs().translation
             let dx = door[0] - here[0]
             let dz = door[2] - here[2]
-            let d = Math.sqrt(dx * dx + dz * dz)
-            if d < BOARD_DISTANCE {
-                board()
-                return
+            if dx * dx + dz * dz > BOARD_DISTANCE * BOARD_DISTANCE {
+                walk_to(door, dt)
+                return false
             }
-            let step = Math.clamp(d, 0.0, WALK_SPEED * WALK_STEP_SECONDS)
-            let base = state.frame.world_trs().translation
-            npc.root.update_transform([here[0] + dx / d * step - base[0], 0.0, here[2] + dz / d * step - base[2]])
+            if driver && ride.truck.drive_status().mounted { return false }
+            board()
+            return true
         }
-        let walk_events = T { name = options.prefix + "_walk_events" }
-        // The event sits at the start of the loop: a keyframe on a looping
-        // clip's very end may never fire.
-        let walking = Animation.looping().length(WALK_STEP_SECONDS * BEATS_PER_SECOND) {
-            Keyframe.at(0.0) { emit_data(walk_events, "Approach") }
-        }
-        ground.attach(walk_events)
-        ground.attach(walking)
-        on(walk_events, "DataEvent", fn(event) { if event == "Approach" { approach() } })
+        hooks.remove_ground = fn() { ground.remove_subtree() }
+        hooks.eject = eject
         hooks.set_chassis = fn(chassis) {
             ride.chassis = chassis
             if state.seated { board() }
@@ -495,13 +488,79 @@ export fn practice_target(options) {
     let frame = T.position(p[0], p[1], p[2]) {
         name = options.prefix + "_frame"
         npc.locomotion
-        if clocks { clocks }
+        health.root
+        if combat.controller && combat.controller.root { combat.controller.root }
     }
     state.frame = frame
     if vehicle { ride_vehicle(vehicle) }
-    on_global("FrameTick", fn(event) {
+    fn follow(path, route, dt) {
+        if walk_to(route.point(path.waypoint), dt) { path.waypoint = path.waypoint + 1 }
+        return path.waypoint == route.count
+    }
+
+    fn finish_rearm() {
+        rearm.phase = null
+        combat.controller.start()
+    }
+
+    fn advance_rearm(dt) {
+        if rearm.phase == "vehicle" {
+            if hooks.approach(dt) { finish_rearm() }
+            return
+        }
+        if rearm.phase == "return" {
+            if !rearm.route || follow(rearm, rearm.route, dt) { finish_rearm() }
+            return
+        }
+        if rearm.pickup && !armory.available(rearm.pickup) {
+            rearm.pickup = null
+            rearm.retry = 0.0
+        }
+        if !rearm.pickup {
+            rearm.retry = rearm.retry - dt
+            if rearm.retry > 0.0 { return }
+            rearm.pickup = armory.nearest(npc.root.world_trs().translation)
+            rearm.waypoint = 0
+            rearm.retry = 0.5
+            if !rearm.pickup { return }
+        }
+        if !follow(rearm, rearm.pickup.route, dt) { return }
+        combat.gun.equip(rearm.pickup.weapon, true)
+        npc.right_driver.set_pose_valid(true)
+        rearm.pickup = null
+        if vehicle {
+            rearm.phase = "vehicle"
+        } else {
+            rearm.phase = "return"
+            rearm.waypoint = 0
+            rearm.route = armory.path(npc.root.world_trs().translation, options.position)
+        }
+    }
+    let movement = on(world, "FrameTick", fn(event) {
         let dt = event.dt_sec
         let alive = health.alive()
+        if cover.cooldown > 0.0 { cover.cooldown = cover.cooldown - dt }
+        if cover.hold > 0.0 { cover.hold = cover.hold - dt }
+        if alive && armory && combat.gun && combat.gun.ready() && !combat.gun.has_ammo() {
+            combat.gun.discard(npc.root.world_trs().translation[1])
+            return
+        }
+        if rearm.phase {
+            if alive { advance_rearm(dt) }
+            return
+        }
+        if alive && cover.route {
+            if follow(cover, cover.route, dt) {
+                cover.route = null
+                cover.hold = 2.5
+            }
+            return
+        }
+        if vehicle && !state.seated && alive { hooks.approach(dt) }
+        if driver && state.seated {
+            if alive && (!options["player_alive"] || options.player_alive()) { driver.update() }
+            else { driver.stop() }
+        }
         if physics {
             // Brown-noise wander: random kicks integrate into the walking
             // velocity, which leaks back toward a stop so it stays bounded.
@@ -526,13 +585,25 @@ export fn practice_target(options) {
             // translate adds velocity: steer toward the walk, leave Y to gravity.
             let linear = npc.velocity.linear()
             npc.velocity.translate([vx - linear[0], 0.0, vz - linear[2]])
-        } else if alive && !vehicle {
+        } else if alive && !vehicle && strafe != 0.0 {
             // Strafe back and forth along X.
             state.time = state.time + dt
             npc.root.update_transform([strafe * Math.sin(state.time * speed), 0.0, 0.0])
         }
     })
     return {
+        remove = fn() {
+            if combat.controller {
+                if combat.controller["dispose"] { combat.controller.dispose() }
+                else { combat.controller.stop() }
+            }
+            movement.remove()
+            if driver { driver.stop() }
+            if combat.gun { combat.gun.dispose() }
+            npc.dispose()
+            frame.remove_subtree()
+            if hooks.remove_ground { hooks.remove_ground() }
+        }
         root = frame npc = npc pistol_hit = pistol_hit rocket_splash = rocket_splash alive = health.alive
         set_vehicle_chassis = fn(chassis) { if hooks.set_chassis { hooks.set_chassis(chassis) } }
         center = fn() { return npc.shield_mount.world_trs().translation }

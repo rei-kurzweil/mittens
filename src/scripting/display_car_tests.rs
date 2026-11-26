@@ -767,7 +767,7 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
 fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
     use crate::engine::ecs::component::{InputXRGamepadComponent, MountableComponent};
     let mut f = Fixture::new(
-        r#"
+        r##"
         import {display_car} from "../assets/components/vehicles/display_car.mms"
         display_car("test_car",[0,0,0],0,"test_mount",[])
         T {
@@ -775,7 +775,7 @@ fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
             InputXRGamepad.locomotion() { name = "test_rider_pad" }
             Rider.anchor("#test_rider_root").movement_root("#test_rider_root").input("#test_rider_pad") {}
         }
-    "#,
+    "##,
     );
     let pad = f.named("test_rider_pad");
     let rider = f

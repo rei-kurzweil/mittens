@@ -6,11 +6,15 @@ import { shared_grabbable } from "../network/shared_grabbable.mms"
 import { shared_impact } from "../network/shared_impact.mms"
 import { weapon_restock } from "./weapon_restock.mms"
 
-export fn apply_machine_pistol_impact(point, amount) {
-    Damage.at(point[0], point[1], point[2], 0.28, amount)
+fn play_impact(point) {
     let effect = mini_explosion(point, 2.0)
     effect.root
     effect.animation.play()
+}
+
+export fn apply_machine_pistol_impact(point, amount) {
+    Damage.at(point[0], point[1], point[2], 0.28, amount)
+    play_impact(point)
 }
 
 // Reuses the existing weapon's muzzle, selector, sounds and firing cadence.
@@ -29,6 +33,7 @@ export fn ship_machine_pistol(label, options) {
     let impacts = null
     let fire_gate = null
     let on_hit = null
+    let script = { shot = null can_fire = null }
     let ammunition = 75
     let left_pointer = "#ship_left_hand_pointer"
     let right_pointer = "#ship_right_hand_pointer"
@@ -39,8 +44,7 @@ export fn ship_machine_pistol(label, options) {
         fire_gate = options["can_fire"]
         on_hit = options["on_hit"]
         if options["ammunition"] != null {
-            ammunition = Math.floor(options.ammunition)
-            if ammunition < 0 { ammunition = 0 }
+            ammunition = Math.clamp(Math.floor(options.ammunition), 0, 128)
         }
         if options["weapon_id"] { sharing.id = options.weapon_id }
         if options["left_pointer"] { left_pointer = options.left_pointer }
@@ -48,19 +52,24 @@ export fn ship_machine_pistol(label, options) {
         if options["user"] { user = options.user }
     }
     fn locally_owned() { return !sharing.grab || sharing.grab.state.owner == options.rank }
-    fn can_fire(user) { return locally_owned() && (!fire_gate || fire_gate(user)) }
+    fn can_fire(user) {
+        return locally_owned() && (!fire_gate || fire_gate(user)) &&
+            (user != null || !script.can_fire || script.can_fire())
+    }
     let own_impacts = sharing.socket && !impacts
     if own_impacts {
         impacts = shared_impact({ socket = sharing.socket name = sharing.id apply = apply_machine_pistol_impact })
     }
     fn impact(hit) {
         if impacts { impacts.hit(hit.hit_point, hit.damage) }
+        else if options && options["world_damage"] == false { play_impact(hit.hit_point) }
         else { apply_machine_pistol_impact(hit.hit_point, hit.damage) }
         if on_hit { on_hit(hit) }
     }
     let tool = laser_machine_pistol({
         name = label + "_laser" length = 60.0 flash_size = 0.22 beam_radius = 0.012
         ray_origin_offset = 0.18 on_hit = impact ammunition = ammunition
+        on_shot = fn(pose, mode) { if script.shot { script.shot(pose, mode) } }
         socket = sharing.socket weapon_id = sharing.id can_fire = can_fire
     })
     let ammo_count = Text {
@@ -102,6 +111,7 @@ export fn ship_machine_pistol(label, options) {
     })
     let held = { active = false hand = "" pointer = null }
     fn apply_ammo(amount, returned) {
+        amount = Math.clamp(Math.floor(amount), 0, ammunition)
         if returned {
             held.active = false
             held.pointer = null
@@ -129,14 +139,16 @@ export fn ship_machine_pistol(label, options) {
             GLTF.new("assets/models/sakura-machine-pistol.glb") { name = label material }
         }
     }
+    fn player_grab(pointer) {
+        held.active = true
+        held.pointer = pointer
+        held.hand = "Desktop"
+        if pointer == query(left_pointer) { held.hand = "Left" }
+        if pointer == query(right_pointer) { held.hand = "Right" }
+        show_ammo(tool.device_state.ammunition)
+    }
     on(grip, "GrabStart", fn(event) {
-        if event.target == grip {
-            held.active = true
-            held.pointer = event.pointer
-            held.hand = "Desktop"
-            if event.pointer == query(left_pointer) { held.hand = "Left" }
-            if event.pointer == query(right_pointer) { held.hand = "Right" }
-        }
+        if event.target == grip { player_grab(event.pointer) }
     })
     on(grip, "GrabEnd", fn(event) {
         if event.target == grip && event.pointer == held.pointer {
@@ -176,11 +188,18 @@ export fn ship_machine_pistol(label, options) {
         for projectile in tool.projectiles { projectile }
     }
     assembly.grip = grip
+    let grip_rest = grip.trs()
+    assembly.reset_grip = fn() { grip.trs(grip_rest) }
+    assembly.player_holds = fn() { return held.active }
+    assembly.player_grab = player_grab
+    assembly.rounds = fn() { return tool.device_state.ammunition }
+    assembly.set_scripted_fire = fn(gate, callback) { script.can_fire = gate script.shot = callback }
     // Scripted trigger for a non-player holder (an NPC). Semi mode fires on
     // a keyframe shortly after the press, so release a moment later.
     assembly.fire_start = fn() { return tool.use_start({ user = null }) }
     assembly.fire_end = fn() { tool.use_end() }
     assembly.set_mode = fn(mode) { tool.set_mode(mode) }
+    assembly.muzzle_pose = fn() { return tool.root.world_trs() }
     if sharing.socket {
         assembly.bind_pointer = sharing.grab.bind_pointer
         assembly.connect = fn(group, address) {

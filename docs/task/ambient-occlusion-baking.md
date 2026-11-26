@@ -201,6 +201,9 @@ Facts from `assets/models/mitten_pickup.glb` and
   visual review in slice 3.
 - Destroyable parts can change the combined mesh. A rebake follows from the
   cache key; the first version may simply drop AO when the mesh changes.
+- Consider moving retained batch appearance into the AO module. Keep its
+  bake and texture lookups off the intact render path, and check that CSG
+  outputs and unpacked sources sample only textures that match their UVs.
 
 ## Slices
 

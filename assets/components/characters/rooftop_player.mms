@@ -136,6 +136,7 @@ export fn make_rooftop_player(options) {
         }
     }
     let external_hands = !local_player || !use_xr
+    let gait = options["walking_ik"]
     let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) {
         if track_hands { laser() }
         left
@@ -174,7 +175,10 @@ export fn make_rooftop_player(options) {
                 crouch_sole_offsets(spec.sole_offset, spec.sole_offset)
                 arm_ik(vroid_arm_ik_bend_plane_prototype())
             }
-            WalkingIK { step_scale(1.3) }
+            WalkingIK {
+                if gait { stride(gait.stride) step_scale(gait.step_scale) step_height(gait.step_height) }
+                else { step_scale(1.3) }
+            }
             if !local_player && !physical { collision_response("read_only") }
             if local_player && choice != "miku" {
                 mouth_open_from_amplitude(voice_level)
@@ -475,7 +479,7 @@ export fn make_rooftop_player(options) {
         on_global("MountStarted", fn(event) { held.mounted = true })
         on_global("MountEnded", fn(event) { held.mounted = false })
     }
-    on(world, "FrameTick", fn(event) {
+    let avatar_timeout = on(world, "FrameTick", fn(event) {
         let pending = state.pending
         if !pending { return }
         pending.elapsed = pending.elapsed + event.dt_sec
@@ -509,6 +513,7 @@ export fn make_rooftop_player(options) {
     fn on_avatar_changed(callback) { state.changed = callback }
     fn bind_avatar() { if state.changed { state.changed(state.head, state.model, state.choice) } }
     return {
+        dispose = fn() { cancel_avatar_load() avatar_timeout.remove() }
         root = root locomotion = locomotion velocity = velocity head = head left = left right = right model = initial.model
         left_driver = left_driver right_driver = right_driver label = label health = health health_view = health_view hit_zone = hit_zone
         shield_mount = shield_mount

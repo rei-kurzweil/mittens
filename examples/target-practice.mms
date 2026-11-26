@@ -150,7 +150,7 @@ fn weapon_options(id) {
 }
 fn make_pistol(index) {
     let options = weapon_options("practice.pistol." + index)
-    options.ammunition = 240
+    options.ammunition = 128
     options.on_hit = target.pistol_hit
     return ship_machine_pistol("practice_machine_pistol_" + index, options)
 }

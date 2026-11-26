@@ -5,6 +5,13 @@
 //   on(model, "GLTFInitialized", fn(event) { pistol_grip(event.gltf, "Right") })
 let PHALANX_ANGLES = [1.05, 1.25, 0.75]
 
+// Mitten's authored wrist uses +Y toward the middle finger. Convert an
+// upright -Z aiming frame to the bind basis consumed by the external driver.
+// The GLB's middle finger defines forward and little-to-index defines up.
+export fn mitten_right_wrist_basis() {
+    return [-0.504981, 0.455556, -0.504982, 0.531467]
+}
+
 fn curl_finger(model, prefix, finger, curl) {
     let segments = ["1", "2", "3"]
     for i in range(3) {

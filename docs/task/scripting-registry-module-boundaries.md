@@ -91,6 +91,14 @@ and existing phase gating; avoid per-operation runtime dispatch or new per-frame
 allocations. Validate language tests, partial transform execution, morph ownership
 and two-peer avatar tests. This proposal does not perform the split.
 
+## Persisted network preferences
+
+Keep the network preference schemas and host calls in a settings adapter.
+Consider grouping the settings API routing into one cohesive preferences
+dispatcher as more network settings are added. Keep file I/O on explicit
+preference calls and preserve direct dispatch in frame callbacks. Validate
+default and persisted preferences, the dock toggle, and existing calibration.
+
 ## Authored morph-animation API
 
 Group GLTF morph read/write/clear operations in a cohesive morph API adapter,

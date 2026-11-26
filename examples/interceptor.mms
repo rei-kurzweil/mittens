@@ -7,12 +7,14 @@ import { f32, str, vec3, vec4 } from "types"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { sky_cloud_banks } from "../assets/components/backgrounds/clouds.mms"
 import { emissive_surface } from "../assets/components/materials/emissive_surface.mms"
+import { interceptor_range } from "../assets/components/targets/interceptor_range.mms"
 import { truss } from "../assets/components/truss.mms"
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { input_settings_panel } from "../assets/components/panels/input_settings_panel.mms"
+import { network_settings_panel } from "../assets/components/panels/network_settings_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
 import { mirror_panel } from "../assets/components/panels/mirror_panel.mms"
 import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
@@ -57,10 +59,14 @@ T.position(0.18, 0.38, -1.0) { DL.color(0.76, 0.74, 1.0).intensity(0.36) }
 let far_anime = Material(MaterialDefinition.anime().opaque_bucket("far")).inputs({
     shade_color = [0.28, 0.24, 0.35] shade_strength = 0.65 rim_strength = 0.016
 })
-let hangar_anime = Material(MaterialDefinition.anime()).inputs({
-    shade_color = [0.37, 0.34, 0.48] shade_strength = 0.56 rim_strength = 0.12
-    rim_color = [0.82, 0.72, 1.0]
-})
+fn hangar_material(rim_strength) {
+    return Material(MaterialDefinition.anime()).inputs({
+        shade_color = [0.37, 0.34, 0.48] shade_strength = 0.56 rim_strength = rim_strength
+        rim_color = [0.82, 0.72, 1.0]
+    })
+}
+let hangar_anime = hangar_material(0.12)
+let hangar_shell = hangar_material(0.025)
 let hull_anime = Material(MaterialDefinition.anime().opaque_bucket("near")).inputs({
     shade_color = [0.36, 0.34, 0.50] shade_strength = 0.53 rim_strength = 0.24
     rim_color = [0.80, 0.78, 1.0]
@@ -156,24 +162,43 @@ Raycastable.disabled() {
 }
 
 let roof_y = 28.0
-let walls = [0.33, 0.36, 0.45]
+let walls = [0.10, 0.115, 0.16]
+let ceiling = [0.060, 0.068, 0.095]
 let trim = [0.16, 0.17, 0.24]
 let door = [0.24, 0.27, 0.36]
+
+fn shell_panel(name, position, size, color, material) {
+    let panel = box(position, size, color, material, true)
+    let damage = Destroyable.threshold(3.0).chunk_size(2.5) { name = "interceptor_" + name + "_damage" }
+    panel.attach(damage)
+    return panel
+}
+
+let hull = GLTF.new("assets/models/interceptor.glb") { name = "interceptor_hull" hull_anime }
+on(hull, "GLTFInitialized", fn(event) {
+    for part_mesh in event.gltf.query_all("renderable") {
+        // A full STA blast fits the per-surface damage cell budget.
+        let damage = Destroyable.threshold(3.0).cell_size(0.25) { name = "interceptor_hull_damage" }
+        let contact = Collidable.static().friction(0.85) {}
+        part_mesh.attach(damage)
+        part_mesh.attach(contact)
+    }
+})
 box([0.0, roof_y / 2.0 - 0.25, 0.0], [27.9, roof_y - 0.5, 33.9], [0.043, 0.036, 0.061], far_anime, false)
 T.position(0.0, roof_y, 0.0) {
     name = "interceptor_rooftop_hangar"
-    box([0.0, -0.25, 0.0], [28.0, 0.5, 34.0], [0.19, 0.19, 0.25], hangar_anime, true)
-    box([0.0, 7.64, 0.0], [20.6, 0.36, 24.9], walls, hangar_anime, true)
+    shell_panel("deck", [0.0, -0.25, 0.0], [28.0, 0.5, 34.0], [0.19, 0.19, 0.25], hangar_anime)
+    shell_panel("ceiling", [0.0, 7.64, 0.0], [20.6, 0.36, 24.9], ceiling, hangar_shell)
     for side in [-1, 1] {
-        box([side * 10.03, 3.75, 0.0], [0.30, 7.5, 24.5], walls, hangar_anime, true)
-        box([0.0, 6.78, side * 12.20], [20.3, 1.44, 0.38], walls, hangar_anime, true)
+        shell_panel("wall", [side * 10.03, 3.75, 0.0], [0.30, 7.5, 24.5], walls, hangar_shell)
+        shell_panel("header", [0.0, 6.78, side * 12.20], [20.3, 1.44, 0.38], walls, hangar_shell)
         box([0.0, 6.03, side * 12.30], [20.3, 0.15, 0.56], trim, hangar_anime, false)
         for edge in [-1, 1] {
             // Three sliding leaves parked beside each opening, with tracks above.
-            box([edge * 8.45, 2.99, side * 12.15], [3.3, 5.98, 0.26], walls, hangar_anime, true)
+            shell_panel("jamb", [edge * 8.45, 2.99, side * 12.15], [3.3, 5.98, 0.26], walls, hangar_shell)
             for leaf in range(3) {
                 let x = edge * (7.20 + leaf * 1.02)
-                box([x, 2.97, side * 11.94], [0.98, 5.94, 0.19], door, hangar_anime, false)
+                shell_panel("door", [x, 2.97, side * 11.94], [0.98, 5.94, 0.19], door, hangar_anime)
             }
         }
         box([side * 13.85, 0.53, 0.0], [0.28, 1.06, 34.0], trim, hangar_anime, true)
@@ -198,7 +223,14 @@ T.position(0.0, roof_y, 0.0) {
     T.rotation(0.0, -0.24, 0.0) {
         name = "interceptor_display"
         T.position(0.0, 1.09, -1.1968) {
-            GLTF.new("assets/models/interceptor.glb") { name = "interceptor_hull" hull_anime }
+            // Keep the original GLB primitive available for cuts and collision.
+            Destroyable.threshold(3.0)
+            CombineMesh.keep_transforms() {
+                name = "interceptor_hull_ao"
+                AmbientOcclusion.texcoord0().resolution(256).one_sided()
+                    .proximity_radius(0.85).cavity_radius(0.40).strength(0.38)
+                T { hull }
+            }
         }
     }
 }
@@ -207,9 +239,11 @@ fall_respawn("interceptor_rooftop_return", { min_x = -5.0 max_x = 5.0 min_z = 7.
 let net = MultiplayerSession.from_env() {}
 net
 let spawn_x = -2.5
+let spawn_z = 7.6
+let grab_rank = 1
 let local_port = 7011
 let peer_port = 7012
-if !net.is_host() { spawn_x = 2.5 local_port = 7012 peer_port = 7011 }
+if !net.is_host() { spawn_x = 2.5 grab_rank = 2 local_port = 7012 peer_port = 7011 }
 let socket = UdpSocket.bind("0.0.0.0:" + local_port) {}
 socket
 
@@ -219,12 +253,15 @@ let local = make_rooftop_player({
     prefix = "local" local_player = true avatar = "mitten"
     use_xr = true use_desktop = false camera_far = 240.0 opaque_bucket = "near"
     voice_level = voice_level mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
+    show_health = true shield_mount = true
 })
 local.label.set_text(net.local_name())
-local.root.update_transform([spawn_x, roof_y, 7.6])
+local.root.update_transform([spawn_x, roof_y, spawn_z])
 local.locomotion
 local.watch_pointer(query("#local_left_pointer"), "left")
 local.watch_pointer(query("#local_right_pointer"), "right")
+let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime)
+range_gear.root
 let calibration_file = XrSettings.floor.default_file()
 XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({ file = calibration_file }))
 
@@ -241,7 +278,8 @@ on_global("DataEvent", fn(event) {
 
 let panels = T { name = "interceptor_panels" }
 panels
-T.position(spawn_x + 0.86, roof_y + 1.74, 6.15) {
+// Match the dock's offset from the player in Sakura Twilight Simpler.
+T.position(spawn_x - 0.8, roof_y + 1.6, spawn_z - 1.65) {
     dock({ root_name = "interceptor_dock", mount = panels, groups = [
         [
             { id = "avatar", label = "Avatar", root_name = "interceptor_avatar_picker",
@@ -271,6 +309,9 @@ T.position(spawn_x + 0.86, roof_y + 1.74, 6.15) {
                         calibration_file = calibration_file, on_height_recommitted = apply_avatar_height,
                         camera_view = local.camera_view })
                 } },
+            { id = "network", label = "Network", root_name = "interceptor_network",
+                position = [spawn_x - 0.85, roof_y + 1.43, 4.82],
+                build = fn() { return network_settings_panel({ root_name = "interceptor_network" }) } },
         ],
     ] })
 }
@@ -299,10 +340,11 @@ on(net, "MultiplayerPeerJoined", fn(event) {
         prefix = "remote" local_player = false avatar = "mitten" use_xr = true use_desktop = false
     })
     remote.label.set_text(event.name)
-    remote.root.update_transform([-spawn_x, roof_y, 7.6])
+    remote.root.update_transform([-spawn_x, roof_y, spawn_z])
     let outgoing = socket.publish("interceptor.pose").to(address).type(pose_sample)
     let incoming = socket.subscribe("interceptor.pose").from(address).type(pose_sample)
     let group = T { name = "interceptor_peer" remote.root outgoing incoming }
+    range_gear.launcher.connect(group, address)
     peer.id = event.peer_id
     peer.group = group
     peer.player = remote
@@ -332,7 +374,8 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     if peer.id != event.peer_id { return }
-    peer.player.cancel_avatar_load()
+    range_gear.launcher.disconnect()
+    peer.player.dispose()
     peer.group.remove_subtree()
     peer.id = null
     peer.group = null

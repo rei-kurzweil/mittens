@@ -265,7 +265,7 @@ fn cab_doors_hang_on_grabbable_hinges_and_keep_their_colliders() {
 fn engine_damage_smokes_then_wrecks_the_truck_and_stops_its_drive() {
     use crate::engine::ecs::component::IntegrityComponent;
     let mut scene = scene(
-        r#"
+        r##"
         import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
         let motion = pickup_truck(null, null, false, { acceleration_drive = true })
         T { name = "truck_place" motion }
@@ -277,7 +277,7 @@ fn engine_damage_smokes_then_wrecks_the_truck_and_stops_its_drive() {
             if event == "Hit" { Damage.at(p[0], p[1], p[2], 0.3, 35.0) }
             if event == "Drive" { truck.set_control_input({ throttle = 1.0 }) }
         })
-    "#,
+    "##,
     );
     let engine = named(&scene, "pickup_engine_integrity");
     let hit = |scene: &mut Universe| {

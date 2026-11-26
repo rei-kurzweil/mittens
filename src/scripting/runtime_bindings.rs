@@ -64,6 +64,8 @@ pub enum MittensApi {
     AvatarHeightSet,
     InputXrStickModeGet,
     InputXrStickModeSet,
+    NetworkAutoAcceptGet,
+    NetworkAutoAcceptSet,
     PhysicsRaycast,
     FileReadText,
     FileListDir,

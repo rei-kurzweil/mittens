@@ -560,7 +560,7 @@ impl DestroyableSystem {
                     }
                     if let Some(surface) = self
                         .imported
-                        .discover(world, visuals, owner, event)
+                        .discover(world, visuals, &systems.combine_mesh, owner, event)
                         .or_else(|| discover(world, visuals, owner, event))
                     {
                         self.surfaces.insert(owner, surface);
