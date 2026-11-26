@@ -16,6 +16,7 @@ import { shared_impact } from "../assets/components/network/shared_impact.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
@@ -272,6 +273,9 @@ if use_desktop && !use_xr {
         local.root
     }
 } else { local.locomotion }
+// Equip one STA rocket on each thigh to unlock flight.
+let flight_gamepad = query("#local_xr_locomotion")
+if flight_gamepad { require_leg_rockets_for_flight(local.root, flight_gamepad) }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
 let xr_calibration_file = null

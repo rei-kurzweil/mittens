@@ -11,6 +11,7 @@ import { interceptor_range } from "../assets/components/targets/interceptor_rang
 import { truss } from "../assets/components/truss.mms"
 import { fall_respawn } from "../assets/components/fall_respawn.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { input_settings_panel } from "../assets/components/panels/input_settings_panel.mms"
@@ -362,6 +363,9 @@ let local = make_rooftop_player({
 local.label.set_text(net.local_name())
 local.root.update_transform([spawn_x, roof_y, spawn_z])
 local.locomotion
+// Equip one STA rocket on each thigh to unlock flight.
+let flight_gamepad = query("#local_xr_locomotion")
+if flight_gamepad { require_leg_rockets_for_flight(local.root, flight_gamepad) }
 local.watch_pointer(query("#local_left_pointer"), "left")
 local.watch_pointer(query("#local_right_pointer"), "right")
 let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime)

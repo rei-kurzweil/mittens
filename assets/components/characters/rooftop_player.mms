@@ -316,8 +316,11 @@ export fn make_rooftop_player(options) {
     let driver = PoseInput {}
     let gamepad = null
     if local_player && use_xr {
+        // Flight is off unless options.flying says otherwise; scenes with STA
+        // rockets grant it while a rocket is on each thigh
+        // (require_leg_rockets_for_flight).
         gamepad = InputXRGamepad {
-            name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(true)
+            name = "local_xr_locomotion" locomotion() speed(1.5) enable_flying(options["flying"] == true)
             stick_mode(InputSettings.xr.stick_mode())
         }
         driver = InputXR.on() { gamepad }
