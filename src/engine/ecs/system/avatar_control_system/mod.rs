@@ -168,6 +168,7 @@ impl AvatarControlSystem {
                 collidable.response = response;
             }
             sync_detail_spheres(id, world, Some(&mut *contact), reset);
+            sync_limb_obstacles(id, world);
         }
     }
 
@@ -228,6 +229,7 @@ fn tick_one(
 
     try_init_or_route_capsule(id, world, render_assets, emit);
     ensure_detail_spheres(id, world, humanoid_maps);
+    ensure_limb_obstacles(id, world, humanoid_maps);
 
     // Keep the displaced head bone anchored under head_mount. This prevents
     // animation/FK from reintroducing a local head translation that would move

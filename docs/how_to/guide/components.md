@@ -1362,6 +1362,17 @@ The default is zero; friction reduces physical tangential Velocity during fixed
 contact steps and does not damp airborne motion or change Input speed. See
 [surface friction](../../task/surface-friction-for-static-collidables.md).
 
+`Collidable.obstacle()` blocks movers but never moves, observes or supports
+standing: moving obstacles such as an avatar's limbs. `CollisionContext`
+`.overlay(true)` makes a context every nearby mover queries (within 8 m of
+its frame, up to eight spaces per mover) in addition to its own, while a mover
+still ignores overlay zones under its own body. Detailed avatars
+(`collision_detail("detailed")`) put leg and foot obstacles in an overlay
+context of their own and stop their capsule acting as an obstacle, so a small
+avatar can walk between a big one's legs but not through them. In crawling
+and hands-and-knees posture an avatar's capsule becomes a low sphere of 0.75x
+its radius resting on the same floor point.
+
 ### `UdpSocketComponent`
 <!-- catalog:component source="UdpSocketComponent" mms="direct" names="UdpSocket" -->
 A first-class socket handle shared by typed channels. See [channel authoring](../typed-udp-channels.md).

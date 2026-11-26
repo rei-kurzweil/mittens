@@ -1142,7 +1142,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("enabled", booleans(1));
                 }
                 "Collidable" => {
-                    no_arg_constructors(component, &["static", "slide", "sensor"]);
+                    no_arg_constructors(component, &["static", "slide", "sensor", "obstacle"]);
                     component.builder_call("response", strings(1));
                     component
                         .builder_call("friction", floats(1))

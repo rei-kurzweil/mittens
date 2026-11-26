@@ -41,7 +41,9 @@ impl ZoneObservationSystem {
             .all_components()
             .filter_map(|id| {
                 let collidable = world.get_component_by_id_as::<CollidableComponent>(id)?;
-                if !collidable.enabled || collidable.mode == CollidableMode::Static {
+                if !collidable.enabled
+                    || matches!(collidable.mode, CollidableMode::Static | CollidableMode::Obstacle)
+                {
                     return None;
                 }
                 let zone = world.parent_of(id)?;

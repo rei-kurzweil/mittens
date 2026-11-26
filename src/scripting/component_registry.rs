@@ -2430,7 +2430,12 @@ fn create_component(
                 Some("static") => CollidableComponent::static_(),
                 Some("slide") => CollidableComponent::slide(),
                 Some("sensor") => CollidableComponent::sensor(),
-                _ => return Err("Collidable requires .static(), .slide(), or .sensor()".into()),
+                Some("obstacle") => CollidableComponent::obstacle(),
+                _ => {
+                    return Err(
+                        "Collidable requires .static(), .slide(), .sensor() or .obstacle()".into(),
+                    );
+                }
             };
             Ok(world.add_component(collidable))
         }

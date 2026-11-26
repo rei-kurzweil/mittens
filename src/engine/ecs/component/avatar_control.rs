@@ -371,6 +371,8 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_sample_id: Option<ComponentId>,
     /// Torso sphere colliders generated for `CollisionDetail::Detailed`.
     pub(crate) detail_collidable_ids: Vec<ComponentId>,
+    /// Leg and foot obstacles in the avatar's overlay CollisionContext.
+    pub(crate) limb_collidable_ids: Vec<ComponentId>,
     pub(crate) capsule_vertical_source: Option<ComponentId>,
     pub(crate) capsule_routing_revision: u64,
     pub(crate) capsule_route_ref: Option<ComponentRef>,
@@ -783,6 +785,7 @@ impl Default for AvatarControlComponent {
             capsule_collidable_id: None,
             capsule_sample_id: None,
             detail_collidable_ids: Vec::new(),
+            limb_collidable_ids: Vec::new(),
             capsule_vertical_source: None,
             capsule_routing_revision: 0,
             capsule_route_ref: None,

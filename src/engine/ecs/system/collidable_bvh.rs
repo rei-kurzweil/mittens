@@ -468,7 +468,7 @@ impl CollidableBvh {
                         self.movers.insert(id, zone_id);
                         // Read-only moving geometry is queryable as an obstacle,
                         // while retaining its independent mover/response identity.
-                        if c.response != CollisionResponse::ReadOnly {
+                        if c.response != CollisionResponse::ReadOnly || c.mover_only {
                             return None;
                         }
                     }
