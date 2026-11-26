@@ -446,6 +446,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let address = ip + ":" + peer_port
     let remote = make_rooftop_player({
         prefix = "remote" local_player = false avatar = "mitten" use_xr = true use_desktop = false
+        shield_mount = true
     })
     remote.label.set_text(event.name)
     remote.root.update_transform([-spawn_x, roof_y, spawn_z])
@@ -453,6 +454,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let incoming = socket.subscribe("interceptor.pose").from(address).type(pose_sample)
     let group = T { name = "interceptor_peer" remote.root outgoing incoming }
     for gear_launcher in range_gear.launchers { gear_launcher.connect(group, address) }
+    range_gear.shields.connect(group, address, remote)
     peer.id = event.peer_id
     peer.group = group
     peer.player = remote
@@ -483,6 +485,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 on(net, "MultiplayerPeerLeft", fn(event) {
     if peer.id != event.peer_id { return }
     for gear_launcher in range_gear.launchers { gear_launcher.disconnect() }
+    range_gear.shields.disconnect()
     peer.player.dispose()
     peer.group.remove_subtree()
     peer.id = null
