@@ -55,7 +55,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     let npc = { current = null spawns = 0 }
     fn range_pistol(label) {
         return ship_machine_pistol(label, {
-            opaque_bucket = "near" ammunition = 128 world_damage = false
+            opaque_bucket = "near" ammunition = 192 world_damage = false
             left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
             on_hit = fn(hit) { if npc.current && hit.source_user != null { npc.current.pistol_hit(hit) } }
         })
@@ -95,18 +95,24 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         npc.current.remove()
         npc.current = null
     }
-    let launcher = shared_sta_launcher("interceptor_sta_launcher", {
-        socket = socket weapon_id = "interceptor.sta" rank = rank restock_beats_per_second = 2.0
-        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
-        can_fire = fn(user) { return player.alive() }
-        on_explosion = fn(point) {
-            sounds.damage(1.0)
-            if npc.current { npc.current.rocket_splash(point) }
-            player.blast(point)
-        }
-    })
-    launcher.bind_pointer(query("#local_left_pointer"))
-    launcher.bind_pointer(query("#local_right_pointer"))
+    // Two rocket launchers: one by the spawn, one beside the pistol rack.
+    fn make_launcher(label, weapon_id) {
+        let made = shared_sta_launcher(label, {
+            socket = socket weapon_id = weapon_id rank = rank restock_beats_per_second = 2.0
+            left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
+            can_fire = fn(user) { return player.alive() }
+            on_explosion = fn(point) {
+                sounds.damage(1.0)
+                if npc.current { npc.current.rocket_splash(point) }
+                player.blast(point)
+            }
+        })
+        made.bind_pointer(query("#local_left_pointer"))
+        made.bind_pointer(query("#local_right_pointer"))
+        return made
+    }
+    let launcher = make_launcher("interceptor_sta_launcher", "interceptor.sta")
+    let rack_launcher = make_launcher("interceptor_rack_sta_launcher", "interceptor.sta.2")
     let root = T.position(0.0, roof_y, 0.0) {
         name = "interceptor_range"
         sounds.root
@@ -122,6 +128,10 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         T.position(0.0, 0.0, 5.15) {
             stand(0.0, 0.48, 0.0, 0.60, 0.96, 0.58, material)
             T.position(0.0, 1.04, 0.0) { launcher.root }
+        }
+        T.position(-2.4, 0.0, -7.0) {
+            stand(0.0, 0.48, 0.0, 0.60, 0.96, 0.58, material)
+            T.position(0.0, 1.04, 0.0) { rack_launcher.root }
         }
         T.position(1.20, 0.0, 4.9) {
             sta_ammo_cabinet("interceptor_sta_ammo_cabinet")
@@ -147,8 +157,8 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         mitten_pedestal("interceptor_remove_mitten", "Remove Mitten", spawn_x + 1.19, spawn_z - 1.65,
             [0.85, 0.50, 0.55, 1.0], material, remove)
         let all_pistols = [pistols[0], pistols[1], pistols[2], spawn_left, spawn_right]
-        ship_input_controller(false, [launcher.grip], all_pistols, armory.forward)
+        ship_input_controller(false, [launcher.grip, rack_launcher.grip], all_pistols, armory.forward)
     }
     spawn()
-    return { root = root launcher = launcher paths = paths armory = armory }
+    return { root = root launcher = launcher launchers = [launcher, rack_launcher] paths = paths armory = armory }
 }

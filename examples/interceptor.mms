@@ -452,7 +452,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let outgoing = socket.publish("interceptor.pose").to(address).type(pose_sample)
     let incoming = socket.subscribe("interceptor.pose").from(address).type(pose_sample)
     let group = T { name = "interceptor_peer" remote.root outgoing incoming }
-    range_gear.launcher.connect(group, address)
+    for gear_launcher in range_gear.launchers { gear_launcher.connect(group, address) }
     peer.id = event.peer_id
     peer.group = group
     peer.player = remote
@@ -482,7 +482,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
     if peer.id != event.peer_id { return }
-    range_gear.launcher.disconnect()
+    for gear_launcher in range_gear.launchers { gear_launcher.disconnect() }
     peer.player.dispose()
     peer.group.remove_subtree()
     peer.id = null
