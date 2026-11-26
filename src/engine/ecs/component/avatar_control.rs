@@ -327,6 +327,10 @@ pub struct AvatarControlComponent {
         crate::engine::ecs::system::avatar_control_system::camera_view::ThirdPersonOrbit,
     /// Collision fidelity; see `CollisionDetail`.
     pub collision_detail: CollisionDetail,
+    /// Runtime: AvatarControl's solvers leave the avatar alone (head/neck
+    /// constraint, upper and lower body, arm chains, body yaw), so it keeps its
+    /// last pose and only outside code (a pose, a script) changes it.
+    pub paused: bool,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
     pub crouch_enabled: bool,
     pub crouch_sole_offsets: Option<[[f32; 3]; 2]>,
@@ -760,6 +764,7 @@ impl Default for AvatarControlComponent {
             camera_follow_root: None,
             third_person_orbit: Default::default(),
             collision_detail: CollisionDetail::Simple,
+            paused: false,
             crouch_enabled: true,
             crouch_sole_offsets: None,
             crouch_knee_pole: [0.0, 0.0, 1.0],

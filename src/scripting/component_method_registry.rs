@@ -145,6 +145,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "capsule_ready"
                     | "set_third_person"
                     | "set_legs_enabled"
+                    | "set_paused"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -229,6 +230,18 @@ pub(crate) fn invoke_component_method(
                 .ok_or("set_legs_enabled(): expected an AvatarControl component")?;
             avatar.crouch_enabled = *enabled;
             avatar.walking_enabled = *enabled;
+            Ok(Value::Null)
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_paused") => {
+            let [Value::Bool(paused)] = args else {
+                return Err("set_paused(): expected a boolean".into());
+            };
+            // Paused, AvatarControl's solvers stop and the avatar keeps its
+            // pose until a pose or a script changes it (e.g. lying down).
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_paused(): expected an AvatarControl component")?;
+            avatar.paused = *paused;
             Ok(Value::Null)
         }
         ("AvatarControl" | "AVC" | "avatar_control", "set_third_person") => {

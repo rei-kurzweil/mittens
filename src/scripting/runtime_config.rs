@@ -1382,6 +1382,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "set_legs_enabled",
                         method(vec![mms::ValueType::Bool], mms::ValueType::Null),
                     );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_paused",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
                     constructor_and_builder(component, "movement_target", any(1));
                     for method in ["arm_ik", "left_two_bone_ik", "right_two_bone_ik"] {
                         constructor_and_builder(component, method, any(1));
