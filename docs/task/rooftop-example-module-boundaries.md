@@ -1,5 +1,11 @@
 # Rooftop example module boundaries
 
+`target_practice.mms` is oversized and combines health, targeting, combat,
+navigation and vehicle behavior. Split these along those responsibilities as
+the existing items below describe. Preserve its single gated frame handler,
+avoid per-frame allocation and repeated route or resource creation, and
+validate combat, navigation, vehicle and multiplayer behavior before and after.
+
 - [x] Share the target's firing controller across Interceptor and Truck Bed Demo. Keep vehicle boarding and player damage with the target fixture.
 - [ ] Consider moving the target's wrist posing and grip calibration beside the shared equipment code. Compare the solved wrist and muzzle in both demos, and keep pose updates limited to active tracking.
 - [ ] Consider moving retreat and rearm movement into a shared navigation controller if more scenes adopt them. Compare pickup routing, cover selection, and foot placement in both demos, and plan routes only when a target changes.

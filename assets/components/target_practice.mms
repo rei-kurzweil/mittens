@@ -287,6 +287,9 @@ export fn practice_target(options) {
 
     fn seek_cover() {
         if !retreat || !player || !health.alive() || rearm.phase || cover.route || cover.cooldown { return }
+        let shield = 0.0
+        if state.shield { shield = state.shield.integrity() }
+        if health.fraction() >= 0.5 && shield >= 50.0 { return }
         let route = retreat(npc.root.world_trs().translation, player.world_trs().translation)
         if !route || route.length < 0.3 { return }
         cover.route = route
@@ -408,8 +411,22 @@ export fn practice_target(options) {
         hooks.refresh_motion()
         emit_data(events, "FindWeapon")
     }
+    let sight = { elapsed = 2.0 visible = false }
+    let sight_tick = on_global("FrameTick", fn(event) { sight.elapsed = sight.elapsed + event.dt_sec })
     fn can_attack() {
-        if !health.alive() || !combat.gun.has_ammo() || rearm.phase || cover.route || cover.hold { return false }
+        if !health.alive() || !combat.gun.has_ammo() || rearm.phase { return false }
+        if (cover.route || cover.hold) && health.fraction() <= 0.5 { return false }
+        if player && sight.elapsed >= 2.0 {
+            sight.elapsed = 0.0
+            let h = npc.head.world_trs().translation
+            let origin = [h[0], h[1] + SHOULDER[1], h[2]]
+            let p = player.world_trs().translation
+            let d = [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]]
+            let distance = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+            let hit = Physics.raycast(origin, d, distance)
+            sight.visible = hit == null || hit.distance > distance - COVER_MARGIN
+        }
+        if player && !sight.visible { return false }
         return !state.seated || !driver || driver.can_fire()
     }
     if player {
@@ -838,6 +855,7 @@ export fn practice_target(options) {
     resume_motion()
     return {
         remove = fn() {
+            sight_tick.remove()
             if combat.controller { combat.controller.stop() }
             activity.tick.remove()
             if driver { driver.stop() }
