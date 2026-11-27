@@ -160,7 +160,7 @@ let truck_ride = {
     turn_bounds = { min_x = -44.0 max_x = 44.0 min_z = -20.0 max_z = 5.0 }
 }
 fn spawn_truck() {
-    let motion = pickup_truck([0.55, 0.78, 0.90], null, true, { acceleration_drive = true vehicle_id = "demo_pickup" })
+    let motion = pickup_truck([1.0, 0.86, 0.34], null, true, { acceleration_drive = true vehicle_id = "demo_pickup" })
     let place = T.position(-12.0, 0.0, road_z).rotation(0.0, -Math.pi / 2.0, 0.0) {
         name = "demo_truck_place"
         motion

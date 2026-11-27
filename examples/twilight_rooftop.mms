@@ -204,7 +204,7 @@ if net.is_host() { grab_rank = 1 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
-let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
+let pickup = pickup_truck([1.0, 0.86, 0.34], null, true, {
     socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
 fn weapon_options(id) {

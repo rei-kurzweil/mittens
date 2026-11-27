@@ -16,6 +16,8 @@ import { pickup_doors } from "./pickup_doors.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, gravity_enabled, options) {
+    let paint_color = color
+    if paint_color == null { paint_color = [1.0, 0.86, 0.34] }
     let damage_threshold = 16.0
     if options && options["damage_threshold"] != null {
         damage_threshold = options.damage_threshold
@@ -59,12 +61,12 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // so reparenting these parts retains their authored local poses.
             chassis.attach(batch)
             // The first source supplies the combined mesh's shared paint colour.
-            if cabin && color!=null {
-                cabin.set_color([color[0],color[1],color[2],1.0])
+            if cabin && paint_color!=null {
+                cabin.set_color([paint_color[0],paint_color[1],paint_color[2],1.0])
             }
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
             // The doors hang on hinges outside the static batch.
-            doors.install(event.gltf,chassis,color)
+            doors.install(event.gltf,chassis,paint_color)
             if network.group {doors.connect(options.socket,network.group,network.address)}
             for name in ["car_seat","car_seat.passenger_seat","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")

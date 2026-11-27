@@ -659,7 +659,7 @@ fn twilight_rooftop_loads_xr_only_without_a_peer() {
     let paint = world.find_component(chassis, "color").unwrap();
     assert_eq!(
         world.get_component_by_id_as::<ColorComponent>(paint).unwrap().rgba,
-        [1.0, 0.606, 0.047, 1.0]
+        [1.0, 0.86, 0.34, 1.0]
     );
     let finish = named(&scene, "pickup_anime_material").unwrap();
     let finish = world.get_component_by_id_as::<MaterialComponent>(finish).unwrap();
