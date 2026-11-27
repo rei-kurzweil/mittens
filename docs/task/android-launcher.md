@@ -65,7 +65,10 @@ adb logcat -v threadtime 'mitten-droid:I' '*:S' | grep -E 'launcher|LAUNCH|FAILE
 - [ ] Without a pushed project (`adb shell rm -r .../files/project`), the
       launcher still starts and shows the push hint.
 
-- [ ] Tracking space: logcat shows `reference_spaces=[VIEW, LOCAL, STAGE] using=STAGE`.
+- [ ] Tracking space: logcat shows `reference_spaces=[...] using=STAGE floor_offset_m=0`.
+  The list may now include `LOCAL_FLOOR` where the runtime supports
+  `XR_EXT_local_floor`. Without STAGE the host uses `LOCAL_FLOOR`, else
+  `LOCAL` lowered by `floor_offset_m=1.6`, so y = 0 stays near the floor.
   Floors sit at your real floor and the launcher window near eye height.
 - [ ] Humanoid panel (dock, in the launcher and the first-person scene): the
   floor correction slider moves the view; after release it is saved to

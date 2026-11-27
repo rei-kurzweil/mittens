@@ -161,6 +161,8 @@ fn run(
     extensions.khr_vulkan_enable2 = enable2;
     extensions.khr_vulkan_enable = !enable2;
     extensions.fb_display_refresh_rate = available.fb_display_refresh_rate;
+    // Floor-level fallback when the runtime has no STAGE (see xr_session).
+    extensions.ext_local_floor = available.ext_local_floor;
     #[cfg(feature = "mobile-renderer")]
     {
         extensions.htc_vive_focus3_controller_interaction =
