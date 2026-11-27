@@ -96,6 +96,9 @@ scope.
 
 ## Out of scope
 
+See [transmissive splats](transmissive-splat-material-base.md) for colour captured
+from beyond an opening (follow-up ideas, not part of this ticket).
+
 - Reconstructed Gaussian-splat scenes and sorted over-blending.
 - Light cast onto surrounding geometry. A faint wide halo can fake a wall
   wash, but real spill needs lights or baked vertex colour.
