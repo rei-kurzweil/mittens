@@ -11,6 +11,7 @@ import { shared_sta_launcher } from "../weapons/shared_sta_launcher.mms"
 import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
 import { sta_ammo_cabinet } from "../sta_ammo_cabinet.mms"
 import { ship_input_controller } from "../ship_input_controller.mms"
+import { shared_npc } from "../network/npc_replication.mms"
 
 fn stand(x, y, z, width, height, depth, material) {
     return T.position(x, y, z).scale(width, height, depth) {
@@ -35,7 +36,7 @@ fn mitten_pedestal(name, label, x, z, tint, material, action) {
     }
 }
 
-export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, material) {
+export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, material, is_host) {
     let sounds = arena_audio()
     // Energy shields: one beside the spawn, one by the pistol rack (range
     // root space, on the roof). Grip one and let go to wear it; shots drain
@@ -52,12 +53,54 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         }
     })
     player.wear_shields(shields.worn)
-    let npc = { current = null spawns = 0 }
+    let npcs = {
+        first = { current = null spawns = 0 position = null }
+        second = { current = null spawns = 0 position = null }
+        spawn_seconds = 0.0
+    }
+    on_global("FrameTick", fn(event) { npcs.spawn_seconds = npcs.spawn_seconds + event.dt_sec })
+    fn hash01(value) {
+        let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
+        return raw - Math.floor(raw)
+    }
+    fn perimeter_spawn(index, spawns, other) {
+        let seed = npcs.spawn_seconds * 41.0 + spawns * 19.0 + index * 53.0 + spawn_x * 7.0
+        let side = Math.floor(hash01(seed) * 4.0)
+        let along = hash01(seed + 1.0) * 2.0 - 1.0
+        let x = 0.0
+        let z = 0.0
+        let yaw = 0.0
+        // The hangar deck is 28 x 34 m. Keep the NPC roughly 1.5 m inside
+        // its edge, with a random position along each side.
+        if side == 0 { x = -12.5 z = along * 14.8 yaw = -Math.pi / 2.0 }
+        else if side == 1 { x = 12.5 z = along * 14.8 yaw = Math.pi / 2.0 }
+        else if side == 2 { x = along * 11.5 z = -15.5 yaw = Math.pi }
+        else { x = along * 11.5 z = 15.5 yaw = 0.0 }
+        if other && other.position {
+            let dx = x - other.position[0]
+            let dz = z - other.position[2]
+            if Math.sqrt(dx * dx + dz * dz) < 6.0 {
+                side = (side + 2) % 4
+                if side == 0 { x = -12.5 z = along * 14.8 yaw = -Math.pi / 2.0 }
+                else if side == 1 { x = 12.5 z = along * 14.8 yaw = Math.pi / 2.0 }
+                else if side == 2 { x = along * 11.5 z = -15.5 yaw = Math.pi }
+                else { x = along * 11.5 z = 15.5 yaw = 0.0 }
+            }
+        }
+        return { position = [x, roof_y, z] yaw = yaw }
+    }
     fn range_pistol(label) {
         return ship_machine_pistol(label, {
             opaque_bucket = "near" ammunition = 192 world_damage = false
             left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
-            on_hit = fn(hit) { if npc.current && hit.source_user != null { npc.current.pistol_hit(hit) } }
+            on_hit = fn(hit) {
+                if hit.source_user != null {
+                    if npcs.first.current { npcs.first.current.pistol_hit(hit) }
+                    if npcs.second.current { npcs.second.current.pistol_hit(hit) }
+                    if npcs.first.link { npcs.first.link.pistol_hit(hit) }
+                    if npcs.second.link { npcs.second.link.pistol_hit(hit) }
+                }
+            }
         })
     }
     let pistols = [range_pistol("interceptor_rack_pistol_0"), range_pistol("interceptor_rack_pistol_1"),
@@ -70,30 +113,81 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         { weapons = [spawn_left] approach = [-4.6, roof_y, 4.55] },
         { weapons = [spawn_right] approach = [4.6, roof_y, 4.55] },
     ], paths)
-    // The encounter is per player. Each participant can clear their own range.
-    let spawn_side = -1.0
-    if spawn_x > 0.0 { spawn_side = 1.0 }
-    fn spawn() {
-        if npc.current { return }
-        let weapon_name = "interceptor_mitten_pistol"
-        if npc.spawns > 0 { weapon_name = weapon_name + "_" + npc.spawns }
-        npc.spawns = npc.spawns + 1
+    // The host owns a shared pair. Spawn them on the hangar's perimeter only
+    // when requested; neither exists in the initial scene.
+    fn spawn_one(state, index, other) {
+        if state.current { return }
+        let placement = perimeter_spawn(index, state.spawns, other)
+        let weapon_name = "interceptor_mitten_" + index + "_pistol"
+        if state.spawns > 0 { weapon_name = weapon_name + "_" + state.spawns }
+        state.spawns = state.spawns + 1
         let target = practice_target({
-            prefix = "interceptor_mitten" avatar = "mitten" use_xr = true use_desktop = false
-            position = [spawn_side * 6.35, roof_y, -13.25] yaw = Math.pi strafe = 0.0
+            prefix = "interceptor_mitten_" + index avatar = "mitten" use_xr = true use_desktop = false
+            position = placement.position yaw = placement.yaw strafe = 0.0
             combat = mitten_antagonist player_alive = player.alive
             health_view = local.health_view player = local.shield_mount on_damage = sounds.damage
             on_player_hit = fn(points) { player.hit(points) }
             world_damage = false weapon_name = weapon_name
             armory = armory retreat = paths.retreat
+            on_shot = fn(pose, mode) { state.link.shot(pose, mode) }
+            on_lie_down = fn(kind) { state.link.down(kind) }
+            on_respawn = fn() { state.link.respawned() }
         })
         target.root
-        npc.current = target
+        state.current = target
+        state.position = placement.position
+        if is_host {
+            let trs = target.root.world_trs()
+            state.link.spawned_at(trs.translation, trs.rotation_quat_xyzw)
+        }
     }
-    fn remove() {
-        if !npc.current { return }
-        npc.current.remove()
-        npc.current = null
+    fn spawn_both() {
+        if !is_host {
+            npcs.first.link.request(true)
+            npcs.second.link.request(true)
+            return
+        }
+        spawn_one(npcs.first, 1, npcs.second)
+        spawn_one(npcs.second, 2, npcs.first)
+    }
+    fn remove_one(state) {
+        if !state.current { return }
+        state.current.remove()
+        state.current = null
+        state.position = null
+        if is_host { state.link.removed() }
+    }
+    fn remove_both() {
+        if !is_host {
+            npcs.first.link.request(false)
+            npcs.second.link.request(false)
+            return
+        }
+        remove_one(npcs.first)
+        remove_one(npcs.second)
+    }
+    fn make_npc_link(state, index, other) {
+        let name = "interceptor_mitten_" + index
+        let link = shared_npc({
+            socket = socket name = name host = is_host
+            prefix = name avatar = "mitten" position = [spawn_x, roof_y, spawn_z]
+            health_view = local.health_view on_damage = sounds.damage
+            current = fn() { return state.current }
+            spawn = fn() { spawn_one(state, index, other) }
+            remove = fn() { remove_one(state) }
+        })
+        state.link = link
+        return link
+    }
+    let first_link = make_npc_link(npcs.first, 1, npcs.second)
+    let second_link = make_npc_link(npcs.second, 2, npcs.first)
+    fn connect(group, address) {
+        first_link.connect(group, address)
+        second_link.connect(group, address)
+    }
+    fn disconnect() {
+        first_link.disconnect()
+        second_link.disconnect()
     }
     // Two rocket launchers: one by the spawn, one beside the pistol rack.
     fn make_launcher(label, weapon_id) {
@@ -103,7 +197,8 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             can_fire = fn(user) { return player.alive() }
             on_explosion = fn(point) {
                 sounds.damage(1.0)
-                if npc.current { npc.current.rocket_splash(point) }
+                if npcs.first.current { npcs.first.current.rocket_splash(point) }
+                if npcs.second.current { npcs.second.current.rocket_splash(point) }
                 player.blast(point)
             }
         })
@@ -116,6 +211,8 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     let root = T.position(0.0, roof_y, 0.0) {
         name = "interceptor_range"
         sounds.root
+        first_link.root
+        second_link.root
         armory.root
         paths.root
         shields.root
@@ -152,14 +249,13 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
                 T.position((index - 1.0) * 0.7, 1.04, 0.0) { pistols[index] }
             }
         }
-        mitten_pedestal("interceptor_spawn_mitten", "Spawn Mitten", spawn_x + 0.48, spawn_z - 1.65,
-            [0.59, 0.77, 0.57, 1.0], material, spawn)
-        mitten_pedestal("interceptor_remove_mitten", "Remove Mitten", spawn_x + 1.19, spawn_z - 1.65,
-            [0.85, 0.50, 0.55, 1.0], material, remove)
+        mitten_pedestal("interceptor_spawn_mitten", "Spawn Two Mitten", spawn_x + 0.48, spawn_z - 1.65,
+            [0.59, 0.77, 0.57, 1.0], material, spawn_both)
+        mitten_pedestal("interceptor_remove_mitten", "Remove Both", spawn_x + 1.19, spawn_z - 1.65,
+            [0.85, 0.50, 0.55, 1.0], material, remove_both)
         let all_pistols = [pistols[0], pistols[1], pistols[2], spawn_left, spawn_right]
         ship_input_controller(false, [launcher.grip, rack_launcher.grip], all_pistols, armory.forward)
     }
-    spawn()
     return { root = root launcher = launcher launchers = [launcher, rack_launcher] paths = paths armory = armory
-        shields = shields }
+        shields = shields connect = connect disconnect = disconnect }
 }

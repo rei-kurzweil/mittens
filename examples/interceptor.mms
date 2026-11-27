@@ -368,7 +368,7 @@ let flight_gamepad = query("#local_xr_locomotion")
 if flight_gamepad { require_leg_rockets_for_flight(local.root, flight_gamepad) }
 local.watch_pointer(query("#local_left_pointer"), "left")
 local.watch_pointer(query("#local_right_pointer"), "right")
-let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime)
+let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime, net.is_host())
 range_gear.root
 let calibration_file = XrSettings.floor.default_file()
 XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({ file = calibration_file }))
@@ -455,6 +455,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let group = T { name = "interceptor_peer" remote.root outgoing incoming }
     for gear_launcher in range_gear.launchers { gear_launcher.connect(group, address) }
     range_gear.shields.connect(group, address, remote)
+    range_gear.connect(group, address)
     peer.id = event.peer_id
     peer.group = group
     peer.player = remote
@@ -486,6 +487,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     if peer.id != event.peer_id { return }
     for gear_launcher in range_gear.launchers { gear_launcher.disconnect() }
     range_gear.shields.disconnect()
+    range_gear.disconnect()
     peer.player.dispose()
     peer.group.remove_subtree()
     peer.id = null

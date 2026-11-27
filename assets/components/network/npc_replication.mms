@@ -320,7 +320,7 @@ export fn shared_npc(options) {
         }
         if code != 0 && lie_down(puppet.player, lying_kind(code), null) { puppet.lying = code }
     }
-    fn spawn_puppet() {
+    fn spawn_puppet(position, rotation) {
         if link.puppet { return }
         link.serial = link.serial + 1
         let prefix = options.prefix + "_puppet"
@@ -355,7 +355,11 @@ export fn shared_npc(options) {
                 if wrist { wrist.attach(mount) }
             }
         })
-        player.root.update_transform(options.position)
+        let initial_position = options.position
+        let initial_rotation = IDENTITY
+        if position { initial_position = position }
+        if rotation { initial_rotation = rotation }
+        player.root.world_trs({ translation = initial_position rotation_quat_xyzw = initial_rotation scale = ONE })
         root.attach(player.root)
         let puppet = { player = player shield = null alive = false lying = 0 }
         set_alive(puppet, true)
@@ -390,7 +394,7 @@ export fn shared_npc(options) {
         // A pose may already stand for this event's state; then only its
         // one-off effects play.
         let current = sequence > link.pose_actions
-        if kind == SPAWN && current { spawn_puppet() }
+        if kind == SPAWN && current { spawn_puppet(position, rotation) }
         if kind == REMOVE && current { remove_puppet() }
         let puppet = link.puppet
         if !puppet { return }
@@ -415,7 +419,7 @@ export fn shared_npc(options) {
         // events already applied, so a late pose cannot undo one.
         if sample.actions >= actions.received() {
             link.pose_actions = Math.clamp(sample.actions, link.pose_actions, 1000000000.0)
-            if sample.spawned > 0.5 { spawn_puppet() } else { remove_puppet() }
+            if sample.spawned > 0.5 { spawn_puppet(null, null) } else { remove_puppet() }
             if link.puppet {
                 set_alive(link.puppet, sample.alive > 0.5)
                 set_lying(link.puppet, Math.clamp(Math.floor(sample.lying + 0.5), 0, 2))
@@ -553,7 +557,12 @@ export fn shared_npc(options) {
     }
     fn spawned() {
         new_life()
-        actions.push(SPAWN, 0.0, [0.0, 0.0, 0.0], IDENTITY)
+        actions.push(SPAWN, 0.0, options.position, IDENTITY)
+        send_pose()
+    }
+    fn spawned_at(position, rotation) {
+        new_life()
+        actions.push(SPAWN, 0.0, position, rotation)
         send_pose()
     }
     fn removed() {
@@ -597,7 +606,7 @@ export fn shared_npc(options) {
 
     return {
         root = root connect = connect disconnect = disconnect
-        spawned = spawned removed = removed shot = shot down = down respawned = respawned
+        spawned = spawned spawned_at = spawned_at removed = removed shot = shot down = down respawned = respawned
         pistol_hit = pistol_hit request = request
     }
 }

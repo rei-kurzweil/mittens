@@ -262,7 +262,7 @@ local.root.update_transform([spawn_x, roof_y, spawn_z])
 local.locomotion
 local.watch_pointer(query("#local_left_pointer"), "left")
 local.watch_pointer(query("#local_right_pointer"), "right")
-let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime)
+let range_gear = interceptor_range(local, socket, grab_rank, roof_y, spawn_x, spawn_z, hangar_anime, net.is_host())
 range_gear.root
 let calibration_file = XrSettings.floor.default_file()
 XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({ file = calibration_file }))
@@ -347,6 +347,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     let incoming = socket.subscribe("interceptor.pose").from(address).type(pose_sample)
     let group = T { name = "interceptor_peer" remote.root outgoing incoming }
     range_gear.launcher.connect(group, address)
+    range_gear.connect(group, address)
     peer.id = event.peer_id
     peer.group = group
     peer.player = remote
@@ -377,6 +378,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
 on(net, "MultiplayerPeerLeft", fn(event) {
     if peer.id != event.peer_id { return }
     range_gear.launcher.disconnect()
+    range_gear.disconnect()
     peer.player.dispose()
     peer.group.remove_subtree()
     peer.id = null
