@@ -286,7 +286,7 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
                     card("mms_input", "MMS COMPONENT / InputXRComponent", "InputXR.on() { ... }", "enabled\nparent Transform", "pose_valid\nfirst Transform child driven", "Receives the cached head pose.", gold, 26.0)
                     card("mms_head", "MMS COMPONENT / TransformComponent", "T { name = \"head\" }", "InputXR head pose\nparent rig transform", "translation / rotation\nmodel / matrix_world", "Head driver; rig ancestors supply\nlocomotion and stage placement.", gold, 26.0)
                     card("mms_camera", "MMS COMPONENT / CameraXRComponent", "CXR { } / CameraXR { }", "enabled CameraXR\nInputXR ancestor", "VisualWorld.active_xr_camera\nvia CameraSystem::tick()", "Chooses the rig whose driven head\nanchors the eyes.", gold, 26.0)
-                    card("mms_hand", "MMS COMPONENT / XRHandComponent", "XRHand.new(true,\n\"Left\", \"GripAim\")", "hand = Left; pose = GripAim\ncached controller / hand pose", "pose_valid / active_pose_source\nfirst Transform child driven", "Uses the same stage-to-world frame\nas the head.", gold, 26.0)
+                    card("mms_hand", "MMS COMPONENT / XRHandComponent", "XRHand(true,\n\"Left\", \"GripAim\")", "hand = Left; pose = GripAim\ncached controller / hand pose", "pose_valid / active_pose_source\nfirst Transform child driven", "Uses the same stage-to-world frame\nas the head.", gold, 26.0)
                     card("mms_hand_transform", "MMS COMPONENT / TransformComponent", "T { name = \"hand\" }", "XRHand pose\nparent transform", "translation / rotation\nUpdateTransform intent", "Feeds pointers, attachments,\navatar hands and IK.", gold, 26.0)
                 }
                 T {

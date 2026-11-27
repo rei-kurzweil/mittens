@@ -38,7 +38,7 @@ impl MittensHost<'_, '_> {
                 let mode = XrStickMode::parse(mode).ok_or_else(|| {
                     mms::HostError::failure(
                         "InputSettings.xr.set_stick_mode",
-                        "expected \"strafe\" or \"turn\"",
+                        "expected \"default\", \"orbit\", \"strafe\", or \"turn\"",
                     )
                 })?;
                 settings.set_xr_stick_mode(mode, self.emit);

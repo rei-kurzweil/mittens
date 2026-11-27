@@ -568,6 +568,642 @@ fn low_hips_sit_back_behind_the_knees_instead_of_sinking_them() {
 }
 
 #[test]
+fn crawling_with_a_head_drop_keeps_the_knees_below_the_hips() {
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            &twilight_rooftop_with_lumae(),
+            "examples/twilight_rooftop.mms",
+        )
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    let root = named(&scene, "remote_root");
+    hold_head(&mut scene, head, 1.644, 30);
+    let legs = [
+        [HumanoidSlot::LeftUpperLeg, HumanoidSlot::LeftLowerLeg],
+        [HumanoidSlot::RightUpperLeg, HumanoidSlot::RightLowerLeg],
+    ]
+    .map(|leg| leg.map(|slot| bone(&scene, avatar, slot)));
+    let start = position(&scene, root);
+    let move_root = |scene: &mut Universe, distance: f32, scale: f32| {
+        let mut translation = start;
+        translation[2] -= distance * scale;
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation,
+                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                scale: [scale; 3],
+            },
+        );
+    };
+    for scale in [1.0, 0.1] {
+        move_root(&mut scene, 0.0, scale);
+        hold_head(&mut scene, head, 1.644, 60);
+        hold_head(&mut scene, head, 0.7, 60);
+        for frame in 1..=90 {
+            move_root(&mut scene, 0.006 * frame as f32, scale);
+            hold_head(&mut scene, head, 0.7 - 0.006 * frame as f32, 1);
+            assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+            for leg in legs {
+                let [hip, knee] = leg.map(|joint| position(&scene, joint));
+                assert!(
+                    knee[1] < hip[1],
+                    "scale {scale}, frame {frame}: knee {knee:?} above hip {hip:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn avatar_overlays_track_selected_gait_and_retained_floor() {
+    use crate::engine::ecs::component::TextComponent;
+
+    let mut source = twilight_rooftop_with_lumae();
+    source.push_str("\nT { EditorUI.panels([{ panel = \"settings\" }]) Editor.active() }\n");
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 20);
+    scene
+        .systems
+        .editor_context
+        .shared_state()
+        .lock()
+        .unwrap()
+        .selected_component = Some(head);
+    let support = named(&scene, "editor_settings_body_support_visibility");
+    let walking = named(&scene, "editor_settings_walking_gait_visibility");
+    let click_toggle = |scene: &mut Universe, button| {
+        scene.command_queue.push_event(
+            button,
+            EventSignal::Click {
+                raycaster: button,
+                renderable: button,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        );
+    };
+    let text = |scene: &Universe, name| {
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(scene, name))
+            .unwrap()
+            .text
+            .clone()
+    };
+    let outline_beams = |scene: &Universe| {
+        let outline = named(scene, "body_support_surface_outline");
+        scene
+            .world
+            .children_of(outline)
+            .iter()
+            .filter(|&&id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .is_some_and(|transform| transform.transform.scale[2] > 0.)
+            })
+            .count()
+    };
+    click_toggle(&mut scene, support);
+    click_toggle(&mut scene, walking);
+    hold_head(&mut scene, head, 1.644, 12);
+    let standing = text(&scene, "body_support_debug_readout");
+    assert!(standing.contains("FLOOR 16.00 m | LIVE"), "{standing}");
+    assert!(
+        standing.is_ascii() && standing.lines().count() == 3,
+        "{standing}"
+    );
+    let readout = named(&scene, "body_support_debug_readout");
+    let label_transform = scene.world.parent_of(readout).unwrap();
+    let actual_scale = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(label_transform)
+        .unwrap()
+        .transform
+        .scale[0];
+    let standing_height = scene
+        .systems
+        .upper_body_ik
+        .spine(named(&scene, "remote_avatar"))
+        .unwrap()
+        .head_rest_height;
+    assert!(
+        (actual_scale - standing_height * 0.06).abs() < 1e-4,
+        "font scale {actual_scale}"
+    );
+    assert_eq!(
+        outline_beams(&scene),
+        21,
+        "12 bounds, 8 corner marks, and one probe"
+    );
+    let root = named(&scene, "remote_root");
+    let start = position(&scene, root);
+    let mut saw_swing = false;
+    for frame in 1..=24 {
+        scene.systems.rx.push_intent_now(
+            root,
+            IntentValue::UpdateTransform {
+                component_id: root,
+                translation: [start[0] + frame as f32 * 0.025, start[1], start[2]],
+                rotation_quat_xyzw: [0., 0., 0., 1.],
+                scale: [1.; 3],
+            },
+        );
+        hold_head(&mut scene, head, 1.644, 1);
+        let gait = text(&scene, "walking_gait_debug_readout");
+        assert!(gait.contains("remote_avatar"), "{gait}");
+        saw_swing |= gait.contains("effective/planned") && gait.contains("Body Z");
+    }
+    assert!(saw_swing, "gait readout shows a tracked swing");
+    click_toggle(&mut scene, walking);
+    hold_head(&mut scene, head, 0.7, 38);
+    let crawl = text(&scene, "body_support_debug_readout");
+    assert!(
+        crawl.starts_with("CRAWL |") && crawl.contains("BASE ") && crawl.contains(" | HEAD +"),
+        "{crawl}"
+    );
+
+    scene.systems.rx.push_intent_now(
+        root,
+        IntentValue::UpdateTransform {
+            component_id: root,
+            translation: [1000., ROOF, 0.],
+            rotation_quat_xyzw: [0., 0., 0., 1.],
+            scale: [1.; 3],
+        },
+    );
+    hold_head(&mut scene, head, 0.7, 12);
+    let remembered = text(&scene, "body_support_debug_readout");
+    assert!(
+        remembered.contains("FLOOR 16.00 m | REMEMBERED"),
+        "{remembered}"
+    );
+    assert_eq!(
+        outline_beams(&scene),
+        0,
+        "retained floor has no live outline"
+    );
+    click_toggle(&mut scene, support);
+    hold_head(&mut scene, head, 0.7, 4);
+    assert!(!scene.world.all_components().any(|id| matches!(
+        scene.world.component_label(id),
+        Some("body_support_debug_readout" | "walking_gait_debug_readout")
+    )));
+}
+
+fn two_floor_posture_scene(avatar: &str, extra: &str) -> Universe {
+    let mut source = r#"
+        import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+        XR.off()
+        T.position(0.0, 15.5, 0.0) { Zone.cube([8.0, 0.5, 8.0]) { Collidable.static() } }
+        T.position(9.0, 15.25, 0.0) { Zone.cube([1.0, 0.25, 2.0]) { Collidable.static() } }
+        T.position(10.5, 14.75, 0.0) { Zone.cube([0.5, 0.25, 2.0]) { Collidable.static() } }
+        T.position(11.5, 14.25, 0.0) { Zone.cube([0.5, 0.25, 2.0]) { Collidable.static() } }
+        T.position(20.0, 13.5, 0.0) { Zone.cube([8.0, 0.5, 8.0]) { Collidable.static() } }
+        let remote = make_rooftop_player({
+            prefix = "remote" avatar = "lumae" local_player = false use_xr = false use_desktop = false
+            shield_mount = true
+        })
+        remote.root.update_transform([0.0, 16.0, 0.0])
+        remote.root
+        T.position(0.0, 18.0, 4.0) { C3D { Pointer { Raycast.event_driven().min_distance(0.75) {} } } }
+        T { EditorUI.panels([{ panel = "settings" }]) Editor.active() }
+    "#
+    .replace("avatar = \"lumae\"", &format!("avatar = \"{avatar}\""));
+    source.push_str(extra);
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    scene
+}
+
+#[test]
+fn crawl_reacquires_floor_after_landing_below_remembered_floor() {
+    let mut scene = two_floor_posture_scene("lumae", "");
+    let head = named(&scene, "remote_head_target");
+    let avatar = named(&scene, "remote_avatar");
+    hold_head(&mut scene, head, 1.644, 28);
+    hold_head(&mut scene, head, 0.7, 54);
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Horizontal);
+    assert_eq!(scene.systems.body_solver.floor(avatar), Some(ROOF));
+
+    let root = named(&scene, "remote_root");
+    scene.systems.rx.push_intent_now(
+        root,
+        IntentValue::UpdateTransform {
+            component_id: root,
+            translation: [20.0, 14.0, 0.0],
+            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0; 3],
+        },
+    );
+    // Arrive with the tracked head at standing height and the body still
+    // pitched for crawl. The old floor would put the head below the exit.
+    hold_head(&mut scene, head, 1.644, 12);
+    assert_eq!(scene.systems.body_solver.floor(avatar), Some(14.0));
+    assert_eq!(scene.systems.body_solver.mode(avatar), BodyMode::Vertical);
+}
+
+#[test]
+fn scene_owned_collision_recovers_from_crawl_after_stair_drop() {
+    let miku_model = std::path::Path::new(
+        "assets/models/local/third_party/TDA_Hatsune_Miku/tda_miku_with_bones.glb",
+    );
+    for (model, standing_head) in [("lumae", 1.644), ("miku", 1.59)] {
+        if model == "miku" && !miku_model.is_file() {
+            continue;
+        }
+        let mut scene = two_floor_posture_scene(model, "");
+        let head = named(&scene, "remote_head_target");
+        let avatar = named(&scene, "remote_avatar");
+        let root = named(&scene, "remote_root");
+        // Always exercise the scene-owned collision path, including on hosts
+        // that lack the optional Miku model.
+        scene
+            .world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+            .unwrap()
+            .collision_enabled = false;
+        let move_root = |scene: &mut Universe, translation| {
+            scene.systems.rx.push_intent_now(
+                root,
+                IntentValue::UpdateTransform {
+                    component_id: root,
+                    translation,
+                    rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                    scale: [1.0; 3],
+                },
+            );
+        };
+        hold_head(&mut scene, head, standing_head, 28);
+        hold_head(&mut scene, head, 0.68, 54);
+        assert_eq!(
+            scene.systems.body_solver.mode(avatar),
+            BodyMode::Horizontal,
+            "{model}"
+        );
+        assert_eq!(
+            scene.systems.body_solver.floor(avatar),
+            Some(ROOF),
+            "{model}"
+        );
+
+        move_root(&mut scene, [10.5, 15.8, 0.0]);
+        hold_head(&mut scene, head, 0.68, 3);
+        move_root(&mut scene, [17.0, 14.7, 0.0]);
+        hold_head(&mut scene, head, standing_head, 3);
+        assert_eq!(
+            scene.systems.body_solver.floor(avatar),
+            Some(ROOF),
+            "{model}: midair"
+        );
+        move_root(&mut scene, [20.0, 14.0, 0.0]);
+        hold_head(&mut scene, head, standing_head, 16);
+        assert_eq!(
+            scene.systems.body_solver.floor(avatar),
+            Some(14.0),
+            "{model}: landed"
+        );
+        assert_eq!(
+            scene.systems.body_solver.mode(avatar),
+            BodyMode::Vertical,
+            "{model}"
+        );
+        assert_eq!(
+            position(&scene, root)[1],
+            14.0,
+            "{model}: locomotion stays authoritative"
+        );
+    }
+}
+
+#[test]
+fn worn_shield_follows_torso_and_mms_reports_solved_posture() {
+    use crate::engine::ecs::component::TextComponent;
+
+    let mut scene = two_floor_posture_scene(
+        "lumae",
+        r#"
+        import { energy_shield } from "../assets/components/energy_sheild.mms"
+        let body = remote.avatar()
+        let initial = body.posture_state()
+        let label = Text { name = "posture_test_report" initial.mode + "/" + initial.pose }
+        label
+        on(body, "PostureChanged", fn(event) {
+            let current = event.avatar.posture_state()
+            label.set_text(event.previous + ">" + event.mode + "/" + event.pose
+                + "/" + current.mode + "/" + current.pose)
+        })
+        let shield = energy_shield("posture_test_shield", 2.0, { worn = true })
+        shield.update_transform([3.0, 0.0, 0.0], [Math.pi / 2.0, 0.0, 0.0])
+        remote.shield_mount.attach(shield)
+        shield.set_worn(true, true)
+        let events = T { name = "posture_test_shield_events" }
+        events
+        on(events, "DataEvent", fn(event) {
+            if event == "Hit" { shield.take_damage(1.0) }
+            if event == "Swap" { remote.select_avatar("mitten", fn(message, success) {}) }
+        })
+        "#,
+    );
+    let head = named(&scene, "remote_head_target");
+    let avatar = named(&scene, "remote_avatar");
+    let mount = named(&scene, "remote_shield_mount");
+    let events = named(&scene, "posture_test_shield_events");
+    let report = named(&scene, "posture_test_report");
+    let event = |scene: &mut Universe, name: &str| {
+        scene.command_queue.push_event(
+            events,
+            EventSignal::DataEvent {
+                name: name.into(),
+                payload: None,
+            },
+        );
+    };
+    let text = |scene: &Universe| {
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(report)
+            .unwrap()
+            .text
+            .clone()
+    };
+    let shield_axis = |scene: &mut Universe, height| {
+        event(scene, "Hit");
+        hold_head(scene, head, height, 2);
+        let shell = named(scene, "posture_test_shield_shell");
+        let proxy = named(scene, "posture_test_shield_bullet_proxy");
+        let axis = |id| {
+            let column = TransformSystem::world_model(&scene.world, id).unwrap()[1];
+            crate::utils::math::vec3_normalize([column[0], column[1], column[2]])
+        };
+        assert_eq!(position(scene, shell), position(scene, mount));
+        assert_eq!(position(scene, proxy), position(scene, mount));
+        let up = axis(shell);
+        assert!(crate::utils::math::vec3_dot(up, axis(proxy)) > 0.999);
+        up
+    };
+
+    hold_head(&mut scene, head, 1.644, 28);
+    assert_eq!(
+        scene.world.parent_of(mount),
+        Some(bone(&scene, avatar, HumanoidSlot::UpperChest))
+    );
+    assert_eq!(text(&scene), "vertical/standing");
+    assert!(shield_axis(&mut scene, 1.644)[1] > 0.999);
+    hold_head(&mut scene, head, 0.68, 60);
+    assert_eq!(
+        text(&scene),
+        "vertical>horizontal/hands_and_knees/horizontal/hands_and_knees"
+    );
+    assert!(shield_axis(&mut scene, 0.68)[1].abs() < 0.5);
+    hold_head(&mut scene, head, 1.644, 40);
+    assert_eq!(
+        text(&scene),
+        "horizontal>vertical/standing/vertical/standing"
+    );
+    assert!(shield_axis(&mut scene, 1.644)[1] > 0.999);
+
+    let shield = named(&scene, "posture_test_shield");
+    event(&mut scene, "Swap");
+    for _ in 0..40 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let next_avatar = named(&scene, "remote_avatar");
+    assert_ne!(next_avatar, avatar);
+    assert_eq!(named(&scene, "remote_shield_mount"), mount);
+    assert_eq!(scene.world.parent_of(shield), Some(mount));
+    let spine = scene.systems.upper_body_ik.spine(next_avatar).unwrap();
+    assert_eq!(
+        scene.world.parent_of(mount),
+        Some(spine.bones[spine.count - 1])
+    );
+}
+
+#[test]
+fn paw_capture_hud_marks_the_displayed_posture_snapshot() {
+    use crate::engine::ecs::component::{DataComponent, DataValue, RenderableComponent};
+    use crate::engine::ecs::system::BvhSystem;
+
+    let mut scene = two_floor_posture_scene("lumae", "");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 24);
+    scene
+        .systems
+        .editor_context
+        .shared_state()
+        .lock()
+        .unwrap()
+        .selected_component = Some(head);
+    let click = |scene: &mut Universe, target| {
+        scene.command_queue.push_event(
+            target,
+            EventSignal::Click {
+                raycaster: target,
+                renderable: target,
+                hit_point: [0.0; 3],
+                screen_pos_px: None,
+            },
+        );
+    };
+    let exists = |scene: &Universe, name| {
+        scene
+            .world
+            .all_components()
+            .any(|id| scene.world.component_label(id) == Some(name))
+    };
+    assert!(!exists(&scene, "paw_capture_hud"));
+    scene.visuals.set_xr_camera(Vec::new());
+    let toggle = named(&scene, "editor_settings_paw_capture_visibility");
+    click(&mut scene, toggle);
+    hold_head(&mut scene, head, 1.644, 2);
+    assert!(!exists(&scene, "body_support_debug_readout"));
+    let hud = named(&scene, "paw_capture_hud");
+    let button = named(&scene, "paw_capture_button");
+    let hit = BvhSystem::find_raycastable_for_renderable(&scene.world, button).unwrap();
+    assert!(hit.pointer_events.captures_click() && !hit.pointer_events.captures_drag());
+    let origin = [0.0, 18.0, 4.0];
+    let offset = crate::utils::math::vec3_sub(position(&scene, button), origin);
+    let distance = crate::utils::math::vec3_len(offset);
+    assert!((offset[2] + 2.0).abs() < 0.001);
+    let hits = scene.systems.bvh.raycast_renderables_candidates(
+        origin,
+        offset.map(|axis| axis / distance),
+        distance + 0.1,
+        0,
+    );
+    assert!(hits.iter().any(|(id, _)| *id == button));
+    let hud_pads = scene
+        .world
+        .owned_subtree(hud)
+        .into_iter()
+        .filter(|&id| {
+            id != button
+                && scene
+                    .world
+                    .get_component_by_id_as::<RenderableComponent>(id)
+                    .is_some()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(hud_pads.len(), 5);
+    assert!(
+        hud_pads
+            .iter()
+            .all(|&id| !BvhSystem::renderable_is_raycastable(&scene.world, id))
+    );
+
+    scene
+        .systems
+        .editor_context
+        .shared_state()
+        .lock()
+        .unwrap()
+        .active_editor = None;
+    click(&mut scene, button);
+    // Change tracked height in the click's update. The capture belongs to the
+    // last published frame rather than the new decision inputs.
+    hold_head(&mut scene, head, 0.7, 1);
+    let marker = named(&scene, "paw_capture_marker");
+    let record = scene
+        .world
+        .children_of(marker)
+        .iter()
+        .find_map(|&id| scene.world.get_component_by_id_as::<DataComponent>(id))
+        .unwrap();
+    assert_eq!(
+        record.get("origin"),
+        Some(&DataValue::Text("by_paw".into()))
+    );
+    let Some(DataValue::Text(snapshot)) = record.get("snapshot") else {
+        panic!("missing paw snapshot");
+    };
+    let snapshot: serde_json::Value = serde_json::from_str(snapshot).unwrap();
+    assert_eq!(snapshot["avatar"], "remote_avatar");
+    assert_eq!(snapshot["posture"], "standing");
+    assert!(snapshot["decision_reason"].as_str().is_some());
+    assert_eq!(snapshot["floor_source"], "live");
+    assert!((snapshot["floor_y"].as_f64().unwrap() - f64::from(ROOF)).abs() < 0.001);
+    assert!(snapshot["head"][1].as_f64().unwrap() > f64::from(ROOF) + 1.2);
+    let rgba = snapshot["color"].as_array().unwrap();
+    assert!(rgba[..3].iter().any(|channel| channel == &1.0));
+    assert!(
+        rgba[..3]
+            .iter()
+            .any(|channel| channel.as_f64().unwrap() < 0.2)
+    );
+    let marker_meshes = scene
+        .world
+        .owned_subtree(marker)
+        .into_iter()
+        .filter_map(|id| {
+            let renderable = scene
+                .world
+                .get_component_by_id_as::<RenderableComponent>(id)?;
+            assert!(!BvhSystem::renderable_is_raycastable(&scene.world, id));
+            let frame = TransformSystem::world_model(&scene.world, id).unwrap();
+            assert!(frame[3][1] > ROOF + 0.07, "buried paw pad: {frame:?}");
+            assert!(
+                frame[2][2] > 0.0 && frame[2][1].abs() < 1e-5,
+                "paw faces the view"
+            );
+            Some(renderable.renderable.mesh)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(marker_meshes.len(), 5);
+    for id in hud_pads {
+        let pad = scene
+            .world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .unwrap();
+        assert!(marker_meshes.contains(&pad.renderable.mesh));
+    }
+
+    click(&mut scene, toggle);
+    hold_head(&mut scene, head, 0.7, 1);
+    assert!(!exists(&scene, "paw_capture_hud"));
+    assert!(exists(&scene, "paw_capture_marker"));
+}
+
+#[test]
+fn downed_pose_releases_the_crawl_ankle_rotation() {
+    use crate::engine::ecs::component::BoneRestPoseComponent;
+
+    let mut source = twilight_rooftop_with_lumae();
+    source.push_str(
+        r#"
+        import { lie_down } from "../assets/components/characters/downed.mms"
+        let down_test = T { name = "down_test" }
+        on(down_test, "DataEvent", fn(event) { lie_down(remote, "back", null) })
+        down_test
+    "#,
+    );
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(&source, "examples/twilight_rooftop.mms")
+        .unwrap();
+    let avatar = named(&scene, "remote_avatar");
+    let head = named(&scene, "remote_head_target");
+    hold_head(&mut scene, head, 1.644, 30);
+    hold_head(&mut scene, head, 0.7, 90);
+    let feet =
+        [HumanoidSlot::LeftFoot, HumanoidSlot::RightFoot].map(|slot| bone(&scene, avatar, slot));
+    let dot_with_rest = |scene: &Universe, foot| {
+        let rest = scene
+            .world
+            .children_of(foot)
+            .iter()
+            .find_map(|&child| {
+                scene
+                    .world
+                    .get_component_by_id_as::<BoneRestPoseComponent>(child)
+            })
+            .unwrap()
+            .rotation;
+        let rotation = scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(foot)
+            .unwrap()
+            .transform
+            .rotation;
+        rotation
+            .into_iter()
+            .zip(rest)
+            .map(|(a, b)| a * b)
+            .sum::<f32>()
+            .abs()
+    };
+    for foot in feet {
+        assert!(
+            dot_with_rest(&scene, foot) < 0.99,
+            "crawl rotates the ankle"
+        );
+    }
+    scene.command_queue.push_event(
+        named(&scene, "down_test"),
+        EventSignal::DataEvent {
+            name: "Down".into(),
+            payload: None,
+        },
+    );
+    scene.update(1.0 / 60.0, &Default::default());
+    for foot in feet {
+        assert!(
+            dot_with_rest(&scene, foot) > 0.999,
+            "downed ankle uses its rest rotation"
+        );
+    }
+}
+
+#[test]
 fn body_solver_flowchart_example_has_a_card_for_every_note() {
     let source = std::fs::read_to_string("examples/body-solver-flowchart.mms").unwrap();
     let notes =

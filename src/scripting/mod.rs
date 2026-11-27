@@ -133,9 +133,23 @@ mod truck_bed_tests;
 #[cfg(test)]
 mod avatar_picker_tests;
 #[cfg(test)]
+mod health_bar_tests;
+#[cfg(test)]
 mod miku_rig_report;
 #[cfg(test)]
 mod sakura_twilight_tests;
+#[cfg(test)]
+mod mms_scene_bench;
+#[cfg(test)]
+mod sakura_combat_tests;
+#[cfg(test)]
+mod target_practice_tests;
+#[cfg(test)]
+mod burst_rocket_tests;
+#[cfg(test)]
+mod keyframe_phase_tests;
+#[cfg(test)]
+mod vehicle_carry_tests;
 #[cfg(test)]
 mod sakura_environment_tests;
 
@@ -148,6 +162,7 @@ mod udp_channel_api;
 mod udp_channel_tests;
 
 mod morph_api;
+mod path_graph_api;
 
 #[cfg(test)]
 mod shared_grab_tests;

@@ -15,12 +15,15 @@ impl Default for XrHandPreference {
     }
 }
 
-/// How the thumbsticks drive locomotion. The locomotion stick always moves
-/// and strafes.
+/// How the stick opposite the locomotion stick is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum XrStickMode {
-    /// Only the locomotion stick is used.
+    /// Follow the local session's input preference.
+    Inherit,
+    /// Orbit the active third-person camera. Idle in first person.
     #[default]
+    Orbit,
+    /// Leave the other stick available to scripts.
     Strafe,
     /// The other hand's stick X smoothly turns the rig about the headset.
     Turn,
@@ -29,6 +32,8 @@ pub enum XrStickMode {
 impl XrStickMode {
     pub fn parse(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().as_str() {
+            "default" => Some(Self::Inherit),
+            "orbit" => Some(Self::Orbit),
             "strafe" => Some(Self::Strafe),
             "turn" => Some(Self::Turn),
             _ => None,
@@ -37,6 +42,8 @@ impl XrStickMode {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Inherit => "default",
+            Self::Orbit => "orbit",
             Self::Strafe => "strafe",
             Self::Turn => "turn",
         }
@@ -72,7 +79,7 @@ pub struct InputXRGamepadComponent {
     pub locomotion: bool,
     pub speed: f32,
     pub stick_mode: XrStickMode,
-    /// Turn-mode yaw rate at full stick deflection, in radians per second.
+    /// Turn or orbit rate at full stick deflection, in radians per second.
     pub turn_speed: f32,
     /// Opt-in B double-tap flight. Runtime flight state is never serialized.
     pub enable_flying: bool,
@@ -91,7 +98,7 @@ impl InputXRGamepadComponent {
             hand: XrHandPreference::Default,
             locomotion: true,
             speed: 3.0,
-            stick_mode: XrStickMode::Strafe,
+            stick_mode: XrStickMode::Inherit,
             turn_speed: DEFAULT_TURN_SPEED,
             enable_flying: false,
             flight_permission: None,
@@ -226,7 +233,7 @@ impl Component for InputXRGamepadComponent {
         if (self.speed - 3.0).abs() > f32::EPSILON {
             ce = ce.with_call("speed", vec![num(self.speed as f64)]);
         }
-        if self.stick_mode != XrStickMode::Strafe {
+        if self.stick_mode != XrStickMode::Inherit {
             ce = ce.with_call("stick_mode", vec![s(self.stick_mode.as_str())]);
         }
         if (self.turn_speed - DEFAULT_TURN_SPEED).abs() > f32::EPSILON {

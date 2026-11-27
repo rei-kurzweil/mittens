@@ -184,7 +184,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
     fn parse(&self, source: &str) -> Result<Vec<Statement>, EvalError> {
         let tokens = MeowMeowTokenizer::new(source)
             .tokenize()
-            .map_err(|e| EvalError::Tokenize(format!("{e:?}")))?;
+            .map_err(|e| EvalError::Tokenize(located(source, e.span.start, &e.message)))?;
         let parser = if let Some(catalog) = &self.catalog {
             match catalog.component_name_policy {
                 ComponentNamePolicy::OpenUppercase => {
@@ -209,7 +209,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
         };
         parser
             .parse_program()
-            .map_err(|e| EvalError::Parse(e.message))
+            .map_err(|e| EvalError::Parse(located(source, e.span.start, &e.message)))
     }
 
     fn eval_block(&mut self, block: &BlockStatement) -> Result<Flow, EvalError> {
@@ -546,7 +546,13 @@ impl<'a, H: Host> Evaluator<'a, H> {
     }
 
     fn eval_module_source(&mut self, source: &str, identity: SourceId) -> Result<Value, EvalError> {
-        let statements = self.parse(source)?;
+        let statements = self.parse(source).map_err(|error| match error {
+            EvalError::Parse(message) => EvalError::Parse(format!("in {}: {message}", identity.as_str())),
+            EvalError::Tokenize(message) => {
+                EvalError::Tokenize(format!("in {}: {message}", identity.as_str()))
+            }
+            other => other,
+        })?;
         let previous_source = self.source_id.replace(identity);
         self.module_depth += 1;
         self.scopes.push(HashMap::new());
@@ -644,26 +650,63 @@ impl<'a, H: Host> Evaluator<'a, H> {
     fn eval_index(&mut self, base: &Expression, index: &Expression) -> Result<Value, EvalError> {
         let base = self.eval_expr(base)?;
         let index = self.eval_expr(index)?;
-        match (base, index) {
-            (Value::Array(values), Value::Number(index)) => {
-                Ok(values.get(index as usize).cloned().unwrap_or(Value::Null))
+        index_value(base, index)
+    }
+
+    /// `receiver.push(value)` on an array appends in place when `receiver`
+    /// names a variable or a table entry, so the array isn't copied, and
+    /// returns the new length. Any other array, such as a literal, is pushed
+    /// as a temporary. A receiver that isn't an array comes back evaluated for
+    /// ordinary method dispatch, so a table's own `push` field still works.
+    fn push_to_array(&mut self, receiver: &Expression, args: &[Value]) -> Result<Pushed, EvalError> {
+        match self.push_in_place(receiver, args)? {
+            Pushed::Receiver(Value::Array(mut items)) => {
+                push_value(&mut items, args).map(Pushed::Length)
             }
-            (Value::Map(values), Value::String(key))
-            | (Value::Map(values), Value::Identifier(key)) => {
-                Ok(values.get(&key).cloned().unwrap_or(Value::Null))
+            pushed => Ok(pushed),
+        }
+    }
+
+    fn push_in_place(&mut self, receiver: &Expression, args: &[Value]) -> Result<Pushed, EvalError> {
+        match receiver {
+            Expression::Identifier(name) => {
+                if let Some(slot) = self
+                    .scopes
+                    .iter_mut()
+                    .rev()
+                    .find_map(|scope| scope.get_mut(&name.0))
+                {
+                    if let Value::Array(items) = slot {
+                        return push_value(items, args).map(Pushed::Length);
+                    }
+                }
+                self.eval_expr(receiver).map(Pushed::Receiver)
             }
-            (Value::RecordType(ty), Value::String(key))
-            | (Value::RecordType(ty), Value::Identifier(key)) => Ok(ty
-                .0
-                .get(&key)
-                .copied()
-                .map(Value::TypeTag)
-                .unwrap_or(Value::Null)),
-            (Value::Object(id), Value::String(key))
-            | (Value::Object(id), Value::Identifier(key)) => id
-                .with_map(|values| values.get(&key).cloned().unwrap_or(Value::Null))
-                .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
-            _ => Err(EvalError::Runtime("invalid index operation".into())),
+            Expression::BinaryOp {
+                op: BinOpKind::Dot,
+                lhs,
+                rhs,
+            } => {
+                let Expression::Identifier(key) = rhs.as_ref() else {
+                    return self.eval_expr(receiver).map(Pushed::Receiver);
+                };
+                let base = self.eval_expr(lhs)?;
+                if let Some(length) = push_to_entry(&base, &key.0, args)? {
+                    return Ok(Pushed::Length(length));
+                }
+                self.field_value(base, &key.0).map(Pushed::Receiver)
+            }
+            Expression::Index { base, index } => {
+                let base = self.eval_expr(base)?;
+                let index = self.eval_expr(index)?;
+                if let Value::String(key) | Value::Identifier(key) = &index {
+                    if let Some(length) = push_to_entry(&base, key, args)? {
+                        return Ok(Pushed::Length(length));
+                    }
+                }
+                index_value(base, index).map(Pushed::Receiver)
+            }
+            _ => self.eval_expr(receiver).map(Pushed::Receiver),
         }
     }
 
@@ -734,53 +777,59 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     ));
                 }
             };
-            return match lhs {
-                Value::Identifier(name) if name == "Math" => match key.as_str() {
-                    "pi" => Ok(Value::Number(std::f64::consts::PI)),
-                    "e" => Ok(Value::Number(std::f64::consts::E)),
-                    _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
-                },
-                Value::Identifier(namespace)
-                    if self
-                        .catalog
-                        .as_ref()
-                        .is_some_and(|catalog| catalog.has_namespace(&namespace)) =>
-                {
-                    let child = format!("{namespace}.{key}");
-                    if self
-                        .catalog
-                        .as_ref()
-                        .is_some_and(|catalog| catalog.has_namespace(&child))
-                    {
-                        Ok(Value::Identifier(child))
-                    } else {
-                        Err(EvalError::Runtime(format!(
-                            "unknown namespace table entry '{child}'"
-                        )))
-                    }
-                }
-                Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
-                Value::RecordType(ty) => Ok(ty
-                    .0
-                    .get(key)
-                    .copied()
-                    .map(Value::TypeTag)
-                    .unwrap_or(Value::Null)),
-                Value::Object(id) => id
-                    .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
-                    .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
-                Value::ComponentObject { id, .. } => {
-                    self.validate_field_receiver(id)?;
-                    Ok(self.component_field(id, key).unwrap_or(Value::Null))
-                }
-                other => Err(EvalError::Runtime(format!(
-                    "field access requires a table; receiver was {other:?}"
-                ))),
-            };
+            return self.field_value(lhs, key);
         }
         let lhs = self.eval_expr(lhs)?;
         let rhs = self.eval_expr(rhs)?;
         binary_values(op, lhs, rhs)
+    }
+
+    /// `base.key` for an already evaluated `base`.
+    fn field_value(&mut self, base: Value, key: &str) -> Result<Value, EvalError> {
+        match base {
+            Value::Identifier(name) if name == "Math" => match key {
+                "pi" => Ok(Value::Number(std::f64::consts::PI)),
+                "tau" => Ok(Value::Number(std::f64::consts::TAU)),
+                "e" => Ok(Value::Number(std::f64::consts::E)),
+                _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
+            },
+            Value::Identifier(namespace)
+                if self
+                    .catalog
+                    .as_ref()
+                    .is_some_and(|catalog| catalog.has_namespace(&namespace)) =>
+            {
+                let child = format!("{namespace}.{key}");
+                if self
+                    .catalog
+                    .as_ref()
+                    .is_some_and(|catalog| catalog.has_namespace(&child))
+                {
+                    Ok(Value::Identifier(child))
+                } else {
+                    Err(EvalError::Runtime(format!(
+                        "unknown namespace table entry '{child}'"
+                    )))
+                }
+            }
+            Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
+            Value::RecordType(ty) => Ok(ty
+                .0
+                .get(key)
+                .copied()
+                .map(Value::TypeTag)
+                .unwrap_or(Value::Null)),
+            Value::Object(id) => id
+                .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
+                .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+            Value::ComponentObject { id, .. } => {
+                self.validate_field_receiver(id)?;
+                Ok(self.component_field(id, key).unwrap_or(Value::Null))
+            }
+            other => Err(EvalError::Runtime(format!(
+                "field access requires a table; receiver was {other:?}"
+            ))),
+        }
     }
 
     fn eval_call(&mut self, callee: &Expression, args: &[Expression]) -> Result<Value, EvalError> {
@@ -791,6 +840,11 @@ impl<'a, H: Host> Evaluator<'a, H> {
         if let Expression::Identifier(name) = callee {
             match name.0.as_str() {
                 "range" => return range(&args),
+                "print" => {
+                    let text = args.first().map(print_text).unwrap_or_else(|| "null".into());
+                    println!("[mms] {text}");
+                    return Ok(Value::Null);
+                }
                 "is_string" => {
                     let [value] = args.as_slice() else {
                         return Err(EvalError::Runtime(
@@ -866,7 +920,14 @@ impl<'a, H: Host> Evaluator<'a, H> {
                 Expression::Identifier(name) => name.0.clone(),
                 _ => return Err(EvalError::Runtime("invalid method name".into())),
             };
-            let receiver = self.eval_expr(lhs)?;
+            let receiver = if method == "push" {
+                match self.push_to_array(lhs, &args)? {
+                    Pushed::Length(length) => return Ok(length),
+                    Pushed::Receiver(receiver) => receiver,
+                }
+            } else {
+                self.eval_expr(lhs)?
+            };
             return match receiver {
                 Value::EventBinding(callback) => {
                     self.event_binding_method(callback, &method, &args)
@@ -1443,7 +1504,10 @@ impl<'a, H: Host> Evaluator<'a, H> {
 
     fn is_component_body_builder_call(&self, name: &str) -> bool {
         if self.lookup(name).is_some()
-            || matches!(name, "range" | "len" | "byte_len" | "query" | "query_all")
+            || matches!(
+                name,
+                "print" | "range" | "len" | "byte_len" | "query" | "query_all"
+            )
         {
             return false;
         }
@@ -1700,6 +1764,94 @@ impl<'a, H: Host> Evaluator<'a, H> {
             Flow::Return(value) => self.register_live_component_value(value),
             _ => Ok(Value::Null),
         }
+    }
+
+    /// Invoke a keyframe callback for one pass (see `CallbackPhase`): its
+    /// top-level statements are split between the audio and visual passes,
+    /// so each runs exactly once across the two.
+    pub(crate) fn invoke_value_in_phase(
+        &mut self,
+        callback: Value,
+        args: Vec<Value>,
+        phase: crate::CallbackPhase,
+    ) -> Result<Value, EvalError> {
+        let Value::Function {
+            params,
+            body,
+            captured_env,
+            ..
+        } = callback
+        else {
+            return Err(EvalError::Runtime("callback is not callable".into()));
+        };
+        self.scopes.push((*captured_env).clone());
+        self.scopes.push(
+            params
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| (p, args.get(i).cloned().unwrap_or(Value::Null)))
+                .collect(),
+        );
+        // Decide every statement's pass before any of them runs, so a local
+        // bound in the visual pass can't move a later statement out of both.
+        let runs: Vec<bool> = body
+            .statements
+            .iter()
+            .map(|statement| match phase {
+                crate::CallbackPhase::Audio => self.is_audio_statement(statement),
+                crate::CallbackPhase::Visual => !self.is_audio_statement(statement),
+                crate::CallbackPhase::All => true,
+            })
+            .collect();
+        self.scopes.push(HashMap::new());
+        let result: Result<Flow, EvalError> = (|| {
+            for (statement, runs) in body.statements.iter().zip(runs) {
+                if !runs {
+                    continue;
+                }
+                let flow = self.eval_statement(statement)?;
+                if !matches!(flow, Flow::Continue) {
+                    return Ok(flow);
+                }
+            }
+            Ok(Flow::Continue)
+        })();
+        self.scopes.pop();
+        self.scopes.pop();
+        self.scopes.pop();
+        match result? {
+            Flow::Return(value) => self.register_live_component_value(value),
+            _ => Ok(Value::Null),
+        }
+    }
+
+    /// A statement for the audio pass: statically audio (MusicNote), or a
+    /// call made directly on a variable holding an audio component. Reading
+    /// that variable changes nothing.
+    fn is_audio_statement(&self, statement: &Statement) -> bool {
+        use crate::block_effect_analyzer::{EffectKind, classify_statement};
+        if classify_statement(statement) == EffectKind::Audio {
+            return true;
+        }
+        let Statement::Expression(Expression::Call(call)) = statement else {
+            return false;
+        };
+        let Expression::BinaryOp {
+            op: BinOpKind::Dot,
+            lhs,
+            ..
+        } = call.callee.as_ref()
+        else {
+            return false;
+        };
+        let Expression::Identifier(name) = lhs.as_ref() else {
+            return false;
+        };
+        matches!(
+            self.lookup(&name.0),
+            Some(Value::ComponentObject { component_type, .. })
+                if matches!(component_type.as_str(), "AudioClip" | "AudioOscillator" | "AudioGain")
+        )
     }
 
     fn lookup(&self, name: &str) -> Option<&Value> {
@@ -2079,6 +2231,61 @@ fn number_array(value: &Value, context: &str) -> Result<Vec<f64>, EvalError> {
         .collect()
 }
 
+/// `base[index]` for already evaluated values.
+fn index_value(base: Value, index: Value) -> Result<Value, EvalError> {
+    match (base, index) {
+        (Value::Array(values), Value::Number(index)) => {
+            Ok(values.get(index as usize).cloned().unwrap_or(Value::Null))
+        }
+        (Value::Map(values), Value::String(key))
+        | (Value::Map(values), Value::Identifier(key)) => {
+            Ok(values.get(&key).cloned().unwrap_or(Value::Null))
+        }
+        (Value::RecordType(ty), Value::String(key))
+        | (Value::RecordType(ty), Value::Identifier(key)) => Ok(ty
+            .0
+            .get(&key)
+            .copied()
+            .map(Value::TypeTag)
+            .unwrap_or(Value::Null)),
+        (Value::Object(id), Value::String(key))
+        | (Value::Object(id), Value::Identifier(key)) => id
+            .with_map(|values| values.get(&key).cloned().unwrap_or(Value::Null))
+            .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+        _ => Err(EvalError::Runtime("invalid index operation".into())),
+    }
+}
+
+/// The result of `push_to_array`.
+enum Pushed {
+    /// The new length after an array push.
+    Length(Value),
+    /// A receiver that isn't an array, for ordinary method dispatch.
+    Receiver(Value),
+}
+
+fn push_value(items: &mut Vec<Value>, args: &[Value]) -> Result<Value, EvalError> {
+    let [value] = args else {
+        return Err(EvalError::Runtime("push expects exactly one value".into()));
+    };
+    items.push(value.clone());
+    Ok(Value::Number(items.len() as f64))
+}
+
+/// Pushes onto `base[key]` in place when `base` is a table whose entry is an
+/// array. `None` means there was no array there.
+fn push_to_entry(base: &Value, key: &str, args: &[Value]) -> Result<Option<Value>, EvalError> {
+    let Value::Object(id) = base else {
+        return Ok(None);
+    };
+    id.with_map_mut(|map| match map.get_mut(key) {
+        Some(Value::Array(items)) => Some(push_value(items, args)),
+        _ => None,
+    })
+    .ok_or_else(|| EvalError::Runtime("stale table reference".into()))?
+    .transpose()
+}
+
 fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalError> {
     if matches!(op, BinOpKind::Eq | BinOpKind::NotEq) {
         for (value, other) in [(&lhs, &rhs), (&rhs, &lhs)] {
@@ -2132,6 +2339,44 @@ fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalEr
 fn truthy(value: &Value) -> bool {
     !matches!(value, Value::Null | Value::Bool(false))
 }
+
+/// Like the load-time `print`, arrays and tables are shown element by element
+/// rather than as debug output, here with sorted keys. Heap tables are copied
+/// out before formatting so nested tables never take the heap lock twice, and
+/// nesting past a few levels (or a table that contains itself) is cut short.
+fn print_text(value: &Value) -> String {
+    print_text_at(value, 0)
+}
+
+fn print_text_at(value: &Value, depth: usize) -> String {
+    const MAX_DEPTH: usize = 6;
+    let entries = |map: &HashMap<String, Value>| {
+        let mut keys: Vec<_> = map.keys().collect();
+        keys.sort();
+        keys.into_iter()
+            .map(|key| format!("{key}: {}", print_text_at(&map[key], depth + 1)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match value {
+        Value::Array(_) | Value::Map(_) | Value::Object(_) if depth >= MAX_DEPTH => "...".into(),
+        Value::Array(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(|item| print_text_at(item, depth + 1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Map(map) => format!("{{{}}}", entries(map)),
+        Value::Object(id) => match id.with_map(|map| map.clone()) {
+            Some(map) => format!("{{{}}}", entries(&map)),
+            None => "{}".into(),
+        },
+        other => value_text(other),
+    }
+}
+
 fn value_text(value: &Value) -> String {
     match value {
         Value::String(s) | Value::Identifier(s) => s.clone(),
@@ -2168,4 +2413,16 @@ mod component_identity_tests {
             );
         }
     }
+}
+
+/// `message` with the line and column of byte `offset` in `source`, and that
+/// line with a caret under the column.
+pub(crate) fn located(source: &str, offset: usize, message: &str) -> String {
+    let offset = offset.min(source.len());
+    let before = &source[..offset];
+    let line = before.bytes().filter(|&b| b == b'\n').count() + 1;
+    let column = before.rfind('\n').map_or(offset + 1, |newline| offset - newline);
+    let text = source.lines().nth(line - 1).unwrap_or("");
+    let caret = " ".repeat(column.saturating_sub(1));
+    format!("line {line}, column {column}: {message}\n  {text}\n  {caret}^")
 }

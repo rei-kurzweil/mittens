@@ -9,6 +9,9 @@ pub struct ImplicitSurfaceComponent {
     pub smooth_min_radius: f32,
     /// Intersect the field with the half-space above this local Y plane.
     pub clip_floor: Option<f32>,
+    /// Texture repeats per local unit: UVs are the surface's local x and z
+    /// times this.
+    pub uv_scale: f32,
 }
 
 impl Default for ImplicitSurfaceComponent {
@@ -20,6 +23,7 @@ impl Default for ImplicitSurfaceComponent {
             iso_level: 0.0,
             smooth_min_radius: 0.0,
             clip_floor: None,
+            uv_scale: 1.0,
         }
     }
 }
@@ -58,6 +62,9 @@ impl Component for ImplicitSurfaceComponent {
             .with_call("smooth_min_radius", nums([self.smooth_min_radius as f64]));
         if let Some(floor) = self.clip_floor {
             result = result.with_call("clip_floor", nums([floor as f64]));
+        }
+        if self.uv_scale != 1.0 {
+            result = result.with_call("uv_scale", nums([self.uv_scale as f64]));
         }
         result
     }
@@ -116,12 +123,14 @@ mod tests {
             iso_level: 0.1,
             smooth_min_radius: 0.6,
             clip_floor: Some(-0.5),
+            uv_scale: 0.25,
         };
         let world = crate::engine::ecs::World::default();
         let text = unparse_component(&surface.to_mms_ast(&world));
         assert!(text.contains("ImplicitSurface.bounds"));
         assert!(text.contains("voxel_size("));
         assert!(text.contains("smooth_min_radius("));
+        assert!(text.contains("uv_scale(0.25)"));
 
         let sphere = ImplicitSphereComponent::radius(1.75);
         let text = unparse_component(&sphere.to_mms_ast(&world));

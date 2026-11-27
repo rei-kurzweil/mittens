@@ -3,6 +3,15 @@
 Status: planned, 2026-09-12. Follows the first `Rider` + `Mountable` mount
 slice and its `mittens-corp` vehicle demonstration.
 
+2026-11-24: narrowed by [collision contexts and vehicle carry](collision-contexts-and-vehicle-carry.md).
+Slice 1 below (input out of `AttachmentSystem`) is being done there as its
+phase 1, with a simpler authority rule: the vehicle's MMS script turns the
+rider's walking off and back on (`Rider.set_locomotion_enabled`), and whoever
+turned it off turns it back on. The full control-layer stack waits for real
+nesting (a vehicle inside a carrier). The first consumers are now the sakura
+pickup (driver, passenger and bed seats) and the `car.glb` mech, not only
+`mittens-corp`.
+
 ## Problem
 
 `AttachmentSystem` currently performs two unrelated jobs:

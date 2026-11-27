@@ -1,5 +1,5 @@
 pub mod destroyable;
-pub use destroyable::{CutGeometryComponent, DamageComponent, DestroyableComponent};
+pub use destroyable::{Blast, CutGeometryComponent, DamageComponent, DestroyableComponent};
 pub mod ambient_light;
 pub mod ambient_occlusion;
 pub mod amplitude;
@@ -51,6 +51,7 @@ pub mod gravity;
 pub mod grid;
 pub mod grid_binding;
 pub mod hand_tracking;
+pub mod blastable;
 pub mod html_element;
 pub mod http_client;
 pub mod http_server;
@@ -73,6 +74,8 @@ pub mod mesh;
 pub mod mirror;
 pub mod morph_target;
 pub mod mountable;
+pub mod collision_context;
+pub mod integrity;
 pub mod multiplayer_session;
 pub mod music_note;
 pub mod normal_visualisation;
@@ -291,6 +294,7 @@ pub use gravity::{GravityComponent, GravityMode};
 pub use grid::{GridComponent, GridVisualSpace};
 pub use grid_binding::GridBindingComponent;
 pub use hand_tracking::HandTrackingComponent;
+pub use blastable::BlastableComponent;
 pub use html_element::{ElementType, HtmlElementComponent};
 pub use http_client::HttpClientComponent;
 pub use http_server::HttpServerComponent;
@@ -299,7 +303,7 @@ pub use ik_chain::{IKChainComponent, IKSolver};
 pub use implicit_surface::{ImplicitSphereComponent, ImplicitSurfaceComponent};
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
-pub use input_xr::InputXRComponent;
+pub use input_xr::{HeadLock, InputXRComponent};
 pub use input_xr_gamepad::{
     InputXRGamepadComponent, XrAxisControl, XrButtonControl, XrHandPreference, XrStickMode,
 };
@@ -317,6 +321,8 @@ pub use morph_target::{
     MorphTargetMapComponent,
 };
 pub use mountable::MountableComponent;
+pub use collision_context::CollisionContextComponent;
+pub use integrity::IntegrityComponent;
 pub use multiplayer_session::{
     MULTIPLAYER_DEFAULT_PORT, MultiplayerRole, MultiplayerSessionComponent,
 };
@@ -635,3 +641,6 @@ pub use udp_channel::{UdpSocketComponent, UdpChannelComponent, UdpBinding};
 
 pub mod pose_input;
 pub use pose_input::PoseInputComponent;
+
+pub mod path_graph;
+pub use path_graph::PathGraphComponent;

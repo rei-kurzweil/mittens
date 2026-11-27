@@ -750,7 +750,7 @@ CameraXR {}
 Carries controller xr state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Camera/XR systems; registration intents and XR button/axis events are relevant.
 **Available through an alias.** Construct this Rust type as `XRHand`; compatibility aliases are `XrHand`, `VRHand`, and `VrHand`. Sources: [Rust implementation](../../../src/engine/ecs/component/controller_xr.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-XRHand.new(true, "Left", "Aim").laser()
+XRHand(true, "Left", "Aim").laser()
 ```
 
 `.laser()` adds one runtime-only, noninteractive cyan direction laser along local `-Z`.
@@ -766,6 +766,17 @@ XR {}
 ```
 
 ## Physics and motion
+
+### `BlastableComponent`
+<!-- catalog:component source="BlastableComponent" mms="direct" names="Blastable" -->
+Opts a Velocity's body into blasts: the push a damage impact carries with `Damage.at(...).blast(radius, speed, spin)` (rockets use `.blast(6, 9, 8)`). Place it as a child of the Velocity, like Gravity. A blast reaching the Velocity's driven transform adds speed away from the blast, biased upward and scaled by `1 / mass`, and a turn scaled by `spin / mass`: a yaw that swings the front away, or with `.tumble()` a roll across the push. Both fall off to zero at the blast radius. Vehicles get one from `ship_vehicle_motion`.
+**Directly constructible** as `Blastable`. Sources: [Rust implementation](../../../src/engine/ecs/component/blastable.rs), [blast system](../../../src/engine/ecs/system/blast_system.rs) and [MMS registry](../../../src/scripting/registries/geometry_registry.rs).
+```mms parse-only
+Velocity {
+    T {}
+    Blastable.mass(1.6).spin(0.3) {}
+}
+```
 
 ### `GravityComponent`
 <!-- catalog:component source="GravityComponent" mms="direct" names="Gravity" -->
@@ -844,6 +855,14 @@ Carries spring joint state used when that engine feature is present in a compone
 **Directly constructible** as `SpringJoint`. Sources: [Rust implementation](../../../src/engine/ecs/component/secondary_motion.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 SpringJoint {}
+```
+
+### `PathGraphComponent`
+<!-- catalog:component source="PathGraphComponent" mms="direct" names="PathGraph" -->
+A ground-plane waypoint graph for walking routes. `PathGraph.new({ nodes, obstacles, bounds })` takes `[x, y, z]` waypoints, padded `[min_x, max_x, min_z, max_z]` obstacle rectangles and a walkable rectangle, and builds its edges once. Methods: `route(here, goal)` returns `{ points, length }` or null; `nearest(here, goals)` takes points or `{ point, cost }` tables and returns `{ index, points, length }` for the cheapest goal to walk to, or null. See [path finding system](../../spec/path-finding-system.md).
+**Directly constructible** as `PathGraph`. Sources: [Rust implementation](../../../src/engine/ecs/component/path_graph.rs), [search](../../../src/engine/ecs/system/path_finding_system.rs) and [MMS API](../../../src/scripting/path_graph_api.rs).
+```mms parse-only
+PathGraph.new({ nodes = [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]] obstacles = [[1.0, 2.0, -1.0, 1.0]] bounds = [-5.0, 5.0, -5.0, 5.0] }) {}
 ```
 
 ## Layout, text, and HTML
@@ -1342,6 +1361,17 @@ closure avoids querying it on every event.
 The default is zero; friction reduces physical tangential Velocity during fixed
 contact steps and does not damp airborne motion or change Input speed. See
 [surface friction](../../task/surface-friction-for-static-collidables.md).
+
+`Collidable.obstacle()` blocks movers but never moves, observes or supports
+standing: moving obstacles such as an avatar's limbs. `CollisionContext`
+`.overlay(true)` makes a context every nearby mover queries (within 8 m of
+its frame, up to eight spaces per mover) in addition to its own, while a mover
+still ignores overlay zones under its own body. Detailed avatars
+(`collision_detail("detailed")`) put leg and foot obstacles in an overlay
+context of their own and stop their capsule acting as an obstacle, so a small
+avatar can walk between a big one's legs but not through them. In crawling
+and hands-and-knees posture an avatar's capsule becomes a low sphere of 0.75x
+its radius resting on the same floor point.
 
 ### `UdpSocketComponent`
 <!-- catalog:component source="UdpSocketComponent" mms="direct" names="UdpSocket" -->

@@ -13,6 +13,13 @@ a string; components, numbers, tables, and other values return false. It makes
 dynamic string/component factory options possible without a host request or
 type-annotation parser changes.
 
+`print(value)` is also a pure evaluator builtin from
+`with_standard_builtins()`, so it works in callbacks as well as at load time.
+It writes `[mms] <text>` to stdout, which the Android host forwards to logcat,
+and returns null. Arrays and tables print element by element with sorted keys;
+nesting deeper than six levels, including a table that contains itself, prints
+as `...`.
+
 Current type-tag slice (2026-10-23): [first-class runtime type tags](../../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23).
 Explicit lowercase imports such as `import { f32, vec2, vec3, vec4, str } from
 "types"` provide immutable tag values. The language resolves this module without

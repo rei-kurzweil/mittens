@@ -28,3 +28,10 @@ velocity step only snapshots poses and calls it.
 
 - `cargo test --lib velocity` and `cargo test --lib swept_zone_events` are unchanged.
 - The `twilight_rooftop` and rocket scene tests still pass.
+
+## Static contact fixtures
+
+Group static-contact tests by support, motion correction, and collision
+contexts as the fixtures grow. Keep a shared zone builder for all collider
+modes. Run the existing static-contact and velocity tests after moving them
+and keep the production collision path untouched.

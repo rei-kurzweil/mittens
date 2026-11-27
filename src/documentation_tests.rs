@@ -316,6 +316,7 @@ fn event_exposure_classifications_match_mms_conversion() {
         "MountEnded",
         "XrEyeTrackingUpdated",
         "XrEyeTrackingHtcUpdated",
+        "RayMissed",
     ];
     let partial = [
         "DataEvent",

@@ -130,6 +130,10 @@ fn items_released_over_the_bed_stay_put_and_ride_the_truck() {
     assert!(near(position(&scene, gun), [3.0, 1.0, 0.0]));
 }
 
+fn chassis_frame(scene: &Universe) -> ComponentId {
+    named(scene, "pickup_chassis_frame")
+}
+
 fn zone_holds(scene: &Universe, zone: &str, point: [f32; 3]) -> bool {
     use crate::engine::ecs::system::{ZoneRelation, classify_zone_point};
     matches!(
@@ -139,7 +143,7 @@ fn zone_holds(scene: &Universe, zone: &str, point: [f32; 3]) -> bool {
 }
 
 #[test]
-fn driver_passenger_and_bed_seats_share_the_truck_grip_by_entry_zone() {
+fn driver_and_passenger_seats_share_the_truck_grip_and_the_bed_is_a_deck() {
     use crate::engine::ecs::component::MountableComponent;
     let scene = scene(
         r#"
@@ -147,7 +151,7 @@ fn driver_passenger_and_bed_seats_share_the_truck_grip_by_entry_zone() {
         T { name = "truck_place" pickup_truck(null, null, false) }
     "#,
     );
-    // All three grip seats live on the truck root, so a grip anywhere on the
+    // Both grip seats live on the truck root, so a grip anywhere on the
     // truck reaches them and the rider's entry zone picks one.
     let truck = named(&scene, "pickup_truck");
     let seats = scene
@@ -161,7 +165,29 @@ fn driver_passenger_and_bed_seats_share_the_truck_grip_by_entry_zone() {
                 .is_some_and(|m| m.enabled && m.on_grip)
         })
         .count();
-    assert_eq!(seats, 3, "driver, passenger and bed");
+    assert_eq!(seats, 2, "driver and passenger");
+    // The bed is a carry deck on the truck root whose deck frame and
+    // collision context follow the chassis; passthrough skips the whole truck.
+    let deck = named(&scene, "pickup_bed_mountable");
+    assert_eq!(scene.world.parent_of(deck), Some(truck));
+    let deck_settings = scene
+        .world
+        .get_component_by_id_as::<MountableComponent>(deck)
+        .unwrap();
+    assert!(deck_settings.carry && !deck_settings.on_grip && deck_settings.context.is_some());
+    let context = named(&scene, "pickup_bed_context");
+    assert_eq!(scene.world.parent_of(context), Some(chassis_frame(&scene)));
+    assert!(
+        scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::CollisionContextComponent>(
+                context
+            )
+            .unwrap()
+            .exclude
+            .is_some()
+    );
+    assert!(deck_settings.mount_anchor.is_some());
     let chassis = named(&scene, "pickup_chassis_frame");
     let model = TransformSystem::world_model(&scene.world, chassis).unwrap();
     let at = |p: [f32; 3]| {
@@ -233,4 +259,83 @@ fn cab_doors_hang_on_grabbable_hinges_and_keep_their_colliders() {
             "{name} keeps its panel collider"
         );
     }
+}
+
+#[test]
+fn engine_damage_smokes_then_wrecks_the_truck_and_stops_its_drive() {
+    use crate::engine::ecs::component::IntegrityComponent;
+    let mut scene = scene(
+        r##"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        let motion = pickup_truck(null, null, false, { acceleration_drive = true })
+        T { name = "truck_place" motion }
+        let truck = motion.query("#pickup_truck")
+        let events = T { name = "damage_test_events" }
+        events
+        on(events, "DataEvent", fn(event) {
+            let p = query("#pickup_engine").world_trs().translation
+            if event == "Hit" { Damage.at(p[0], p[1], p[2], 0.3, 35.0) }
+            if event == "Drive" { truck.set_control_input({ throttle = 1.0 }) }
+        })
+    "##,
+    );
+    let engine = named(&scene, "pickup_engine_integrity");
+    let hit = |scene: &mut Universe| {
+        scene.command_queue.push_event(
+            named(scene, "damage_test_events"),
+            EventSignal::DataEvent {
+                name: "Hit".into(),
+                payload: None,
+            },
+        );
+        step(scene);
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut Uploader::default(),
+            &mut scene.command_queue,
+        );
+        step(scene);
+    };
+    let fraction = |scene: &Universe| {
+        scene
+            .world
+            .get_component_by_id_as::<IntegrityComponent>(engine)
+            .unwrap()
+            .fraction()
+    };
+    // A hit creates no Damage component and lowers the engine's integrity.
+    hit(&mut scene);
+    assert_eq!(scene.world.damage_ids().count(), 0);
+    assert!((fraction(&scene) - (25.0 / 60.0)).abs() < 1e-4);
+    assert!(has(&scene, "pickup_engine_smoke_pool"), "the engine smokes past half");
+
+    // The next hit wrecks it: the truck's own input leaves only the brake.
+    hit(&mut scene);
+    assert_eq!(fraction(&scene), 0.0);
+    scene.command_queue.push_event(
+        named(&scene, "damage_test_events"),
+        EventSignal::DataEvent {
+            name: "Drive".into(),
+            payload: None,
+        },
+    );
+    step(&mut scene);
+    let drive = scene
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::AccelerationComponent>(named(
+            &scene,
+            "pickup_drive_acceleration",
+        ))
+        .unwrap();
+    let state = drive.drive.as_ref().unwrap();
+    assert!(state.throttle == 0.0 && state.braking, "a wrecked truck only brakes");
+}
+
+fn has(scene: &Universe, name: &str) -> bool {
+    scene
+        .world
+        .all_components()
+        .any(|id| scene.world.component_label(id) == Some(name))
 }

@@ -110,7 +110,7 @@ fn pool_ladder_pointer_grips_move_the_tracking_origin() {
         indoor_pool([18,0,0], 8.2, 14, 3.5, 9, true)
         T { name = "climber" InputXR.on() {
             T { CXR {} }
-            XRHand.new(true, "Left", "GripAim") { T { Pointer {} } }
+            XRHand(true, "Left", "GripAim") { T { Pointer {} } }
         } }
     "#;
     let mut scene = Universe::new(World::default());

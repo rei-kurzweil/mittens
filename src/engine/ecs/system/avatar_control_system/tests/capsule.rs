@@ -838,6 +838,59 @@ fn generated_capsule_uses_height_once_and_routes_desktop_movement() {
 }
 
 #[test]
+fn generated_desktop_capsule_follows_a_scaled_rig() {
+    let mut world = World::default();
+    let assets = RenderAssets::new();
+    let driven = world.add_component(TransformComponent::new());
+    let avc = world.add_component(AvatarControlComponent::new());
+    let model = world.add_component(TransformComponent::new());
+    // A tiny player's rig scale reaches the model root's world matrix.
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(model)
+        .unwrap()
+        .transform
+        .matrix_world = TransformComponent::new().with_scale(0.5, 0.5, 0.5).transform.model;
+    let tall_mesh = world.add_component(
+        TransformComponent::new()
+            .with_position(0.0, 0.5, 0.0)
+            .with_scale(1.0, 3.0, 1.0),
+    );
+    let renderable = world.add_component(RenderableComponent::cube());
+    attach(&mut world, driven, avc);
+    attach(&mut world, avc, model);
+    attach(&mut world, model, tall_mesh);
+    attach(&mut world, tall_mesh, renderable);
+
+    let mut queue = CommandQueue::new();
+    try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+
+    let state = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .unwrap();
+    let capsule_t = state.capsule_transform_id.unwrap();
+    let zone = world.parent_of(state.capsule_collidable_id.unwrap()).unwrap();
+    // Model-space bounds span y = -1..2; at half scale that is -0.5..1.0.
+    let CollisionShape::CapsuleY {
+        radius,
+        half_segment,
+    } = world
+        .get_component_by_id_as::<ZoneComponent>(zone)
+        .unwrap()
+        .shape
+    else {
+        panic!("expected an upright capsule")
+    };
+    assert!((radius - 0.28).abs() < 1e-5, "{radius}");
+    assert!((half_segment - 0.47).abs() < 1e-5, "{half_segment}");
+    let center = world
+        .get_component_by_id_as::<TransformComponent>(capsule_t)
+        .unwrap()
+        .transform
+        .translation;
+    assert!((center[1] - 0.25).abs() < 1e-5, "{center:?}");
+}
+
+#[test]
 fn disabled_and_delayed_fallback_behave_deterministically() {
     let assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
@@ -954,4 +1007,41 @@ fn xr_routes_to_transform_above_input_xr() {
     attach(&mut world, input_xr, driven);
     attach(&mut world, driven, avc);
     assert_eq!(automatic_avc_movement_target(&world, avc), Some(outer));
+}
+
+#[test]
+fn crawling_swaps_the_capsule_for_a_low_sphere_on_the_same_floor_and_back() {
+    use crate::engine::ecs::system::avatar_control_system::capsule::set_crawling_collider;
+    let mut f = XrCapsuleFixture::new(1.6, 1.0);
+    let capsule = f.avatar().capsule_transform_id.unwrap();
+    let zone = f
+        .world
+        .children_of(capsule)
+        .iter()
+        .copied()
+        .find(|id| f.world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+        .unwrap();
+    let shape = |f: &XrCapsuleFixture| f.world.get_component_by_id_as::<ZoneComponent>(zone).unwrap().shape;
+    let CollisionShape::CapsuleY { radius, half_segment } = shape(&f) else {
+        panic!("standing collider should be a capsule");
+    };
+    let standing_center = f.position(capsule)[1];
+    let floor = standing_center - radius - half_segment;
+
+    set_crawling_collider(&mut f.world, f.avatar, true);
+    let CollisionShape::Sphere { radius: crawl } = shape(&f) else {
+        panic!("crawling collider should be a sphere");
+    };
+    assert!((crawl - radius * 0.75).abs() < 1e-5);
+    assert!((f.position(capsule)[1] - crawl - floor).abs() < 1e-4, "the sphere rests where the capsule's base was");
+    for _ in 0..3 {
+        f.tick();
+    }
+    assert!(f.avatar().capsule_crawling);
+    assert!(matches!(shape(&f), CollisionShape::Sphere { .. }), "nothing else restores the capsule");
+
+    set_crawling_collider(&mut f.world, f.avatar, false);
+    assert_eq!(shape(&f), CollisionShape::CapsuleY { radius, half_segment });
+    f.tick();
+    assert!((f.position(capsule)[1] - standing_center).abs() < 1e-3);
 }

@@ -4,7 +4,7 @@
 retargeting:
 
 ```mms
-XRHand.new(true, Left, GripAim).laser() {
+XRHand(true, Left, GripAim).laser() {
   T {
     RestAttachment.new(
       "[name='J_Bip_L_Hand']",

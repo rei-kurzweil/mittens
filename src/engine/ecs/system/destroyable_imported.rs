@@ -193,6 +193,7 @@ impl ImportedSources {
         &self,
         world: &World,
         visuals: &VisualWorld,
+        combine_mesh: &crate::engine::ecs::system::combine_mesh_system::CombineMeshSystem,
         owner: ComponentId,
         event: DamageComponent,
     ) -> Option<Surface> {
@@ -210,11 +211,10 @@ impl ImportedSources {
         let mut ancestor = Some(source);
         let mut style = None;
         while let Some(id) = ancestor {
-            if let Some(value) = visuals
-                .instance_handle_for_component(id)
-                .and_then(|h| visuals.instance(h))
-            {
-                style = Some(*value);
+            style = combine_mesh.unpacked_appearance(id, visuals).or_else(|| {
+                visuals.instance_handle_for_component(id).and_then(|h| visuals.instance(h)).copied()
+            });
+            if style.is_some() {
                 break;
             }
             ancestor = world.parent_of(id);
@@ -245,6 +245,7 @@ impl ImportedSources {
             clear: vec![],
             suppression: None,
             zone_suppression: None,
+            cut_impact: None,
             view: None,
         })
     }

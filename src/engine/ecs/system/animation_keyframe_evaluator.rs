@@ -127,22 +127,22 @@ impl AnimationKeyframeEvaluator {
                     )
                     .with_benchmarks(executor.benchmarks)
                     .with_graphics_settings(executor.graphics_settings);
+                    // The audio pass already ran this keyframe's audio
+                    // statements; otherwise they run here, on time.
+                    let mode = if audio_already_scheduled_this_cycle {
+                        DeferredCallbackMode::VisualOnly
+                    } else {
+                        DeferredCallbackMode::VisualWithAudio
+                    };
                     executor.session.invoke_keyframe_callback_with_host(
                         callback,
                         effect_profile,
-                        DeferredCallbackMode::VisualOnly,
+                        mode,
                         host,
                     )
                 };
                 match result {
                     Ok(()) => {
-                        intents.retain(|intent| {
-                            !matches!(
-                                intent,
-                                IntentValue::AudioSchedulePlay { .. }
-                                    | IntentValue::OscillatorScheduleSetPitch { .. }
-                            )
-                        });
                         for intent in intents {
                             rx.push_intent_now(ComponentId::default(), intent);
                         }

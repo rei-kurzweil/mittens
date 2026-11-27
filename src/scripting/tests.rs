@@ -5781,7 +5781,7 @@ fn mms_mount_lifecycle_handler_receives_component_payload() {
         .find(|&id| {
             world
                 .get_component_by_id_as::<crate::engine::ecs::component::MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
 
@@ -12077,7 +12077,7 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
         count(&|id| {
             world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         }),
         1
     );
@@ -13476,6 +13476,12 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
             "{path}: gravity waits for model import"
         );
 
+        let has_car_studio = matches!(
+            path,
+            "examples/mittens-corp.mms"
+                | "examples/mittens-corp-desktop.mms"
+                | "examples/mittens-corp-agc.mms"
+        );
         let mut ground_surfaces = 0;
         for id in world.all_components() {
             let Some(label) = world.component_label(id) else {
@@ -13504,7 +13510,37 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
                 .unwrap_or_else(|| panic!("{path}: {label} needs a collidable zone"));
             assert_eq!(surface.mode, CollidableMode::Static, "{path}: {label}");
             assert_eq!(surface.friction, 0.8, "{path}: {label}");
+            // The corp scenes with the rocket car opt their studio into destruction.
+            let destroyable = world.children_of(id).iter().any(|child| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::DestroyableComponent>(*child)
+                    .is_some()
+            });
+            assert_eq!(destroyable, has_car_studio, "{path}: {label}");
             ground_surfaces += 1;
+        }
+        if has_car_studio {
+            let floor = world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some("studio_floor"))
+                .unwrap();
+            let chunk = world.children_of(floor).iter().find_map(|child| {
+                world.get_component_by_id_as::<crate::engine::ecs::component::DestroyableComponent>(*child)
+            });
+            // 54 x 32 m in 2 m chunks stays under the 512-chunk surface limit.
+            assert_eq!(chunk.unwrap().chunk_size, 2.0);
+            for side in ["left", "right"] {
+                for part in ["red_base", "green_base", "blue_top"] {
+                    let label = format!("{side}_box_pile_{part}");
+                    let pile_box = world
+                        .all_components()
+                        .find(|&id| world.component_label(id) == Some(label.as_str()))
+                        .unwrap();
+                    assert!(world.children_of(pile_box).iter().any(|child| world
+                        .get_component_by_id_as::<crate::engine::ecs::component::DestroyableComponent>(*child)
+                        .is_some()), "{label}");
+                }
+            }
         }
         assert_eq!(
             ground_surfaces,

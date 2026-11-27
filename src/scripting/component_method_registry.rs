@@ -2,11 +2,10 @@ use crate::engine::ecs::component::{
     AmbientLightComponent, AmplitudeComponent, AnimationComponent, AnimationState,
     AnimationStepDirection, AudioBandPassFilterComponent, AudioInputComponent,
     AvatarControlComponent, BoneRestPoseComponent, ColorComponent, DirectionalLightComponent,
-    EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, PoseInputComponent, RayCastComponent, SliderComponent,
-    TextComponent, ToggleComponent, TransformComponent, TransformOperatorComponent,
-    TransitionComponent, VelocityComponent,
-    VolumeNormalizationComponent,
+    EmissiveComponent, InputComponent, InputXRGamepadComponent, PoseInputComponent, QueryRootMode,
+    RayCastComponent, RiderComponent, SliderComponent, TextComponent, ToggleComponent,
+    TransformComponent, TransformOperatorComponent, TransitionComponent, VelocityComponent,
+    VolumeNormalizationComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::engine::transform::TransformSpace;
@@ -20,6 +19,20 @@ fn arg_f32(args: &[Value], index: usize) -> Result<f32, String> {
         )),
         None => Err(format!("missing argument {index}")),
     }
+}
+
+/// The desktop `Input` or `InputXRGamepad` a Rider names as its walking input.
+fn rider_input(world: &World, rider: ComponentId) -> Option<ComponentId> {
+    let source = world
+        .get_component_by_id_as::<RiderComponent>(rider)?
+        .input
+        .clone()?;
+    resolve_component_ref(
+        world,
+        &source,
+        Some(rider),
+        QueryRootMode::ParentScope { levels_up: 1 },
+    )
 }
 
 /// Compatibility vocabulary used only by the legacy engine-owned evaluator.
@@ -45,6 +58,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "translation"
                 | "trs"
                 | "local_bounds"
+                | "set_particle_emission"
+                | "set_tube_trail"
         ))
         || (component_type == "TransformWorld" && method == "trs")
         || (matches!(component_type, "TOP" | "TransformOperator" | "transform_operator")
@@ -117,6 +132,10 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             "enable" | "disable" | "set_stick_mode" | "set_flight_enabled" | "flight_enabled" | "flying"
         ))
         || (matches!(component_type, "PoseInput" | "pose_input") && method == "set_flying")
+        || (matches!(component_type, "Integrity" | "integrity")
+            && matches!(method, "fraction" | "repair"))
+        || (matches!(component_type, "Rider" | "rider")
+            && matches!(method, "set_locomotion_enabled" | "locomotion_enabled" | "set_enabled"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
             && matches!(
                 method,
@@ -124,7 +143,11 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "set_mouth_open_rms_center_range"
                     | "set_mouth_open_amount"
                     | "capsule_ready"
+                    | "posture_state"
+                    | "bind_body_mount"
                     | "set_third_person"
+                    | "set_legs_enabled"
+                    | "set_paused"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -146,6 +169,22 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("T" | "Transform" | "transform", "set_tube_trail") => {
+            let config = tube_trail(world, args)?.map(Box::new);
+            emit_intent(IntentValue::SetTubeTrail {
+                component_id: id,
+                config,
+            });
+            Ok(Value::Null)
+        }
+        ("T" | "Transform" | "transform", "set_particle_emission") => {
+            let config = particle_emission(world, args)?.map(Box::new);
+            emit_intent(IntentValue::SetParticleEmission {
+                component_id: id,
+                config,
+            });
+            Ok(Value::Null)
+        }
         (_, "is_alive") if args.is_empty() => {
             Ok(Value::Bool(world.get_component_record(id).is_some()))
         }
@@ -171,6 +210,32 @@ pub(crate) fn invoke_component_method(
                 _ => Err(format!("{method}(): invalid arguments")),
             }
         }
+        ("AvatarControl" | "AVC" | "avatar_control", "posture_state") => {
+            if !args.is_empty() {
+                return Err("posture_state(): expected no arguments".into());
+            }
+            let avatar = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .ok_or("posture_state(): expected an AvatarControl")?;
+            let mode = avatar.solved_posture;
+            Ok(Value::Map(std::collections::HashMap::from([
+                ("mode".into(), Value::String(mode.as_str().into())),
+                ("pose".into(), Value::String(mode.pose().into())),
+            ])))
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "bind_body_mount") => {
+            let [Value::ComponentObject { id: mount, .. }] = args else {
+                return Err("bind_body_mount(): expected a Transform under the avatar model root".into());
+            };
+            if world.get_component_by_id_as::<TransformComponent>(*mount).is_none() {
+                return Err("bind_body_mount(): expected a Transform".into());
+            }
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("bind_body_mount(): expected an AvatarControl")?;
+            avatar.body_mount = Some(*mount);
+            Ok(Value::Null)
+        }
         ("AvatarControl" | "AVC" | "avatar_control", "capsule_ready") => {
             if !args.is_empty() {
                 return Err("capsule_ready(): expected no arguments".into());
@@ -182,6 +247,31 @@ pub(crate) fn invoke_component_method(
                 avatar.collision_enabled && avatar.capsule_ready,
             ))
         }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_legs_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err("set_legs_enabled(): expected a boolean".into());
+            };
+            // Both lower-body switches: off holds the legs in their authored
+            // pose (seated), on returns them to crouch and walking IK.
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_legs_enabled(): expected an AvatarControl component")?;
+            avatar.crouch_enabled = *enabled;
+            avatar.walking_enabled = *enabled;
+            Ok(Value::Null)
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_paused") => {
+            let [Value::Bool(paused)] = args else {
+                return Err("set_paused(): expected a boolean".into());
+            };
+            // Paused, AvatarControl's solvers stop and the avatar keeps its
+            // pose until a pose or a script changes it (e.g. lying down).
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("set_paused(): expected an AvatarControl component")?;
+            avatar.paused = *paused;
+            Ok(Value::Null)
+        }
         ("AvatarControl" | "AVC" | "avatar_control", "set_third_person") => {
             let [Value::Bool(enabled)] = args else {
                 return Err("set_third_person(): expected a boolean".into());
@@ -190,6 +280,8 @@ pub(crate) fn invoke_component_method(
                 .get_component_by_id_as_mut::<AvatarControlComponent>(id)
                 .ok_or("set_third_person(): expected an AvatarControl component")?;
             avatar.third_person = *enabled;
+            // Each switch to third person starts behind the player.
+            avatar.third_person_orbit = Default::default();
             Ok(Value::Null)
         }
         ("Mirror" | "mirror", "set_enabled") => super::mirror_binding::set_enabled(world,id,args,emit_intent),
@@ -216,6 +308,39 @@ pub(crate) fn invoke_component_method(
             let acceleration = world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
                 .ok_or("bind_wheel requires Acceleration")?;
             acceleration.bind_drive_wheel(*steering, *spin, arg_f32(args, 2)?, *front)?;
+            Ok(Value::Null)
+        }
+        ("InputXR" | "InputVR" | "input_xr", "lock_head") => {
+            let [
+                Value::ComponentObject { id: target, .. },
+                Value::Number(translation),
+                Value::Number(rotation),
+            ] = args
+            else {
+                return Err(
+                    "lock_head(): expected (target transform, translation_follow, rotation_follow)"
+                        .into(),
+                );
+            };
+            if !translation.is_finite() || !rotation.is_finite() {
+                return Err("lock_head(): follow amounts must be finite".into());
+            }
+            if world.get_component_by_id_as::<TransformComponent>(*target).is_none() {
+                return Err("lock_head(): the target must be a Transform".into());
+            }
+            let lock = crate::engine::ecs::component::HeadLock {
+                target: *target,
+                translation_follow: *translation as f32,
+                rotation_follow: *rotation as f32,
+                anchor: None,
+            };
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, Some(lock))
+                .map_err(|error| format!("lock_head(): {error}"))?;
+            Ok(Value::Null)
+        }
+        ("InputXR" | "InputVR" | "input_xr", "unlock_head") => {
+            crate::engine::ecs::system::xr_head_lock::lock(world, id, None)
+                .map_err(|error| format!("unlock_head(): {error}"))?;
             Ok(Value::Null)
         }
         ("Velocity" | "velocity", "reset") => {
@@ -572,7 +697,7 @@ pub(crate) fn invoke_component_method(
                 return Err(format!("set_stick_mode(): expected one string, got {args:?}"));
             };
             let mode = crate::engine::ecs::component::XrStickMode::parse(mode)
-                .ok_or_else(|| format!("set_stick_mode(): expected strafe or turn, got {mode}"))?;
+                .ok_or_else(|| format!("set_stick_mode(): expected default, orbit, strafe, or turn, got {mode}"))?;
             world
                 .get_component_by_id_as_mut::<InputXRGamepadComponent>(id)
                 .ok_or_else(|| format!("{method}(): not an InputXRGamepadComponent"))?
@@ -612,6 +737,65 @@ pub(crate) fn invoke_component_method(
             } else {
                 input.is_flying()
             }))
+        }
+        ("Rider" | "rider", "set_locomotion_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err(format!("{method}(): expected one bool, got {args:?}"));
+            };
+            // A vehicle script owns this; the rider or its input may already
+            // be gone when a forced dismount runs MountEnded, so no-op then.
+            if let Some(input) = rider_input(world, id) {
+                if let Some(input) = world.get_component_by_id_as_mut::<InputComponent>(input) {
+                    input.translation_enabled = *enabled;
+                } else if let Some(input) =
+                    world.get_component_by_id_as_mut::<InputXRGamepadComponent>(input)
+                {
+                    input.locomotion = *enabled;
+                }
+            }
+            Ok(Value::Null)
+        }
+        ("Integrity" | "integrity", "fraction") => {
+            let integrity = world
+                .get_component_by_id_as::<crate::engine::ecs::component::IntegrityComponent>(id)
+                .ok_or_else(|| format!("{method}(): not an Integrity"))?;
+            Ok(Value::Number(integrity.fraction() as f64))
+        }
+        ("Integrity" | "integrity", "repair") => {
+            if let Some(integrity) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::IntegrityComponent>(id)
+            {
+                integrity.repair();
+            }
+            Ok(Value::Null)
+        }
+        ("Rider" | "rider", "set_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err(format!("{method}(): expected one bool, got {args:?}"));
+            };
+            // A disabled Rider's seat or deck connection ends on the next
+            // attachment tick; it can't mount or board again until re-enabled.
+            if let Some(rider) = world.get_component_by_id_as_mut::<RiderComponent>(id) {
+                rider.enabled = *enabled;
+            }
+            Ok(Value::Null)
+        }
+        ("Rider" | "rider", "locomotion_enabled") => {
+            if !args.is_empty() {
+                return Err(format!("{method}(): expected no arguments, got {args:?}"));
+            }
+            let input = rider_input(world, id);
+            Ok(Value::Bool(input.is_some_and(|input| {
+                world
+                    .get_component_by_id_as::<InputComponent>(input)
+                    .map(|input| input.translation_enabled)
+                    .or_else(|| {
+                        world
+                            .get_component_by_id_as::<InputXRGamepadComponent>(input)
+                            .map(|input| input.locomotion)
+                    })
+                    .unwrap_or(false)
+            })))
         }
         ("PoseInput" | "pose_input", "set_flying") => {
             let [Value::Bool(flying)] = args else {
@@ -1252,6 +1436,159 @@ pub(crate) fn invoke_component_method(
             component_type, method
         )),
     }
+}
+
+fn tube_trail(
+    world: &World,
+    args: &[Value],
+) -> Result<Option<crate::engine::ecs::system::tube_trail_system::TubeTrail>, String> {
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::ecs::system::tube_trail_system::TubeTrail;
+
+    let (material, options) = match args {
+        [] => return Ok(None),
+        [Value::ComponentObject { id, .. }] => (*id, None),
+        [Value::ComponentObject { id, .. }, Value::Map(options)] => (*id, Some(options)),
+        _ => {
+            return Err(
+                "set_tube_trail(): expected no arguments or a material and optional options".into(),
+            );
+        }
+    };
+    if world
+        .get_component_by_id_as::<MaterialComponent>(material)
+        .is_none()
+    {
+        return Err("set_tube_trail(): expected a Material".into());
+    }
+    let mut config = TubeTrail {
+        material,
+        offset: [0.0; 3],
+        speed: 1.0,
+        lifetime: 0.48,
+        source_radius: 0.06,
+        tail_radius: 0.25,
+        opacity: 0.6,
+        edge_wobble: 0.0,
+        flow_wavelength: None,
+        stop_fade: 0.30,
+    };
+    for (key, value) in options.into_iter().flatten() {
+        let number = |min: f64, max: f64| match value {
+            Value::Number(n) if *n >= min && *n <= max => Ok(*n as f32),
+            _ => Err(format!(
+                "set_tube_trail(): {key} must be between {min} and {max}"
+            )),
+        };
+        match key.as_str() {
+            "offset" => {
+                config.offset = value_as_f32_array::<3>(value)?;
+                if config.offset.iter().any(|n| !n.is_finite()) {
+                    return Err("set_tube_trail(): offset requires finite values".into());
+                }
+            }
+            "speed" => config.speed = number(0.01, 100.0)?,
+            "lifetime" => config.lifetime = number(0.05, 2.0)?,
+            "source_radius" => config.source_radius = number(0.001, 10.0)?,
+            "tail_radius" => config.tail_radius = number(0.001, 10.0)?,
+            "opacity" => config.opacity = number(0.0, 0.98)?,
+            "edge_wobble" => config.edge_wobble = number(0.0, 0.5)?,
+            "flow_wavelength" => config.flow_wavelength = Some(number(0.01, 10.0)?),
+            "stop_fade" => config.stop_fade = number(0.01, 2.0)?,
+            _ => return Err(format!("set_tube_trail(): unknown option {key}")),
+        }
+    }
+    Ok(Some(config))
+}
+
+fn particle_emission(
+    world: &World,
+    args: &[Value],
+) -> Result<Option<crate::engine::ecs::system::particle_system::ParticleEmission>, String> {
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::ecs::system::particle_system::ParticleEmission;
+    let (material, options) =
+        match args {
+            [] => return Ok(None),
+            [Value::ComponentObject { id, .. }] => (*id, None),
+            [Value::ComponentObject { id, .. }, Value::Map(options)] => (*id, Some(options)),
+            _ => return Err(
+                "set_particle_emission(): expected no arguments or a material and optional options"
+                    .into(),
+            ),
+        };
+    if world
+        .get_component_by_id_as::<MaterialComponent>(material)
+        .is_none()
+    {
+        return Err("set_particle_emission(): expected a Material".into());
+    }
+    let mut config = ParticleEmission {
+        material,
+        ..Default::default()
+    };
+    if let Some(options) = options {
+        for (key, value) in options {
+            let vector = |value| {
+                let vector = value_as_f32_array::<3>(value)?;
+                if vector.iter().any(|value| !value.is_finite()) {
+                    return Err(format!(
+                        "set_particle_emission(): {key} requires finite values"
+                    ));
+                }
+                Ok(vector)
+            };
+            let number = |min: f64, max: f64| match value {
+                Value::Number(number) if (*number >= min && *number <= max) => Ok(*number as f32),
+                _ => Err(format!(
+                    "set_particle_emission(): {key} must be between {min} and {max}"
+                )),
+            };
+            match key.as_str() {
+                "capacity" => {
+                    let capacity = number(1.0, 64.0)?;
+                    if capacity.fract() != 0.0 {
+                        return Err("set_particle_emission(): capacity must be an integer".into());
+                    }
+                    config.capacity = capacity as usize;
+                }
+                "interval" => config.interval = number(0.005, 10.0)?,
+                "lifetime" => config.lifetime = number(0.01, 20.0)?,
+                "diameter" => config.diameter = number(0.0001, 10.0)?,
+                "growth" => config.growth = number(0.01, 20.0)?,
+                "opacity" => config.opacity = number(0.0, 0.98)?,
+                "fade_start" => config.fade_start = number(0.0, 0.99)?,
+                "spread" => config.spread = number(0.0, 100.0)?,
+                "offset" => config.offset = vector(value)?,
+                "velocity" => config.velocity = vector(value)?,
+                "acceleration" => config.acceleration = vector(value)?,
+                "color_times" => {
+                    let [middle, end] = value_as_f32_array::<2>(value)?;
+                    if !(0.0 < middle && middle < end && end <= 1.0) {
+                        return Err("set_particle_emission(): color_times must satisfy 0 < middle < end <= 1".into());
+                    }
+                    config.color_times = [middle, end];
+                }
+                "colors" => {
+                    let Value::Array(colors) = value else {
+                        return Err(
+                            "set_particle_emission(): colors must contain three RGB arrays".into(),
+                        );
+                    };
+                    if colors.len() != 3 {
+                        return Err(
+                            "set_particle_emission(): colors must contain three RGB arrays".into(),
+                        );
+                    }
+                    for (color, value) in config.colors.iter_mut().zip(colors) {
+                        *color = vector(value)?;
+                    }
+                }
+                _ => return Err(format!("set_particle_emission(): unknown option {key}")),
+            }
+        }
+    }
+    Ok(Some(config))
 }
 
 fn require_live_component(world: &World, id: ComponentId, context: &str) -> Result<(), String> {

@@ -41,18 +41,18 @@ void main() {
     float lower = smoothstep(sky.low_point, max(sky.middle_point, sky.low_point+0.001), direction.y);
     float upper = smoothstep(sky.middle_point, max(sky.high_point, sky.middle_point+0.001), direction.y);
     vec3 color = mix(mix(sky.low_color, sky.middle_color, lower), sky.high_color, upper);
-    vec2 cloud_uv = vec2(atan(direction.z, direction.x)/(2.0*pi)+0.5,
-        acos(clamp(direction.y,-1.0,1.0))/pi);
-    vec2 texel = 1.0/vec2(textureSize(masks,0));
-    cloud_uv.y = clamp(cloud_uv.y, texel.y*0.5, 1.0-texel.y*0.5);
-    // atan wraps longitude by one at the panorama seam. Correct its gradients
-    // before mip selection so a screen quad crossing that seam cannot select
-    // an unrelated coarse mip and draw a vertical line through the clouds.
-    vec2 cloud_dx = dFdx(cloud_uv), cloud_dy = dFdy(cloud_uv);
-    cloud_dx.x -= round(cloud_dx.x);
-    cloud_dy.x -= round(cloud_dy.x);
-    float cloud = textureGrad(masks,cloud_uv,cloud_dx,cloud_dy).r;
-    color = mix(color,sky.cloud_color,clamp(cloud*sky.cloud_strength,0.0,1.0));
+    if (sky.cloud_strength > 0.0) {
+        vec2 texel = 1.0/vec2(textureSize(masks,0));
+        vec2 cloud_uv = vec2(atan(direction.z, direction.x)/(2.0*pi)+0.5,
+            acos(clamp(direction.y,-1.0,1.0))/pi);
+        cloud_uv.y = clamp(cloud_uv.y, texel.y*0.5, 1.0-texel.y*0.5);
+        // Keep longitude wrapping from selecting a coarse mip at the seam.
+        vec2 cloud_dx = dFdx(cloud_uv), cloud_dy = dFdy(cloud_uv);
+        cloud_dx.x -= round(cloud_dx.x);
+        cloud_dy.x -= round(cloud_dy.x);
+        float cloud = textureGrad(masks,cloud_uv,cloud_dx,cloud_dy).r;
+        color = mix(color,sky.cloud_color,clamp(cloud*sky.cloud_strength,0.0,1.0));
+    }
 
 #if MOON_ENABLED
     vec3 axis = length(sky.moon_direction)>0.0001 ? normalize(sky.moon_direction) : vec3(0.0,0.0,-1.0);
@@ -69,6 +69,7 @@ void main() {
     // their padded mask because the shared cloud sampler repeats.
     if (forward>0.0 && all(lessThan(abs(p),vec2(3.0)))) {
 #if !MOON_BODY_PROCEDURAL || !MOON_GLOW_PROCEDURAL
+        vec2 texel = 1.0/vec2(textureSize(masks,0));
         vec2 moon_uv = vec2(p.x,-p.y)/6.0+0.5;
         vec2 moon = texture(masks,clamp(moon_uv,texel*0.5,1.0-texel*0.5)).gb;
 #endif

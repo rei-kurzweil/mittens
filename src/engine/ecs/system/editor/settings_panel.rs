@@ -28,6 +28,12 @@ pub(crate) const EDITOR_SETTINGS_SPRING_BONES_ROW_NAME: &str =
 pub(crate) const EDITOR_SETTINGS_SPRING_BONES_TOGGLE_SLOT_NAME: &str = "spring_bones_toggle_slot";
 pub(crate) const EDITOR_SETTINGS_ZONES_ROW_NAME: &str = "editor_settings_zones_visibility";
 pub(crate) const EDITOR_SETTINGS_ZONES_TOGGLE_SLOT_NAME: &str = "zones_toggle_slot";
+const BODY_SUPPORT_ROW: &str = "editor_settings_body_support_visibility";
+const BODY_SUPPORT_SLOT: &str = "body_support_toggle_slot";
+const WALKING_GAIT_ROW: &str = "editor_settings_walking_gait_visibility";
+const WALKING_GAIT_SLOT: &str = "walking_gait_toggle_slot";
+const PAW_CAPTURE_ROW: &str = "editor_settings_paw_capture_visibility";
+const PAW_CAPTURE_SLOT: &str = "paw_capture_toggle_slot";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
@@ -387,6 +393,14 @@ pub(crate) fn sync_editor_settings_panel_selection(
         "zones_toggle",
         editor_context.zones_visible,
     );
+    sync_avatar_diagnostic_toggle(world, emit, panel_query_root, false, editor_context.body_support_visible);
+    sync_avatar_diagnostic_toggle(world, emit, panel_query_root, true, editor_context.walking_gait_visible);
+    sync_paw_capture_toggle(
+        world,
+        emit,
+        panel_query_root,
+        editor_context.paw_capture_visible,
+    );
     let bvh_visible = owning_editor_ui(world, panel_root)
         .and_then(|owner| {
             world.get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(owner)
@@ -414,6 +428,46 @@ pub(crate) fn sync_editor_settings_panel_selection(
         "bvh_animation_toggle_slot",
         "bvh_animation_toggle",
         bvh_animating,
+    );
+}
+
+fn sync_avatar_diagnostic_toggle(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    walking: bool,
+    visible: bool,
+) {
+    let (row, slot, toggle) = if walking {
+        (WALKING_GAIT_ROW, WALKING_GAIT_SLOT, "walking_gait_toggle")
+    } else {
+        (BODY_SUPPORT_ROW, BODY_SUPPORT_SLOT, "body_support_toggle")
+    };
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        row,
+        slot,
+        toggle,
+        visible,
+    );
+}
+
+fn sync_paw_capture_toggle(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    visible: bool,
+) {
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        PAW_CAPTURE_ROW,
+        PAW_CAPTURE_SLOT,
+        "paw_capture_toggle",
+        visible,
     );
 }
 
@@ -643,6 +697,30 @@ pub(crate) fn handle_editor_settings_panel_click(
                 .expect("editor context state mutex poisoned")
                 .clone();
             sync_editor_settings_panel_selection(world, emit, panel_query_root, &context);
+            return true;
+        }
+        if row_kind == "PawCaptureVisibility" {
+            let visible = {
+                let mut context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                context.paw_capture_visible = !context.paw_capture_visible;
+                context.paw_capture_visible
+            };
+            sync_paw_capture_toggle(world, emit, panel_query_root, visible);
+            return true;
+        }
+        if matches!(row_kind.as_str(), "BodySupportVisibility" | "WalkingGaitVisibility") {
+            let walking = row_kind == "WalkingGaitVisibility";
+            let visible = {
+                let mut context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                let visible = if walking { &mut context.walking_gait_visible } else { &mut context.body_support_visible };
+                *visible = !*visible;
+                *visible
+            };
+            sync_avatar_diagnostic_toggle(world, emit, panel_query_root, walking, visible);
             return true;
         }
         if row_kind != "GLTFArmatureVisibility" {

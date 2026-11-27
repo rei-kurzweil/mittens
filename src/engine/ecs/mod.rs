@@ -90,6 +90,10 @@ pub struct World {
     collidable_ids: std::collections::HashSet<ComponentId>,
     drop_zone_ids: std::collections::BTreeSet<ComponentId>,
     damage_ids: std::collections::HashSet<ComponentId>,
+    /// Damage impacts queued without creating components (`Damage.at` from
+    /// scripts), drained once per frame by the destruction and integrity
+    /// systems, in submission order.
+    queued_damage: Vec<component::DamageComponent>,
     destroyable_ids: std::collections::HashSet<ComponentId>,
     armature_ids: std::collections::HashSet<ComponentId>,
     editor_ui_ids: std::collections::HashSet<ComponentId>,
@@ -268,6 +272,14 @@ impl World {
 
     pub(crate) fn damage_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.damage_ids.iter().copied()
+    }
+    /// Queue a damage impact. Unlike a Damage component, this changes no
+    /// topology or query revision, so collision indexes are not refreshed.
+    pub fn queue_damage(&mut self, impact: component::DamageComponent) {
+        self.queued_damage.push(impact);
+    }
+    pub(crate) fn take_queued_damage(&mut self) -> Vec<component::DamageComponent> {
+        std::mem::take(&mut self.queued_damage)
     }
     pub(crate) fn destroyable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.destroyable_ids.iter().copied()

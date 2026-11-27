@@ -1,6 +1,6 @@
 use crate::engine::Universe;
-use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::external_xr_frame::ExternalXrFrame;
+use crate::engine::ecs::system::{TransformSystem, XrGamepadState, XrHandGamepadState};
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, KeyboardEvent, SignalEmitter, World,
 };
@@ -8,6 +8,10 @@ use crate::engine::graphics::{CameraData, CameraTarget};
 use crate::utils::math::{mat4_mul_vec4, vec3_len, vec3_sub};
 
 fn setup(xr: bool) -> Universe {
+    setup_at_scale(xr, 1.0)
+}
+
+fn setup_at_scale(xr: bool, scale: f32) -> Universe {
     let source = r##"
         import { mitten_model } from "../assets/components/characters/mitten.mms"
         let use_xr = __XR__
@@ -20,16 +24,17 @@ fn setup(xr: bool) -> Universe {
             }
         }
         let head = T.position(0, 1.6, 0) { name = "view_test_head" body }
-        T {
+        T.scale(__SCALE__, __SCALE__, __SCALE__) {
             name = "view_test_root"
-            if use_xr { InputXR.on() { head } } else { I { head } }
+            if use_xr { InputXR.on() { InputXRGamepad {} head } } else { I { head } }
         }
         on_global("KeyUp", fn(event) {
             if event.code == "KeyV" { body.set_third_person(true) }
             if event.code == "KeyB" { body.set_third_person(false) }
         })
     "##
-    .replace("__XR__", if xr { "true" } else { "false" });
+    .replace("__XR__", if xr { "true" } else { "false" })
+    .replace("__SCALE__", &format!("{scale:?}"));
     let mut scene = Universe::new(World::default());
     scene
         .load_mms_source_at_path(&source, "examples/_avatar_camera_test.mms")
@@ -134,6 +139,13 @@ fn third_person_desktop_frames_origin_and_follows_root_without_moving_head() {
 }
 
 fn supply_xr_frame(scene: &mut Universe, head: [f32; 3], yaw: f32) {
+    scene
+        .systems
+        .xr
+        .set_external_frame(Some(xr_frame(head, yaw)));
+}
+
+fn xr_frame(head: [f32; 3], yaw: f32) -> ExternalXrFrame {
     let half_yaw = yaw * 0.5;
     let views = [-0.032, 0.032].map(|eye_x| openxr::View {
         pose: openxr::Posef {
@@ -156,10 +168,10 @@ fn supply_xr_frame(scene: &mut Universe, head: [f32; 3], yaw: f32) {
             angle_down: -0.7,
         },
     });
-    scene.systems.xr.set_external_frame(Some(ExternalXrFrame {
+    ExternalXrFrame {
         views: Some(views),
         ..Default::default()
-    }));
+    }
 }
 
 #[test]
@@ -196,4 +208,90 @@ fn third_person_xr_keeps_stereo_and_head_motion_separate_from_the_tracked_head()
         eye_center,
         TransformSystem::world_position(&scene.world, head).unwrap(),
     );
+}
+
+#[test]
+fn third_person_xr_frames_a_scaled_rig_at_its_own_scale() {
+    let eyes_at = |scale: f32| {
+        let scene = setup_at_scale(true, scale);
+        let root = named(&scene, "view_test_root");
+        let origin = TransformSystem::world_position(&scene.world, root).unwrap();
+        let [left, right] = eyes(&scene, CameraTarget::Xr) else {
+            panic!("expected two XR eyes")
+        };
+        let separation = vec3_len(vec3_sub(eye_position(right), eye_position(left)));
+        (separation, vec3_len(vec3_sub(eye_position(left), origin)))
+    };
+    let (full_separation, full_distance) = eyes_at(1.0);
+    let (tiny_separation, tiny_distance) = eyes_at(0.1);
+    assert!((full_separation - 0.064).abs() < 1e-4);
+    assert!((tiny_separation - 0.0064).abs() < 1e-5, "{tiny_separation}");
+    assert!(
+        (tiny_distance - full_distance * 0.1).abs() < 1e-3,
+        "{tiny_distance} vs {full_distance}"
+    );
+}
+
+#[test]
+fn right_stick_orbits_the_rendered_xr_view_without_turning_the_rig() {
+    let mut scene = setup(true);
+    let root = named(&scene, "view_test_root");
+    let head = named(&scene, "view_test_head");
+    let root_before = TransformSystem::world_model(&scene.world, root);
+    let head_before = TransformSystem::world_model(&scene.world, head);
+    let first = eyes(&scene, CameraTarget::Xr)[0];
+    let mut frame = xr_frame([0.0, 1.65, 0.0], 0.0);
+    frame.gamepad = XrGamepadState {
+        active: true,
+        hands: [[0.0, 0.0], [1.0, 0.0]].map(|stick| XrHandGamepadState {
+            thumbstick: Some(stick),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    for _ in 0..10 {
+        scene.systems.xr.set_external_frame(Some(frame));
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    let eye = &eyes(&scene, CameraTarget::Xr)[0];
+    assert!(vec3_len(vec3_sub(eye_position(eye), eye_position(&first))) > 0.5);
+    assert_eq!(
+        TransformSystem::world_model(&scene.world, root),
+        root_before
+    );
+    assert_eq!(
+        TransformSystem::world_model(&scene.world, head),
+        head_before
+    );
+}
+
+#[test]
+fn third_person_camera_pulls_in_before_a_wall_but_not_the_players_own_collider() {
+    use crate::engine::ecs::component::{
+        CollidableComponent, CollisionShape, TransformComponent, ZoneComponent,
+    };
+    fn solid(world: &mut World, parent: Option<ComponentId>, position: [f32; 3], half: f32) {
+        let frame = world.add_component(
+            TransformComponent::new().with_position(position[0], position[1], position[2]),
+        );
+        let t = world.get_component_by_id_as_mut::<TransformComponent>(frame).unwrap();
+        t.transform.matrix_world = t.transform.model;
+        let zone = world.add_component(ZoneComponent::new(CollisionShape::cube_half_extents([half; 3])));
+        let collidable = world.add_component(CollidableComponent::static_());
+        world.add_child(frame, zone).unwrap();
+        world.add_child(zone, collidable).unwrap();
+        if let Some(parent) = parent {
+            world.add_child(parent, frame).unwrap();
+        }
+    }
+    let mut world = World::default();
+    let root = world.add_component(TransformComponent::new());
+    // The player's own body box, a metre behind the focus, under its root.
+    solid(&mut world, Some(root), [0.0, 0.0, 1.0], 0.3);
+    let open = super::unblocked_distance(&world, root, [0.0; 3], [0.0, 0.0, 1.0], 4.0, 1.0);
+    assert!((open - 4.0).abs() < 1e-4, "own collider ignored: {open}");
+    // A wall whose near face is 2.5 m behind.
+    solid(&mut world, None, [0.0, 0.0, 3.0], 0.5);
+    let blocked = super::unblocked_distance(&world, root, [0.0; 3], [0.0, 0.0, 1.0], 4.0, 1.0);
+    assert!((blocked - 2.25).abs() < 1e-3, "sphere stops short of the wall: {blocked}");
 }

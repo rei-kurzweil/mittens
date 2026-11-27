@@ -19,12 +19,19 @@ impl SystemWorld {
         self.rigging.flush_retired(render_assets, uploader);
         let mut destruction = std::mem::take(&mut self.destroyable);
         destruction.prepare(self, world, visuals, render_assets, uploader);
+        // The same impacts lower Integrity on any part they reach, cut or not.
+        let impacts = destruction.take_impacts();
+        crate::engine::ecs::system::integrity_system::apply_damage(world, &impacts, queue);
+        // Their blasts push Blastable bodies (vehicles).
+        self.blast.apply(world, &impacts, queue);
         self.destroyable = destruction;
 
         // MMS callbacks are serviced after simulation tick. Publish their
         // coalesced material updates before this frame's draw preparation.
         self.material.tick(world, visuals);
         self.renderable.refresh_material_topology(world, visuals);
+        self.particles.prepare(world, visuals, render_assets, uploader);
+        self.tube_trails.prepare(world, visuals, render_assets, uploader);
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);

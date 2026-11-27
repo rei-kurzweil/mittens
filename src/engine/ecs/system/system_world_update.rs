@@ -129,12 +129,23 @@ impl SystemWorld {
         cpu_profile.mark(Phase::FrameDispatch);
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
-        let mesh_bounds_visible = self
-            .editor_context
-            .shared_state()
-            .lock()
-            .expect("editor context state mutex poisoned")
-            .bounds_visible;
+        let (
+            mesh_bounds_visible,
+            body_support_enabled,
+            walking_gait_enabled,
+            paw_capture_enabled,
+            debug_avatar_selection,
+        ) = {
+            let state = self.editor_context.shared_state();
+            let state = state.lock().expect("editor context state mutex poisoned");
+            (
+                state.bounds_visible,
+                state.active_editor.is_some() && state.body_support_visible,
+                state.active_editor.is_some() && state.walking_gait_visible,
+                state.paw_capture_visible,
+                state.selected_component,
+            )
+        };
         self.bounds_visualization.tick_with_queue(
             world,
             &mut self.gltf_bounds_visualization,
@@ -259,6 +270,15 @@ impl SystemWorld {
             queue.flush(world, self, visuals, render_assets);
             #[cfg(test)]
             cpu_profile.mark(Phase::VelocityFlush);
+            // Riders on a moving deck follow this step's deck motion before
+            // contacts resolve against the deck (see attachment_carry.rs).
+            let step_sec = crate::engine::ecs::system::velocity_system::STEP_SEC as f32;
+            for root in self.attachment.step_carries(world, queue, step_sec) {
+                self.transform_changed(world, visuals, root);
+            }
+            for change in self.attachment.take_carry_contacts() {
+                self.static_contact.apply_carry(change);
+            }
             self.prepare_avatar_capsule_contact(world, visuals);
             for target in self.static_contact.tick_substep(world, &self.attachment) {
                 self.transform_changed(world, visuals, target);
@@ -306,8 +326,14 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
         let xr_locomotion_started = self.vr_perf_enabled.then(Instant::now);
-        self.input_xr_gamepad
-            .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
+        self.input_xr_gamepad.tick_with_settings(
+            world,
+            visuals,
+            &self.xr,
+            self.input_settings.xr_stick_mode(),
+            queue,
+            dt_sec,
+        );
         queue.flush(world, self, visuals, render_assets);
         if let Some(started) = xr_locomotion_started {
             self.vr_perf_pre_xr.xr_locomotion = started.elapsed();
@@ -422,6 +448,15 @@ impl SystemWorld {
         self.attachment.sync_mounted_avatars(world);
         // The body solver picks each avatar's mode and torso pitch; the upper
         // body solver writes the torso before head/neck placement reads it.
+        let (support_debug, walking_debug) = self.body_solver.prepare_debug(
+            world,
+            &self.camera,
+            body_support_enabled,
+            walking_gait_enabled,
+            paw_capture_enabled,
+            debug_avatar_selection,
+        );
+        self.lower_body_ik.set_debug_targets(support_debug, walking_debug);
         self.body_solver.tick(
             world,
             queue,
@@ -430,7 +465,9 @@ impl SystemWorld {
             &self.attachment,
             dt_sec,
         );
+        self.body_solver.draw_debug(world, visuals, queue, dt_sec);
         self.body_solver.apply_body_yaw(world);
+        self.body_solver.apply_posture_colliders(world);
         self.upper_body_ik.tick(world, queue, &self.body_solver);
         self.lower_body_ik.sync_modes(&self.body_solver);
         queue.flush(world, self, visuals, render_assets);
@@ -449,6 +486,7 @@ impl SystemWorld {
             &self.humanoid_bone_map,
             dt_sec,
         );
+        self.lower_body_ik.draw_walking_debug(world, visuals, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.ik.tick(world, queue, dt_sec);
         if let Some(started) = phase_started {
@@ -562,6 +600,8 @@ impl SystemWorld {
         #[cfg(test)]
         cpu_profile.mark(Phase::LayoutTail);
         self.renderable.tick(world, visuals, input, dt_sec);
+        self.particles.tick(world, visuals, dt_sec);
+        self.tube_trails.tick(world, visuals, dt_sec);
 
         self.renderer_stats
             .tick_with_queue(world, visuals, queue, dt_sec);
@@ -578,6 +618,12 @@ impl SystemWorld {
         // Mount/AVC/ancestor changes above are reflected before mirror captures.
         self.camera.refresh_window_avatar_view(world, visuals);
         self.xr.publish_eye_cameras(world, visuals);
+        if self
+            .body_solver
+            .sync_paw_capture(world, visuals, render_assets, &mut self.rx, queue)
+        {
+            queue.flush(world, self, visuals, render_assets);
+        }
         self.mirror.tick(world, visuals, input, dt_sec);
         for texture_component in self.mirror.take_pending_texture_registrations() {
             self.register_texture(world, visuals, texture_component);

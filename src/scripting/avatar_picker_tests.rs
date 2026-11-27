@@ -70,7 +70,7 @@ fn click_only_panels_accept_oblique_trigger_presses_without_drag_targets() {
             T.position(1,1.5,-2) { mirror_panel({ name = "test_mirror" width = 1.0 height = 1.0 quality = 512 }) }
             T { InputXR.on() {
                 T { CXR {} }
-                XRHand.new(true,"Left","Aim") { T { Pointer {} } }
+                XRHand(true,"Left","Aim") { T { Pointer {} } }
             } }
             "#,
             "examples/_click_only_panel_test.mms",
@@ -325,5 +325,71 @@ fn rooftop_avatar_settings_apply_height_to_mitten_and_miku() {
             .unwrap();
         assert_eq!(model.uri, miku);
         assert!((model.import_scale * 20.393234 - 1.8).abs() < 1e-4);
+    }
+}
+
+#[test]
+fn rooftop_tiny_heights_scale_the_rig_around_a_half_meter_body() {
+    tiny_heights_scale_the_rig(false);
+}
+
+#[test]
+fn xr_tiny_heights_scale_the_rig_around_a_half_meter_body() {
+    tiny_heights_scale_the_rig(true);
+}
+
+fn tiny_heights_scale_the_rig(xr: bool) {
+    let path = "examples/twilight_rooftop.mms";
+    let mut source = std::fs::read_to_string(path).unwrap();
+    if !xr {
+        source = source
+            .replace("let use_xr = true", "let use_xr = false")
+            .replace("let use_desktop = false", "let use_desktop = true");
+    }
+    let mut scene = Universe::new(World::default());
+    scene.load_mms_source_at_path(&source, path).unwrap();
+    let mut uploader = Uploader::default();
+    for _ in 0..4 {
+        prepare(&mut scene, &mut uploader);
+    }
+    open_dock(&mut scene, &mut uploader, "humanoid");
+    let slider = named(&scene, "avatar_height_slider");
+    let root_scale = |scene: &Universe| {
+        scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(named(
+                scene,
+                "local_root",
+            ))
+            .unwrap()
+            .transform
+            .scale
+    };
+    for (height, body, scale) in [(0.025, 0.5, 0.05), (1.2, 1.2, 1.0)] {
+        scene
+            .command_queue
+            .push_event(slider, EventSignal::SliderCommitted { slider, value: height });
+        for _ in 0..8 {
+            prepare(&mut scene, &mut uploader);
+        }
+        let model = scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(named(&scene, "local_model"))
+            .unwrap();
+        assert!(model.spawned);
+        assert_eq!(model.default_height_if_outside, Some([body; 3]), "{height} m body");
+        let readout = scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(&scene, "avatar_height_readout"))
+            .unwrap()
+            .text
+            .clone();
+        let expected = if height < 0.1 { "2.5 cm" } else { "1.20 m" };
+        assert_eq!(readout, expected);
+        let s = root_scale(&scene);
+        assert!(
+            s.iter().all(|v| (v - scale).abs() < 1e-5),
+            "{height} m rig scale: {s:?}"
+        );
     }
 }

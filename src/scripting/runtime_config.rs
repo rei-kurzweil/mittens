@@ -177,6 +177,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             let method = |arguments, result| mms::ValueSignature::new(arguments, result);
             match canonical {
                 "Transform" => {
+                    for name in ["set_particle_emission", "set_tube_trail"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            mms::ValueSignature::with_optional(
+                                vec![mms::ValueType::Component, mms::ValueType::Table],
+                                0,
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                     for name in ["set_translation", "set_rotation_quat"] {
                         host_method(
                             component,
@@ -349,7 +361,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Renderable" => renderable_runtime_config::configure(component),
                 "CombineMesh" => no_arg_constructors(component, &["keep_transforms"]),
-                "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => {
+                "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" | "Blastable" => {
                     geometry_binding::register(component, canonical)
                 }
                 "Color" => {
@@ -487,6 +499,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "MultiplayerSession" => {
                     multiplayer_runtime_config::configure(component, canonical)
                 }
+                "PathGraph" => super::path_graph_api::configure(component, canonical),
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }
@@ -517,7 +530,30 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         );
                     }
                 }
-                "InputXR" => no_arg_constructors(component, &["on", "off"]),
+                "InputXR" => {
+                    no_arg_constructors(component, &["on", "off"]);
+                    // Holds the head at a transform, letting through a share
+                    // of the headset's motion (0 freezes, 1 follows).
+                    host_method(
+                        component,
+                        canonical,
+                        "lock_head",
+                        method(
+                            vec![
+                                mms::ValueType::Component,
+                                mms::ValueType::F32,
+                                mms::ValueType::F32,
+                            ],
+                            mms::ValueType::Null,
+                        ),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "unlock_head",
+                        method(vec![], mms::ValueType::Null),
+                    );
+                }
                 "Velocity" => {
                     host_method(
                         component,
@@ -933,14 +969,55 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("movement_root", any(1))
                         .builder_call("input", any(1))
                         .builder_call("enabled", booleans(1));
+                    // Vehicle scripts own whether a mounted rider can walk.
+                    host_method(
+                        component,
+                        canonical,
+                        "set_locomotion_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "locomotion_enabled",
+                        method(vec![], mms::ValueType::Bool),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
+                }
+                "Integrity" => {
+                    component
+                        .constructor("max", floats(1))
+                        .builder_call("max", floats(1))
+                        .builder_call("reach", floats(1))
+                        .builder_call("threshold", any(2))
+                        .builder_call("enabled", booleans(1));
+                    host_method(component, canonical, "fraction", method(vec![], mms::ValueType::F32));
+                    host_method(component, canonical, "repair", method(vec![], mms::ValueType::Null));
+                }
+                "CollisionContext" => {
+                    component
+                        .constructor("passthrough", booleans(1))
+                        .constructor("overlay", booleans(1))
+                        .builder_call("passthrough", booleans(1))
+                        .builder_call("enabled", booleans(1))
+                        .builder_call("overlay", booleans(1))
+                        .builder_call("exclude", any(1));
                 }
                 "Mountable" => {
                     component
                         .constructor("entry_zone", any(1))
+                        .constructor("carry", no_args())
                         .builder_call("entry_zone", any(1))
                         .builder_call("mount_anchor", any(1))
                         .builder_call("dismount_anchor", any(1))
                         .builder_call("auto_mount_zone", any(1))
+                        .builder_call("carry", no_args())
+                        .builder_call("context", any(1))
                         .builder_call("on_grip", no_args())
                         .builder_call("enabled", booleans(1));
                 }
@@ -1065,7 +1142,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("enabled", booleans(1));
                 }
                 "Collidable" => {
-                    no_arg_constructors(component, &["static", "slide", "sensor"]);
+                    no_arg_constructors(component, &["static", "slide", "sensor", "obstacle"]);
                     component.builder_call("response", strings(1));
                     component
                         .builder_call("friction", floats(1))
@@ -1292,6 +1369,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_method(
                         component,
                         canonical,
+                        "posture_state",
+                        method(vec![], mms::ValueType::Table),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "bind_body_mount",
+                        method(vec![mms::ValueType::Component], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
                         "capsule_ready",
                         method(vec![], mms::ValueType::Bool),
                     );
@@ -1299,6 +1388,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         component,
                         canonical,
                         "set_third_person",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_legs_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_paused",
                         method(vec![mms::ValueType::Bool], mms::ValueType::Null),
                     );
                     constructor_and_builder(component, "movement_target", any(1));
@@ -1418,6 +1519,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "ParentChanged",
         "AttachmentChanged",
         "RayIntersected",
+        "RayMissed",
         "Scrolling",
         "TextInputChanged",
         "TextInputFocusChanged",
@@ -1430,6 +1532,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "XrButtonChanged",
         "XrAxisChanged",
         "XrGamepadLocomotion",
+        "XrGamepadFlightChanged",
         "HttpRequest",
         "HttpResponse",
         "HttpError",

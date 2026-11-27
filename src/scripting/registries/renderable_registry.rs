@@ -115,8 +115,9 @@ pub(super) fn create(
             let sweep = arg_f32(args, 4).unwrap_or(std::f32::consts::TAU * 2.0);
             let segments = arg_u32(args, 5).unwrap_or(128);
             let sides = arg_u32(args, 6).unwrap_or(16);
-            let component = RenderableComponent::helix_tube(
-                assets, radius, tube, height, start, sweep, segments, sides,
+            let inward = args.len() > 7 && arg_bool(args, 7)?;
+            let component = RenderableComponent::helix_tube_with_facing(
+                assets, radius, tube, height, start, sweep, segments, sides, inward,
             )?;
             Ok(world.add_component(component))
         }),

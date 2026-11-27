@@ -9,7 +9,7 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::{CameraTarget, VisualWorld};
 use crate::utils::math;
 
-const STEP_SEC: f64 = 1.0 / 120.0;
+pub(crate) const STEP_SEC: f64 = 1.0 / 120.0;
 const MAX_STEPS: usize = 8;
 
 #[derive(Debug, Default)]

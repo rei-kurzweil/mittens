@@ -88,7 +88,7 @@ pub fn ensure_xr_hand_laser(
         }
         if driver.is_none() {
             eprintln!(
-                "[XRHand] pointer {pointer:?} must be beneath the tracked Transform child of {hand:?}; use XRHand.new(...).laser() {{ T {{ Pointer {{}} }} }}"
+                "[XRHand] pointer {pointer:?} must be beneath the tracked Transform child of {hand:?}; use XRHand(...).laser() {{ T {{ Pointer {{}} }} }}"
             );
         }
         driver

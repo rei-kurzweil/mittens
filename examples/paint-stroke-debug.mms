@@ -121,10 +121,10 @@ InputXR.on() {
         name = "paint_debug_xr_rig"
         CXR { Pointer {} }
 
-        XRHand.new(true, "Left", "GripAim").laser() {
+        XRHand(true, "Left", "GripAim").laser() {
             T { Pointer {} }
         }
-        XRHand.new(true, "Right", "GripAim").laser() {
+        XRHand(true, "Right", "GripAim").laser() {
             T { Pointer {} }
         }
     }

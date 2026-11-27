@@ -1,6 +1,7 @@
 import { f32 } from "types"
 import { kawaii_twilight_sky_with_material } from "../backgrounds/kawaii-twilight-sky.mms"
 import { kawaii_twilight_sky_material } from "../materials/kawaii-twilight-sky.mms"
+import { sky_cloud_banks } from "../backgrounds/clouds.mms"
 import { settings_slider, settings_slider_row } from "../panels/xr_settings_panel.mms"
 
 let EVENING_SKY = {
@@ -36,8 +37,22 @@ fn time_text(value) {
     return "" + Math.round(value * 100.0) + "%"
 }
 
-export fn sakura_twilight_lighting(rank, pedestal_material) {
+export fn sakura_twilight_lighting(rank, pedestal_material, implicit_clouds) {
     let sky_material = kawaii_twilight_sky_material(EVENING_SKY)
+    let cloud_banks = null
+    let cloud_root = null
+    let evening_cloud = [0.62, 0.49, 0.70]
+    if implicit_clouds {
+        sky_material.set_input("cloud_strength", 0.0)
+        cloud_banks = sky_cloud_banks([
+            [-40.0, 10.0, -45.0, 3.8, 0.45, 5],
+            [12.0, 11.0, -55.0, 3.1, -0.20, 5],
+            [43.0, 18.0, -33.0, 3.6, -0.92, 3],
+            [34.0, 13.0, 42.0, 4.1, 0.65, 5],
+            [-43.0, 17.0, 24.0, 3.5, -1.05, 3],
+        ], evening_cloud)
+        cloud_root = cloud_banks.root
+    }
     let ambient = AL.rgb(0.26, 0.24, 0.32) { name = "sakura_twilight_ambient" }
     let key = DL.color(1.0, 0.86, 0.70).intensity(1.3) { name = "sakura_twilight_key" }
     let fill = DL.color(0.70, 0.66, 1.0).intensity(0.4) { name = "sakura_twilight_fill" }
@@ -45,7 +60,7 @@ export fn sakura_twilight_lighting(rank, pedestal_material) {
     let scene_lights = T {
         Raycastable.disabled() {
             Selectable.off()
-            kawaii_twilight_sky_with_material(sky_material)
+            kawaii_twilight_sky_with_material(sky_material, cloud_root)
         }
         ambient
         key_direction
@@ -62,8 +77,13 @@ export fn sakura_twilight_lighting(rank, pedestal_material) {
         for field in ["low_color", "middle_color", "high_color", "cloud_color"] {
             sky_material.set_input(field, blend_rgb(EVENING_SKY[field], MORNING_SKY[field], value))
         }
-        for field in ["cloud_strength", "moon_strength", "glow_strength"] {
+        for field in ["moon_strength", "glow_strength"] {
             sky_material.set_input(field, blend(EVENING_SKY[field], MORNING_SKY[field], value))
+        }
+        if implicit_clouds {
+            cloud_banks.set_tint(blend_rgb(evening_cloud, [0.85, 0.87, 0.95], value))
+        } else {
+            sky_material.set_input("cloud_strength", blend(EVENING_SKY.cloud_strength, MORNING_SKY.cloud_strength, value))
         }
         light_color(ambient, [0.26, 0.24, 0.32], [0.54, 0.58, 0.66], value)
         light_color(key, [1.0, 0.86, 0.70], [1.0, 0.93, 0.78], value)

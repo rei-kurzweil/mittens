@@ -1,6 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
-use crate::engine::ecs::component::ce_helpers::{array, ce, ce_call, num, s};
+use crate::engine::ecs::component::ce_helpers::{array, b, ce, ce_call, num, s};
 use crate::engine::graphics::mesh::MeshFactory;
 use crate::engine::graphics::primitives::{
     CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable,
@@ -68,6 +68,7 @@ pub enum AuthoredRenderableShape {
         sweep: f32,
         segments: u32,
         sides: u32,
+        inward: bool,
     },
     Star {
         points: u32,
@@ -464,8 +465,40 @@ impl RenderableComponent {
         segments: u32,
         sides: u32,
     ) -> Result<Self, String> {
-        let mesh =
+        Self::helix_tube_with_facing(
+            assets,
+            radius,
+            tube_radius,
+            height,
+            start,
+            sweep,
+            segments,
+            sides,
+            false,
+        )
+    }
+
+    pub(crate) fn helix_tube_with_facing(
+        assets: &mut RenderAssets,
+        radius: f32,
+        tube_radius: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+        inward: bool,
+    ) -> Result<Self, String> {
+        let mut mesh =
             MeshFactory::helix_tube(radius, tube_radius, height, start, sweep, segments, sides)?;
+        if inward {
+            for triangle in mesh.indices_u32.chunks_exact_mut(3) {
+                triangle.swap(1, 2);
+            }
+            for vertex in &mut mesh.vertices {
+                vertex.normal = vertex.normal.map(|component| -component);
+            }
+        }
         let mut component = Self::new(Renderable::new(
             assets.register_mesh(mesh),
             MaterialHandle::TOON_MESH,
@@ -478,6 +511,7 @@ impl RenderableComponent {
             sweep,
             segments,
             sides,
+            inward,
         });
         Ok(component)
     }
@@ -706,10 +740,9 @@ impl Component for RenderableComponent {
                 sweep,
                 segments,
                 sides,
-            }) => ce_call(
-                "Renderable",
-                "helix_tube",
-                vec![
+                inward,
+            }) => {
+                let mut args = vec![
                     num(*radius as f64),
                     num(*tube_radius as f64),
                     num(*height as f64),
@@ -717,8 +750,12 @@ impl Component for RenderableComponent {
                     num(*sweep as f64),
                     num(*segments as f64),
                     num(*sides as f64),
-                ],
-            ),
+                ];
+                if *inward {
+                    args.push(b(true));
+                }
+                ce_call("Renderable", "helix_tube", args)
+            }
             Some(AuthoredRenderableShape::Star {
                 points,
                 inner_radius_fraction,

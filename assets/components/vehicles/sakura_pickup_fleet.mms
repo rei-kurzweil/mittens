@@ -10,11 +10,11 @@ export fn sakura_pickup_fleet(socket, rank, mounts, ground_y, single_pickup) {
         let frame = T.position(x, ground_y, z).rotation(0, -Math.pi / 2.0, 0) { name = name }
         return { id = id color = color frame = frame truck = null motion = null channels = null generation = 0 stage = null }
     }
-    let gold = parking_slot(1, "sakura_twilight_pickup", -5.0, 4.5, [1.0, 0.606, 0.047])
+    let gold = parking_slot(1, "sakura_twilight_pickup", -5.0, 4.5, [1.0, 0.86, 0.34])
     let blue = null
     let slots = [gold]
     if !single_pickup {
-        blue = parking_slot(2, "sakura_twilight_ground_pickup", 5.0, -6.0, [0.38, 0.61, 0.87])
+        blue = parking_slot(2, "sakura_twilight_ground_pickup", 5.0, -6.0, [1.0, 0.86, 0.34])
         slots = [gold, blue]
     }
 
@@ -42,6 +42,12 @@ export fn sakura_pickup_fleet(socket, rank, mounts, ground_y, single_pickup) {
         if generation <= slot.generation { return }
         slot.generation = generation
         if !slot.stage { slot.stage = "retire" }
+    }
+    fn respawn() {
+        for slot in slots {
+            if !slot.stage { queue_respawn(slot, slot.generation + 1) }
+        }
+        state.repeats = 4
     }
     fn check_bounds(slot) {
         if slot.stage || !slot.motion.owns_motion() { return }
@@ -136,5 +142,5 @@ export fn sakura_pickup_fleet(socket, rank, mounts, ground_y, single_pickup) {
         T.position(44, lower - 100.0, -13) { low_box }
         T.position(44, upper + 100.0, -13) { high_box }
     }
-    return { root = fleet tick = tick connect = connect disconnect = disconnect }
+    return { root = fleet tick = tick connect = connect disconnect = disconnect respawn = respawn }
 }

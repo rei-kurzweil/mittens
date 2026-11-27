@@ -182,3 +182,21 @@ gate, but it must preserve these invariants:
 - `Mixed`/`Unknown` callbacks cannot leak side effects across phase boundaries.
 - The engine does not inspect callback bodies or repeat effect analysis.
 - Audio lookahead timing and loop-cycle de-duplication remain correct.
+
+## Follow-up (2026-11-24): split statements between the passes
+
+Profiles alone left `Mixed`/`Unknown` bodies running whole in both passes, so
+script state (counters, flags, `state.x = ...`) changed twice per firing; a
+keyframe calling a script function is `Unknown`. Now each top-level statement
+runs in exactly one pass (`mms::CallbackPhase`, decided before any statement
+runs):
+
+- audio pass: `MusicNote` calls and calls made directly on a variable holding
+  an `AudioClip`/`AudioOscillator`/`AudioGain` (`clip.play()`);
+- visual pass: every other statement. Functions called from a keyframe run
+  whole there, and their sounds play on time instead of scheduled ahead;
+- when the audio pass didn't run for a firing (missed look-ahead), the visual
+  pass runs the audio statements too (`DeferredCallbackMode::VisualWithAudio`).
+
+Also, a looping animation fires keyframes it passed without firing (just
+inside the clip's end) before it wraps.

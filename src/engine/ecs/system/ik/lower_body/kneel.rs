@@ -10,11 +10,13 @@ use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::system::ik::body::KNEE_RADIUS;
 use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{
-    quat_from_axis_angle, quat_mul, vec3_cross, vec3_len, vec3_normalize, vec3_sub,
+    quat_from_axis_angle, quat_mul, vec3_cross, vec3_dot, vec3_len, vec3_normalize, vec3_sub,
 };
 
 /// Ankle clearance above the floor with the shin lying flat, in model units.
 const ANKLE_RADIUS: f32 = 0.05;
+/// Minimum drop from the hip to a knee goal, and tolerance for resolved contact.
+const KNEE_CLEARANCE: f32 = 0.02;
 /// Largest floor change accepted while kneeling, in model units.
 const MAX_STEP: f32 = 0.3;
 /// A planted knee steps once its rest spot is this far away, in model units.
@@ -135,6 +137,7 @@ pub(super) fn solve(
     bases: [TransformMatrix; 2],
     ground: &SupportQuery,
     previous_floor: Option<f32>,
+    independent_floor_reference: bool,
     body_rotation: [f32; 4],
     knee_limit: f32,
     dt_sec: f32,
@@ -152,39 +155,34 @@ pub(super) fn solve(
     let pole = vec3_normalize(vec3_sub(forward, up));
     // Turn the upright foot over so it points back along the shin, sole up.
     let turn_over = quat_from_axis_angle(left, std::f32::consts::PI);
-    // The floor carries over from standing. A fresh query may replace it
-    // only within a step of that floor: the query's reference height
-    // follows the pitched body, and must not drag the floor down with it.
+    // A surface near the collision body or locomotion origin can supersede
+    // history across a drop. Retain the step limit for pose-relative queries.
     let Some(previous) = previous_floor else {
         return Err(LowerBodyStatus::NoSupport);
     };
     let scale = uniform(bases[0]).map_err(UnsupportedRig)?.scale[0];
-    let mut supports = [None, None];
-    let mut floors = [previous; 2];
+    let clearance = KNEE_CLEARANCE * scale;
+    let thighs = rig
+        .legs
+        .each_ref()
+        .map(|leg| vec3_len(leg.rest[1].translation) * scale);
+    let floors = hips.map(|hip| {
+        ground
+            .at(hip)
+            .filter(|s| independent_floor_reference || (s.height - previous).abs() <= MAX_STEP * scale)
+            .map_or(previous, |s| s.height)
+    });
     // Knee contact spots: where the thigh reaches the floor. Straight below
     // the hip when the hips sit a thigh length up; forward of it when they are
     // lower, so low hips sit back behind the knees instead of sinking them.
-    let mut reach = [0.0f32; 2];
     let rest: [[f32; 3]; 2] = std::array::from_fn(|i| {
-        let thigh = vec3_len(rig.legs[i].rest[1].translation) * scale;
-        supports[i] = ground
-            .at(hips[i])
-            .filter(|s| (s.height - previous).abs() <= MAX_STEP * scale);
-        floors[i] = supports[i].map(|s| s.height).unwrap_or(previous);
-        let knee_height = floors[i] + KNEE_RADIUS * scale;
-        let drop = hips[i][1] - knee_height;
-        let (ahead, height) = if drop >= thigh {
-            // Hips too high to reach the floor: the knee hangs below the hip.
-            (0.0, hips[i][1] - thigh)
+        let drop = hips[i][1] - (floors[i] + KNEE_RADIUS * scale);
+        let drop = if drop < clearance {
+            thighs[i]
         } else {
-            ((thigh * thigh - drop * drop).max(0.0).sqrt(), knee_height)
+            drop.min(thighs[i])
         };
-        reach[i] = ahead;
-        [
-            hips[i][0] + forward[0] * ahead,
-            height,
-            hips[i][2] + forward[2] * ahead,
-        ]
+        knee_at_drop(hips[i], forward, thighs[i], drop)
     });
     let dt = if dt_sec.is_finite() {
         dt_sec.max(0.0)
@@ -192,66 +190,82 @@ pub(super) fn solve(
         0.0
     };
     let (spots, phases) = gait.advance(rest, hips, scale, dt);
-    // Keep each knee where the thigh can reach: the planted spot sets the
-    // direction from the hip, the thigh sets the distance. A spot directly
-    // under the hip stays there.
-    let knees: [[f32; 3]; 2] = std::array::from_fn(|i| {
-        let offset = [spots[i][0] - hips[i][0], 0.0, spots[i][2] - hips[i][2]];
-        let length = vec3_len(offset);
-        let lift = spots[i][1] - rest[i][1];
-        let (x, z) = if length > 1e-4 * scale {
-            (
-                hips[i][0] + offset[0] / length * reach[i],
-                hips[i][2] + offset[2] / length * reach[i],
-            )
-        } else {
-            (rest[i][0], rest[i][2])
-        };
-        [x, rest[i][1] + lift, z]
-    });
     let mut solved = [None, None];
     for i in 0..2 {
         let leg = &rig.legs[i];
-        let shin = vec3_len(leg.rest[2].translation) * scale;
-        // The shin lies flat behind the knee; a swinging knee lifts the ankle
-        // with it.
-        let lift = knees[i][1] - rest[i][1];
-        let ankle = [
-            knees[i][0] - forward[0] * shin,
-            floors[i] + ANKLE_RADIUS * scale + lift.max(0.0),
-            knees[i][2] - forward[2] * shin,
-        ];
-        let rotation = quat_mul(turn_over, quat_mul(body_rotation, leg.foot_in_root));
-        let goal = FootGoal {
-            sole: ankle,
-            rotation,
-        };
-        // Bend toward the knee spot: away from the hip-to-ankle chord.
-        let chord = vec3_sub(ankle, hips[i]);
-        let to_knee = vec3_sub(knees[i], hips[i]);
-        let along = crate::utils::math::vec3_dot(to_knee, chord)
-            / crate::utils::math::vec3_dot(chord, chord).max(1e-9);
-        let off = vec3_sub(to_knee, chord.map(|v| v * along));
-        let bend = if vec3_len(off) > 1e-4 * scale {
-            vec3_normalize(off)
+        let hip = hips[i];
+        let thigh = thighs[i];
+        // A moving plant can trail the hip. Keep the knee in its forward
+        // hemisphere, and recompute reachable extension after swing lift.
+        let offset = vec3_sub(spots[i], hip);
+        let ahead = vec3_dot(offset, forward).max(1e-4 * scale);
+        let lateral = vec3_dot(offset, left);
+        let direction = vec3_normalize(std::array::from_fn(|axis| {
+            forward[axis] * ahead + left[axis] * lateral
+        }));
+        let lift = if hip[1] - (floors[i] + KNEE_RADIUS * scale) >= clearance {
+            (spots[i][1] - rest[i][1]).max(0.0)
         } else {
-            pole
+            0.0
         };
-        let solution =
-            solve_leg(leg, bases[i], [0.0; 3], goal, bend, knee_limit).map_err(UnsupportedRig)?;
-        solved[i] = Some((goal, solution));
+        let drop = (hip[1] - rest[i][1] - lift).clamp(clearance.min(thigh), thigh);
+        let knee = knee_at_drop(hip, direction, thigh, drop);
+        let shin = vec3_len(leg.rest[2].translation) * scale;
+        let ankle_drop = ((KNEE_RADIUS - ANKLE_RADIUS) * scale).min(shin);
+        let trailing = (shin * shin - ankle_drop * ankle_drop).max(0.0).sqrt();
+        let rotation = quat_mul(turn_over, quat_mul(body_rotation, leg.foot_in_root));
+        let solve_at = |knee: [f32; 3]| {
+            // The shin trails the knee in both stance and swing. Build the
+            // ankle goal from the reachable knee, so it moves down with it.
+            let ankle = [
+                knee[0] - forward[0] * trailing,
+                knee[1] - ankle_drop,
+                knee[2] - forward[2] * trailing,
+            ];
+            let goal = FootGoal {
+                sole: ankle,
+                rotation,
+            };
+            // Bend toward the knee spot: away from the hip-to-ankle chord.
+            let chord = vec3_sub(ankle, hip);
+            let to_knee = vec3_sub(knee, hip);
+            let along = vec3_dot(to_knee, chord) / vec3_dot(chord, chord).max(1e-9);
+            let off = vec3_sub(to_knee, chord.map(|v| v * along));
+            let bend = if vec3_len(off) > 1e-4 * scale {
+                vec3_normalize(off)
+            } else {
+                pole
+            };
+            solve_leg(leg, bases[i], [0.0; 3], goal, bend, knee_limit)
+                .map(|solution| (goal, solution))
+        };
+        let (mut goal, mut solution) = solve_at(knee).map_err(UnsupportedRig)?;
+        if solution.knee[1] >= hip[1] {
+            // The knee-angle limit can still push a nearly folded solution
+            // above its hip. Give up contact and tuck the leg down instead.
+            (goal, solution) =
+                solve_at(knee_at_drop(hip, forward, thigh, thigh)).map_err(UnsupportedRig)?;
+        }
+        let knee_floor = solution.knee[1] - KNEE_RADIUS * scale;
+        let support = (phases[i] == FootPhase::Planted
+            && (knee_floor - floors[i]).abs() <= clearance)
+            .then(|| ground.at(solution.knee))
+            .flatten()
+            .filter(|s| (knee_floor - s.height).abs() <= clearance);
+        solved[i] = Some((goal, solution, support));
     }
     // Both legs validated: emit them together.
     Ok(std::array::from_fn(|i| {
-        let (goal, solution) = solved[i].take().unwrap();
+        let (goal, solution, support) = solved[i].take().unwrap();
         let leg = &mut rig.legs[i];
         for (joint, local) in leg.joints.into_iter().zip(solution.local) {
             emit_pose(emit, joint, local);
         }
         leg.active = true;
         FootState {
-            support: supports[i].map(|s| s.zone),
-            support_height: Some(floors[i]),
+            support: support.map(|s| s.zone),
+            support_height: Some(support.map_or(floors[i], |s| s.height)),
+            support_probe: support.map(|s| s.probe),
             base_sole: goal.sole,
             solved_sole: solution.sole,
             penetration: 0.0,
@@ -261,9 +275,22 @@ pub(super) fn solve(
             target_sole: goal.sole,
             target_rotation: goal.rotation,
             target_error: vec3_len(vec3_sub(goal.sole, solution.sole)),
-            phase: phases[i],
+            phase: if phases[i] == FootPhase::Planted && support.is_none() {
+                FootPhase::Airborne
+            } else {
+                phases[i]
+            },
         }
     }))
+}
+
+fn knee_at_drop(hip: [f32; 3], direction: [f32; 3], thigh: f32, drop: f32) -> [f32; 3] {
+    let reach = (thigh * thigh - drop * drop).max(0.0).sqrt();
+    [
+        hip[0] + direction[0] * reach,
+        hip[1] - drop,
+        hip[2] + direction[2] * reach,
+    ]
 }
 
 #[cfg(test)]

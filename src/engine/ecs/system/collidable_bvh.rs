@@ -1,9 +1,11 @@
 //! Retained static and read-only moving-zone broad phase, synchronized before queries.
 use super::{TransformSystem, collision_geometry, spatial_bvh, zone_query};
 use crate::engine::ecs::component::{
-    CollidableComponent, CollidableMode, CollisionResponse, CollisionShape, ZoneComponent,
+    CollidableComponent, CollidableMode, CollisionContextComponent, CollisionResponse,
+    CollisionShape, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
+use crate::utils::math::{mat4_inverse, mat4_mul};
 use bvh::Point3;
 use bvh::aabb::{AABB, Bounded};
 use bvh::bounding_hierarchy::BHShape;
@@ -13,6 +15,20 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 type Frame = [[f32; 4]; 4];
 type AxisShape = ([f32; 3], CollisionShape);
 type YawBox = ([f32; 3], [f32; 3], [[f32; 3]; 3]);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum SupportFace {
+    BoxTop([[f32; 3]; 4]),
+    Triangle([[f32; 3]; 3]),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SupportSurface {
+    pub zone: ComponentId,
+    pub point: [f32; 3],
+    pub bounds: [[f32; 3]; 2],
+    pub face: SupportFace,
+}
 
 fn inclined_box_mesh(
     shape: CollisionShape,
@@ -76,19 +92,30 @@ impl Surface {
     pub fn flat_support(
         &self,
         sole: [f32; 3],
-        capsule_center: [f32; 3],
+        center: [f32; 3],
         bottom: f32,
         margin: f32,
     ) -> Option<f32> {
+        self.flat_support_hit::<false>(sole, center, bottom, margin)
+            .map(|(height, _)| height)
+    }
+
+    pub fn flat_support_hit<const FACE: bool>(
+        &self,
+        sole: [f32; 3],
+        capsule_center: [f32; 3],
+        bottom: f32,
+        margin: f32,
+    ) -> Option<(f32, usize)> {
         if self.motion != CollidableMode::Static {
             return None;
         }
         if let Some(mesh) = &self.mesh {
             let origin = [sole[0], bottom + margin, sole[2]];
-            let distance = mesh.ray(origin, [0., -1., 0.])?;
+            let (distance, triangle) = mesh.ray_hit::<FACE>(origin, [0., -1., 0.])?;
             let height = origin[1] - distance;
             return ((height - bottom).abs() <= margin && height < capsule_center[1])
-                .then_some(height);
+                .then_some((height, triangle));
         }
         let (center, extents, axes) = self.yaw_box?;
         let height = center[1] + extents[1];
@@ -102,7 +129,26 @@ impl Surface {
                 return None;
             }
         }
-        Some(height)
+        Some((height, 0))
+    }
+
+    pub fn support_surface(&self, point: [f32; 3], triangle: usize) -> Option<SupportSurface> {
+        let face = if let Some(mesh) = &self.mesh {
+            SupportFace::Triangle(mesh.triangle(triangle)?)
+        } else {
+            let (center, half, axes) = self.yaw_box?;
+            SupportFace::BoxTop([[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]].map(|[x, z]| {
+                let offset =
+                    |axis: usize| x * half[0] * axes[0][axis] + z * half[2] * axes[2][axis];
+                [center[0] + offset(0), point[1], center[2] + offset(2)]
+            }))
+        };
+        Some(SupportSurface {
+            zone: self.zone,
+            point,
+            bounds: [self.bounds.min.into(), self.bounds.max.into()],
+            face,
+        })
     }
 
     /// Continuous sphere contact against retained damaged meshes or box surfaces.
@@ -240,11 +286,126 @@ impl Surface {
     }
 }
 
+/// One collision context's surfaces, stored once in its frame's local
+/// coordinates (the bottom level of a two-level hierarchy). A mover switches
+/// to it by id; moving the context's frame changes no local geometry, so a
+/// driving vehicle never rebuilds or refits it. Small sets are scanned
+/// directly; only a large one gets a BVH, built on its first query.
+#[derive(Debug)]
+pub(crate) struct ContextSet {
+    pub frame: ComponentId,
+    surfaces: Vec<Surface>,
+    indices: HashMap<ComponentId, usize>,
+    bvh: Option<BVH>,
+    dirty: bool,
+}
+
+impl ContextSet {
+    fn remove(&mut self, id: ComponentId) {
+        if let Some(index) = self.indices.remove(&id) {
+            self.surfaces.swap_remove(index);
+            if let Some(swapped) = self.surfaces.get(index) {
+                self.indices.insert(swapped.collidable, index);
+            }
+            self.dirty = true;
+        }
+    }
+}
+
+/// The CollisionContext a zone lives in (its nearest enabled ancestor), with
+/// that context's frame: the nearest transform at or above the context.
+pub(crate) fn home_context(world: &World, zone: ComponentId) -> Option<(ComponentId, ComponentId)> {
+    let mut current = world.parent_of(zone);
+    while let Some(id) = current {
+        if world
+            .get_component_by_id_as::<CollisionContextComponent>(id)
+            .is_some_and(|context| context.enabled)
+        {
+            let frame = super::pointer_system::nearest_ancestor_transform(world, id)?;
+            return Some((id, frame));
+        }
+        current = world.parent_of(id);
+    }
+    None
+}
+
+/// A context with at most this many surfaces is scanned instead of indexed.
+const SCANNED_CONTEXT_SURFACES: usize = 32;
+
+fn frames_match(a: &Frame, b: &Frame) -> bool {
+    a.iter()
+        .flatten()
+        .zip(b.iter().flatten())
+        .all(|(x, y)| (x - y).abs() <= 1.0e-5)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_surface(
+    id: ComponentId,
+    zone: ComponentId,
+    frame_id: ComponentId,
+    shape: CollisionShape,
+    frame: Frame,
+    friction: f32,
+    motion: CollidableMode,
+    response: CollisionResponse,
+    local_mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
+    node: usize,
+) -> Option<Surface> {
+    let axis_shape = collision_geometry::axis_aligned_world_shape(shape, frame);
+    let yaw_box = collision_geometry::yaw_box(shape, frame);
+    let oriented_box = super::box_sweep::oriented_box(shape, frame);
+    let world_mesh = local_mesh
+        .as_ref()
+        .map(|mesh| mesh.world(frame))
+        .or_else(|| {
+            if axis_shape.is_none()
+                && yaw_box.is_none()
+                && oriented_box.is_some()
+                && motion == CollidableMode::Static
+            {
+                return inclined_box_mesh(shape, frame);
+            }
+            None
+        });
+    let (min, max) = world_mesh
+        .as_ref()
+        .map(|mesh| (mesh.bounds.min, mesh.bounds.max))
+        .unwrap_or_else(|| collision_geometry::transformed_aabb(shape, frame));
+    if !min.into_iter().chain(max).all(f32::is_finite) {
+        return None;
+    }
+    Some(Surface {
+        collidable: id,
+        zone,
+        frame_id,
+        shape,
+        frame,
+        friction,
+        motion,
+        response,
+        mesh: world_mesh,
+        local_mesh,
+        axis_shape,
+        yaw_box,
+        oriented_box,
+        bounds: bounds(min, max),
+        node,
+    })
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct CollidableBvh {
     surfaces: Vec<Surface>,
     indices: HashMap<ComponentId, usize>,
     bvh: Option<BVH>,
+    /// Only the movement-contact index keeps context surfaces apart. Other
+    /// indexes (projectiles, swept zone events, spring bones) see them in the
+    /// world like any zone, so rockets and sensors still hit decks.
+    split_contexts: bool,
+    /// Surfaces under a CollisionContext, by context component; never in `bvh`.
+    contexts: HashMap<ComponentId, ContextSet>,
+    context_of: HashMap<ComponentId, ComponentId>,
     /// Register dependencies even for disabled/unresolved collidables, so edits can activate them.
     dependencies: HashMap<ComponentId, Vec<ComponentId>>,
     dependents: HashMap<ComponentId, HashSet<ComponentId>>,
@@ -255,6 +416,15 @@ pub(crate) struct CollidableBvh {
     pub refreshed: u64,
 }
 impl CollidableBvh {
+    /// An index that keeps CollisionContext surfaces in their own local sets
+    /// (the movement-contact index); see `split_contexts`.
+    pub(crate) fn with_contexts() -> Self {
+        Self {
+            split_contexts: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn snapshot(
         &self,
         world: &World,
@@ -342,7 +512,7 @@ impl CollidableBvh {
                         self.movers.insert(id, zone_id);
                         // Read-only moving geometry is queryable as an obstacle,
                         // while retaining its independent mover/response identity.
-                        if c.response != CollisionResponse::ReadOnly {
+                        if c.response != CollisionResponse::ReadOnly || c.mover_only {
                             return None;
                         }
                     }
@@ -364,6 +534,31 @@ impl CollidableBvh {
                     self.dependents.entry(dependency).or_default().insert(id);
                 }
                 self.dependencies.insert(id, dependencies);
+            }
+            // A zone under a CollisionContext lives only in that context's
+            // local tree; leaving or changing context removes it from the old one.
+            let home = resolved
+                .as_ref()
+                .filter(|_| self.split_contexts)
+                .and_then(|resolved| home_context(world, resolved.0));
+            if let Some(previous) = self.context_of.get(&id).copied()
+                && home.map(|(context, _)| context) != Some(previous)
+            {
+                if let Some(tree) = self.contexts.get_mut(&previous) {
+                    tree.remove(id);
+                }
+                self.context_of.remove(&id);
+            }
+            if let (Some((context, context_frame)), Some(resolved)) = (home, resolved.as_ref()) {
+                if let Some(index) = self.indices.remove(&id) {
+                    self.surfaces.swap_remove(index);
+                    if let Some(swapped) = self.surfaces.get(index) {
+                        self.indices.insert(swapped.collidable, index);
+                    }
+                    rebuild = true;
+                }
+                self.upsert_context_surface(world, context, context_frame, id, *resolved);
+                continue;
             }
             let Some((zone, frame_id, shape, frame, friction, motion, response)) = resolved else {
                 if let Some(index) = self.indices.remove(&id) {
@@ -394,27 +589,18 @@ impl CollidableBvh {
             }) {
                 continue;
             }
-            let axis_shape = collision_geometry::axis_aligned_world_shape(shape, frame);
-            let yaw_box = collision_geometry::yaw_box(shape, frame);
-            let oriented_box = super::box_sweep::oriented_box(shape, frame);
-            let world_mesh = local_mesh
-                .as_ref()
-                .map(|mesh| mesh.world(frame))
-                .or_else(|| {
-                    if axis_shape.is_none()
-                        && yaw_box.is_none()
-                        && oriented_box.is_some()
-                        && motion == CollidableMode::Static
-                    {
-                        return inclined_box_mesh(shape, frame);
-                    }
-                    None
-                });
-            let (min, max) = world_mesh
-                .as_ref()
-                .map(|mesh| (mesh.bounds.min, mesh.bounds.max))
-                .unwrap_or_else(|| collision_geometry::transformed_aabb(shape, frame));
-            if !min.into_iter().chain(max).all(f32::is_finite) {
+            let Some(surface) = build_surface(
+                id,
+                zone,
+                frame_id,
+                shape,
+                frame,
+                friction,
+                motion,
+                response,
+                local_mesh,
+                existing.map(|i| self.surfaces[i].node).unwrap_or(0),
+            ) else {
                 if let Some(index) = self.indices.remove(&id) {
                     self.surfaces.swap_remove(index);
                     if let Some(swapped) = self.surfaces.get(index) {
@@ -423,23 +609,6 @@ impl CollidableBvh {
                     rebuild = true;
                 }
                 continue;
-            }
-            let surface = Surface {
-                collidable: id,
-                zone,
-                frame_id,
-                shape,
-                frame,
-                friction,
-                motion,
-                response,
-                mesh: world_mesh,
-                local_mesh,
-                axis_shape,
-                yaw_box,
-                oriented_box,
-                bounds: bounds(min, max),
-                node: existing.map(|i| self.surfaces[i].node).unwrap_or(0),
             };
             if let Some(index) = existing {
                 self.surfaces[index] = surface;
@@ -450,6 +619,7 @@ impl CollidableBvh {
                 rebuild = true;
             }
         }
+        self.contexts.retain(|_, tree| !tree.surfaces.is_empty());
         if rebuild {
             self.bvh = if self.surfaces.is_empty() {
                 None
@@ -464,6 +634,152 @@ impl CollidableBvh {
             self.refits += 1;
         }
     }
+    #[allow(clippy::type_complexity)]
+    fn upsert_context_surface(
+        &mut self,
+        world: &World,
+        context: ComponentId,
+        context_frame: ComponentId,
+        id: ComponentId,
+        resolved: (
+            ComponentId,
+            ComponentId,
+            CollisionShape,
+            Frame,
+            f32,
+            CollidableMode,
+            CollisionResponse,
+        ),
+    ) {
+        let (zone, frame_id, shape, frame, friction, motion, response) = resolved;
+        let tree = self.contexts.entry(context).or_insert_with(|| ContextSet {
+            frame: context_frame,
+            surfaces: Vec::new(),
+            indices: HashMap::new(),
+            bvh: None,
+            dirty: true,
+        });
+        if tree.frame != context_frame {
+            tree.frame = context_frame;
+            tree.dirty = true;
+        }
+        let local_frame = TransformSystem::world_model(world, context_frame)
+            .and_then(mat4_inverse)
+            .map(|inverse| mat4_mul(inverse, frame));
+        let Some(local_frame) = local_frame else {
+            tree.remove(id);
+            self.context_of.remove(&id);
+            return;
+        };
+        let local_mesh = super::triangle_collision::on(world, zone);
+        let existing = tree.indices.get(&id).copied();
+        // World poses are recomputed as the vehicle moves; equal local poses
+        // within float noise leave the tree untouched.
+        if existing.is_some_and(|i| {
+            let s = &tree.surfaces[i];
+            s.zone == zone
+                && s.frame_id == frame_id
+                && s.shape == shape
+                && frames_match(&s.frame, &local_frame)
+                && s.friction == friction
+                && s.motion == motion
+                && s.response == response
+                && match (&s.local_mesh, &local_mesh) {
+                    (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                    (None, None) => true,
+                    _ => false,
+                }
+        }) {
+            self.context_of.insert(id, context);
+            return;
+        }
+        let Some(surface) = build_surface(
+            id,
+            zone,
+            frame_id,
+            shape,
+            local_frame,
+            friction,
+            motion,
+            response,
+            local_mesh,
+            0,
+        ) else {
+            tree.remove(id);
+            self.context_of.remove(&id);
+            return;
+        };
+        if let Some(index) = existing {
+            tree.surfaces[index] = surface;
+        } else {
+            tree.indices.insert(id, tree.surfaces.len());
+            tree.surfaces.push(surface);
+        }
+        tree.dirty = true;
+        self.context_of.insert(id, context);
+    }
+
+    /// Build a large context's local BVH if it changed since its last query.
+    /// Contexts nobody queries are never built; small ones never need one.
+    pub fn prepare_context(&mut self, context: ComponentId) {
+        if let Some(tree) = self.contexts.get_mut(&context)
+            && tree.dirty
+        {
+            tree.bvh = if tree.surfaces.len() <= SCANNED_CONTEXT_SURFACES {
+                None
+            } else {
+                Some(BVH::build(&mut tree.surfaces))
+            };
+            tree.dirty = false;
+            self.rebuilds += 1;
+        }
+    }
+
+    /// Every context with surfaces.
+    pub(crate) fn context_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.contexts.keys().copied()
+    }
+
+    /// The frame whose local coordinates a context's surfaces use.
+    pub fn context_frame(&self, context: ComponentId) -> Option<ComponentId> {
+        self.contexts.get(&context).map(|tree| tree.frame)
+    }
+
+    pub fn context_surface(&self, context: ComponentId, index: usize) -> &Surface {
+        &self.contexts[&context].surfaces[index]
+    }
+
+    /// Neighborhood query in a context's local coordinates; call
+    /// `prepare_context` after syncing.
+    pub fn context_query(
+        &self,
+        context: ComponentId,
+        min: [f32; 3],
+        max: [f32; 3],
+        stack: &mut Vec<usize>,
+        out: &mut Vec<usize>,
+    ) -> u64 {
+        out.clear();
+        let Some(tree) = self.contexts.get(&context) else {
+            return 0;
+        };
+        let query = bounds(min, max);
+        let Some(bvh) = &tree.bvh else {
+            out.extend(
+                tree.surfaces
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, surface)| spatial_bvh::overlaps(&surface.bounds, &query))
+                    .map(|(index, _)| index),
+            );
+            out.sort_unstable_by_key(|&i| tree.surfaces[i].collidable);
+            return tree.surfaces.len() as u64;
+        };
+        let visits = spatial_bvh::query(bvh, &tree.surfaces, &query, stack, out);
+        out.sort_unstable_by_key(|&i| tree.surfaces[i].collidable);
+        visits
+    }
+
     /// Neighborhood query only: exact support/contact remains consumer-owned.
     pub fn query(
         &self,

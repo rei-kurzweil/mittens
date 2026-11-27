@@ -50,7 +50,7 @@ Gravity {
             InputXR.on() {
                 InputXRGamepad { hand("left") locomotion() speed(1.4) }
                 T { CXR {} }
-                XRHand.new(true, "Left", "Aim") {
+                XRHand(true, "Left", "Aim") {
                     T.position(0.0, -20.0, 0.0) {
                         Pointer { name = "sakura_mobile_left_pointer" }
                         T.position(0.0, 0.0, -5.0).scale(0.002, 0.002, 10.0) {
@@ -58,7 +58,7 @@ Gravity {
                         }
                     }
                 }
-                XRHand.new(true, "Right", "Aim") {
+                XRHand(true, "Right", "Aim") {
                     T.position(0.0, -20.0, 0.0) {
                         Pointer { name = "sakura_mobile_right_pointer" }
                         T.position(0.0, 0.0, -5.0).scale(0.002, 0.002, 10.0) {

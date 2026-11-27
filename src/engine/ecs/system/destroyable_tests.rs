@@ -88,6 +88,7 @@ fn event(world: &mut World, position: [f32; 3], amount: f32) {
         position,
         radius: 0.28,
         amount,
+        blast: None,
     });
 }
 fn pump(
@@ -263,6 +264,7 @@ fn fully_consumed_surface_releases_state_and_cannot_resurrect() {
         position: [0.; 3],
         radius: 2.,
         amount: 3.,
+        blast: None,
     });
     pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
     finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
@@ -529,6 +531,7 @@ fn empty_cells_retire_immediately_and_sources_cannot_reenter_the_bvh() {
         position: [-0.5, 0., -0.5],
         radius: 0.8,
         amount: 3.,
+        blast: None,
     });
     pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
     finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
@@ -553,4 +556,19 @@ fn empty_cells_retire_immediately_and_sources_cannot_reenter_the_bvh() {
         d.cuts, 2,
         "empty stable slots must not invalidate later cuts"
     );
+}
+#[test]
+fn debris_flies_away_from_a_blast_and_drifts_without_one() {
+    use crate::utils::math::vec3_len;
+    let blast = Blast::new(6., 9., 8.).unwrap();
+    let (near, spin) = debris_motion([0.5, 0., 0.], Some(([0.; 3], blast)));
+    let (far, _) = debris_motion([3., 0., 0.], Some(([0.; 3], blast)));
+    assert!(near[0] > 0. && near[1] > 0., "{near:?}");
+    assert!(vec3_len(near) > vec3_len(far));
+    assert!(vec3_len(near) <= 9. + 1e-4);
+    assert!(vec3_len(spin) > 0. && vec3_len(spin) <= 8. + 1e-4);
+    // Beyond the blast radius a fragment still gets the minimum push.
+    let (outside, _) = debris_motion([10., 0., 0.], Some(([0.; 3], blast)));
+    assert!((vec3_len(outside) - 9. * 0.35).abs() < 1e-3);
+    assert_eq!(debris_motion([0.5, 0., 0.], None), ([0.3, 1.2, 0.2], [0.; 3]));
 }

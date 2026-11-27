@@ -1,7 +1,8 @@
 import { pickup_power_panel } from "./pickup_power_panel.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
-import { pickup_passenger_seat, pickup_bed_seat } from "./pickup_ride_seats.mms"
+import { pickup_passenger_seat, pickup_bed_deck } from "./pickup_ride_seats.mms"
+import { pickup_damage } from "./pickup_damage.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
 import { pickup_anime_material } from "../materials/pickup_anime.mms"
@@ -15,6 +16,8 @@ import { pickup_doors } from "./pickup_doors.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, gravity_enabled, options) {
+    let paint_color = color
+    if paint_color == null { paint_color = [1.0, 0.86, 0.34] }
     let damage_threshold = 16.0
     if options && options["damage_threshold"] != null {
         damage_threshold = options.damage_threshold
@@ -29,6 +32,7 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     if options && options["acceleration_drive"] {
         drive=Acceleration.drive() {name="pickup_drive_acceleration"}
     }
+    let damage=pickup_damage({})
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
         // Untextured body: the baked atlas replaces uv0 and paint colour stays
@@ -57,12 +61,12 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // so reparenting these parts retains their authored local poses.
             chassis.attach(batch)
             // The first source supplies the combined mesh's shared paint colour.
-            if cabin && color!=null {
-                cabin.set_color([color[0],color[1],color[2],1.0])
+            if cabin && paint_color!=null {
+                cabin.set_color([paint_color[0],paint_color[1],paint_color[2],1.0])
             }
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
             // The doors hang on hinges outside the static batch.
-            doors.install(event.gltf,chassis,color)
+            doors.install(event.gltf,chassis,paint_color)
             if network.group {doors.connect(options.socket,network.group,network.address)}
             for name in ["car_seat","car_seat.passenger_seat","headlights","hood","roof","wheel_wells","truck_bed","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")
@@ -72,8 +76,8 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
             // open lower cabin intact; wheels and springs remain independent.
             for part_mesh in event.gltf.query_all("renderable") {
                 if part_mesh!=cabin {
-                    let damage=Destroyable.threshold(damage_threshold) {name="pickup_imported_part_damage"}
-                    part_mesh.attach(damage)
+                    let part_damage=Destroyable.threshold(damage_threshold) {name="pickup_imported_part_damage"}
+                    part_mesh.attach(part_damage)
                 }
             }
             // Physical panel collision is explicit. Decorative coils and tires
@@ -156,6 +160,34 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     let gravity=Gravity.enabled(gravity_enabled!=false) {name="pickup_gravity"}
     motion.attach(gravity)
     if drive {motion.attach(drive)}
+    // The common vehicle input: { throttle steering brake } from any source,
+    // a mounted player's stick, a control script or events. Throttle and
+    // steering are -1 to 1. With the native drive (acceleration_drive) the
+    // values hold until the next call; without it, each call sets velocity.
+    fn set_control_input(input) {
+        let throttle=0.0 let steering=0.0 let brake=false
+        if input["throttle"]!=null {throttle=input.throttle}
+        if input["steering"]!=null {steering=input.steering}
+        if input["brake"]!=null {brake=input.brake==true}
+        // The truck's damage owns operability: dead wheels cost traction, and
+        // a wrecked engine leaves only the brake.
+        throttle=throttle*damage.traction()
+        if damage.wrecked() {throttle=0.0 brake=true}
+        if drive {
+            drive.set_drive(throttle,steering,brake)
+            return
+        }
+        // The motion frame stays upright: keep gravity/contact velocity on Y.
+        let vertical=motion.linear()[1]
+        motion.reset()
+        motion.translate([0,vertical,0])
+        if !brake {
+            motion.translate([0,0,-throttle*5.0])
+            motion.rotate([0,-steering*throttle*1.2,0])
+        }
+    }
+    truck.set_control_input=set_control_input
+    motion.set_control_input=set_control_input
     truck.attach(pickup_sliding_colliders(truck))
     let power=pickup_power_panel(fn() {if can_control() {truck.set_powered(!truck.powered())}})
     fn mount_changed(occupied) {
@@ -163,11 +195,21 @@ fn make_pickup(color, cargo, gravity_enabled, options) {
     }
     body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)},mount_changed,drive))
     body.attach(power)
-    // Ride-only seats beside the driver's on the truck root; see pickup_ride_seats.
-    for ride in [pickup_passenger_seat(), pickup_bed_seat()] {
-        body.attach(ride.frames)
-        truck.attach(ride.mountable)
-    }
+    // The passenger seat and the bed deck sit beside the driver's seat on the
+    // truck root; see pickup_ride_seats. The bed's collision context rides the
+    // chassis (so it tilts with the hydraulics) and excludes the whole truck.
+    // Engine and wheel integrity (see pickup_damage) ride the chassis.
+    body.attach(damage.parts)
+    truck.damage=damage
+    truck.repair_damage=damage.repair
+    truck.set_on_wrecked=damage.set_on_wrecked
+    let passenger=pickup_passenger_seat()
+    body.attach(passenger.frames)
+    truck.attach(passenger.mountable)
+    let bed=pickup_bed_deck(body, truck)
+    body.attach(bed.frames)
+    truck.attach(bed.mountable)
+    body.attach(bed.context)
     if options && options["socket"] {
         fn follow_peer(following,occupied) {
             truck.set_remote_occupied(occupied)

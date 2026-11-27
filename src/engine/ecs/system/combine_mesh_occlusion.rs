@@ -61,6 +61,10 @@ fn hash_settings(uv: AoUvChannel, settings: &AoBakeSettings, hasher: &mut impl H
 }
 
 impl CombinedOcclusion {
+    pub(super) fn texture(&self, key: u64) -> Option<TextureHandle> {
+        self.bakes.get(&key)?.texture
+    }
+
     pub fn is_occlusion_component(world: &World, id: ComponentId) -> bool {
         world
             .get_component_by_id_as::<AmbientOcclusionComponent>(id)

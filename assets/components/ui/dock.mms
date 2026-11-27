@@ -114,10 +114,6 @@ export fn dock_dropzone(options) {
         name = options.name + "_frame"
         zone
         rest
-        // A small marker shows where the slot is.
-        T.scale(0.03, 0.03, 0.03) {
-            R.sphere() { C.rgba(0.88, 0.81, 0.66, 1.0) Raycastable.disabled() }
-        }
     }
     on(zone, "ZoneDropped", fn(drop) {
         if drop.target.dock_panel != true { return }

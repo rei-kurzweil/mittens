@@ -337,6 +337,15 @@ on(scope, "RayIntersected", fn(event) { print(event) })
 scope
 ```
 
+#### `RayMissed`
+<!-- catalog:signal source="RayMissed" kind="event" mms="observable-payload" -->
+**Event.** A raycast asked for with `request_raycast()` hit nothing within its `max_distance`. It goes to the raycaster's scope, the counterpart of `RayIntersected` for that raycaster, so a script waiting on a result knows a miss from a result still to come. Rays cast every frame for pointers don't report misses. Payload: `raycaster`, `origin`, `direction`, `max_distance`. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [emitter](../../../src/engine/ecs/system/raycast_pointer.rs), and [payload conversion](../../../src/scripting/runner.rs).
+```mms parse-only
+let ray = Raycast.event_driven().parent_forward(true).max_distance(40.0) {}
+on(ray, "RayMissed", fn(event) { print(event.max_distance) })
+ray.request_raycast()
+```
+
 #### `ZoneEntered`
 <!-- catalog:signal source="ZoneEntered" kind="event" mms="observable-payload" -->
 

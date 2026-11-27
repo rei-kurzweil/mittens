@@ -50,7 +50,7 @@ fn sakura_towers_keep_xr_grip_surfaces_after_batching_and_pulse_their_beacons() 
             name = "tower_climber"
             InputXR.on() {
                 T { CXR {} }
-                XRHand.new(true, "Left", "GripAim") { T { Pointer {} } }
+                XRHand(true, "Left", "GripAim") { T { Pointer {} } }
             }
         }
     "#,

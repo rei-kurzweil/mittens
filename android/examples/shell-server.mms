@@ -39,8 +39,8 @@ T {
     InputXR.on() {
         InputXRGamepad { hand("left") locomotion() speed(1.4) }
         T { CXR {} }
-        XRHand.new(true, "Left", "Aim") { controller_pointer("shell_left_pointer") }
-        XRHand.new(true, "Right", "Aim") { controller_pointer("shell_right_pointer") }
+        XRHand(true, "Left", "Aim") { controller_pointer("shell_left_pointer") }
+        XRHand(true, "Right", "Aim") { controller_pointer("shell_right_pointer") }
     }
 }
 let state = {

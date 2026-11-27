@@ -276,14 +276,14 @@ ED {
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.
-                XRHand.new(true, "Left", "GripAim").laser() {
+                XRHand(true, "Left", "GripAim").laser() {
                     T {
                         RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
                             Pointer {}
                         }
                     }
                 }
-                XRHand.new(true, "Right", "GripAim").laser() {
+                XRHand(true, "Right", "GripAim").laser() {
                     T {
                         RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
                             Pointer {}
@@ -318,7 +318,7 @@ ED {
 //         //     }
 //         // }
 
-//         XRHand.new(true, "Left", "Aim") {
+//         XRHand(true, "Left", "Aim") {
 //             T.scale(0.06, 0.06, 0.12) {
 //                 TOP.fork_trs().smooth("rotation", 220.0) {
 //                     T {
@@ -328,7 +328,7 @@ ED {
 //             }
 //         }
 
-//         XRHand.new(true, "Right", "Aim") {
+//         XRHand(true, "Right", "Aim") {
 //             T.scale(0.06, 0.06, 0.12) {
 //                 TOP.fork_trs().smooth("rotation", 220.0) {
 //                     T {
@@ -339,14 +339,14 @@ ED {
 //         }
 
 //         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
-//         XRHand.new(true, "Left", "Grip") {
+//         XRHand(true, "Left", "Grip") {
 //             T.scale(0.05, 0.05, 0.10) {
 //                 T {
 //                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
 //                 }
 //             }
 //         }
-//         XRHand.new(true, "Right", "Grip") {
+//         XRHand(true, "Right", "Grip") {
 //             T.scale(0.05, 0.05, 0.10) {
 //                 T {
 //                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }

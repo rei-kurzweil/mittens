@@ -4,6 +4,7 @@ impl<I> RuntimeSpecBuilder<I> {
     pub fn with_standard_builtins(&mut self) -> &mut Self {
         for name in [
             "null",
+            "print",
             "range",
             "len",
             "byte_len",

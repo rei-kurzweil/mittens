@@ -38,6 +38,56 @@ only when stance error exceeds the deadband. Exact return to authored standing
 foot positions is not required. Disabling walking releases its contacts and
 returns target ownership to the rest/crouch policy.
 
+## Walking repro from Sakura Twilight Simpler
+
+Headset playtest on 2026-11-26. At Mitten's observed pace, the legs can trail
+the body and the swing arcs stop being centered along body-local Z. The
+existing speed checks constrain foot lag, but they do not establish that the
+arc remains centered in the body frame at the reported pace.
+
+- Capture the host-owned Mitten and the client puppet over the same motion.
+  Measure actual root and body speed and frame timing before choosing a
+  test speed. Separate sustained travel, acceleration, stopping, and turns.
+- Measure the rest, planted, target, and solved foot positions in the same
+  per-frame body frame. Plot signed fore-aft offsets through a full stride.
+  Record swing phase, stride cap use, contact acceptance, and solve residual
+  alongside these positions to locate where the offset begins.
+- Add a deterministic steady-travel regression at the measured pace. After
+  the gait settles, both feet should keep bounded trailing distance and the
+  mean swing position along body-local Z should stay near the calibrated
+  stance. Keep the existing planted-foot, cadence, and turning checks.
+
+The [posture and support debug overlay](body-posture-support-debug-overlay.md)
+can show contact status during this reproduction. Change gait timing or
+landing prediction only once the trace identifies where the offset enters.
+
+### Walking visualizer follow-up
+
+The **Walking gait** toggle in **Panels → Editor** shows the selected
+avatar's planner decisions. The camera avatar is the fallback when no rig
+is selected. Select NPC Mitten during fast walking for the first headset
+check. The display answers three questions from the same gait update:
+
+- **Why did a leg swing or stay planted?** Show per-foot stance displacement
+  and its threshold, travel-direction lag and anticipation, and the turning
+  trigger. Show the chosen leg, support-transfer time, and whether missing
+  contact or a rejected landing held the step back.
+- **How fast is the swing?** Show measured body speed, planned and effective
+  swing duration, elapsed phase, and lift. Make it possible to see when
+  acceleration or the minimum swing duration limits cadence.
+- **How far does it swing?** Show the calibrated stance, planted start, chosen
+  landing, and target and solved paths in the current body frame. Mark the
+  fore-aft axis and annotate raw prediction, capped lead, final travel, and
+  remaining solve error. Show values in metres or model units with the scale
+  stated so trailing and off-center arcs can be compared across avatars.
+
+The gait solver captures the admission and landing checks at the point of
+decision. Gold shows the planned world-space arc. Cyan and green trail the
+actual target and solved foot in the moving body frame, with a blue local Z
+axis. White and pink markers show the rest and planted points. A red marker
+shows a rejected landing. Inspect the host-owned NPC first, then compare the
+client puppet with the same motion.
+
 ## Rust ownership and composition
 
 `SystemWorld.lower_body_ik` owns one `LowerBodyInstance` per AVC. Each instance

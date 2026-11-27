@@ -201,9 +201,9 @@ impl<'a> MeowMeowTokenizer<'a> {
                         "continue" => TokenKind::Continue,
                         "export" => TokenKind::Export,
                         "import" => TokenKind::Import,
-                        "ast" => TokenKind::Ast,
-                        "from" => TokenKind::From,
-                        "as" => TokenKind::As,
+                        // `ast`, `from` and `as` are keywords only inside an
+                        // import statement, which the parser reads as words;
+                        // everywhere else they are ordinary names.
                         _ => TokenKind::Ident(ident),
                     }
                 } else {

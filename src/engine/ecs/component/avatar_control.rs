@@ -1,7 +1,7 @@
 #[path = "eye_blink_state.rs"]
 mod blink;
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::{Component, ComponentRef, CollisionResponse};
+use crate::engine::ecs::component::{CollisionResponse, CollisionShape, Component, ComponentRef};
 
 /// How AVC treats retained eye-tracker gaze while the avatar head is moving.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -319,11 +319,20 @@ pub struct AvatarControlComponent {
 
     /// Body solver mode policy; see `BodyPosture`.
     pub posture: BodyPosture,
+    pub(crate) solved_posture: crate::engine::ecs::system::ik::BodyMode,
+    pub(crate) body_mount: Option<ComponentId>,
     /// Publish attached cameras from a view offset from the movement root.
     pub third_person: bool,
     pub(crate) camera_follow_root: Option<ComponentId>,
+    /// Where the third-person camera orbits (runtime; reset on each switch).
+    pub(crate) third_person_orbit:
+        crate::engine::ecs::system::avatar_control_system::camera_view::ThirdPersonOrbit,
     /// Collision fidelity; see `CollisionDetail`.
     pub collision_detail: CollisionDetail,
+    /// Runtime: AvatarControl's solvers leave the avatar alone (head/neck
+    /// constraint, upper and lower body, arm chains, body yaw), so it keeps its
+    /// last pose and only outside code (a pose, a script) changes it.
+    pub paused: bool,
     /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
     pub crouch_enabled: bool,
     pub crouch_sole_offsets: Option<[[f32; 3]; 2]>,
@@ -364,12 +373,19 @@ pub struct AvatarControlComponent {
     pub(crate) capsule_sample_id: Option<ComponentId>,
     /// Torso sphere colliders generated for `CollisionDetail::Detailed`.
     pub(crate) detail_collidable_ids: Vec<ComponentId>,
+    /// Leg and foot obstacles in the avatar's overlay CollisionContext.
+    pub(crate) limb_collidable_ids: Vec<ComponentId>,
     pub(crate) capsule_vertical_source: Option<ComponentId>,
     pub(crate) capsule_routing_revision: u64,
     pub(crate) capsule_route_ref: Option<ComponentRef>,
     pub(crate) capsule_route_response: Option<CollisionResponse>,
     pub(crate) capsule_world_scale: f32,
     pub(crate) capsule_reset_contact_history: bool,
+    /// The standing capsule and its centre height, kept for switching back
+    /// from the crawling collider.
+    pub(crate) capsule_standing: Option<(CollisionShape, f32)>,
+    /// Runtime: the capsule zone is the low crawling sphere.
+    pub(crate) capsule_crawling: bool,
 
     /// Runtime contact readiness, published after capsule transforms settle.
     pub(crate) capsule_ready: bool,
@@ -753,9 +769,13 @@ impl Default for AvatarControlComponent {
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
             posture: BodyPosture::Vertical,
+            solved_posture: Default::default(),
+            body_mount: None,
             third_person: false,
             camera_follow_root: None,
+            third_person_orbit: Default::default(),
             collision_detail: CollisionDetail::Simple,
+            paused: false,
             crouch_enabled: true,
             crouch_sole_offsets: None,
             crouch_knee_pole: [0.0, 0.0, 1.0],
@@ -769,12 +789,15 @@ impl Default for AvatarControlComponent {
             capsule_collidable_id: None,
             capsule_sample_id: None,
             detail_collidable_ids: Vec::new(),
+            limb_collidable_ids: Vec::new(),
             capsule_vertical_source: None,
             capsule_routing_revision: 0,
             capsule_route_ref: None,
             capsule_route_response: None,
             capsule_world_scale: 1.0,
             capsule_reset_contact_history: false,
+            capsule_standing: None,
+            capsule_crawling: false,
             capsule_ready: false,
             component: None,
         }

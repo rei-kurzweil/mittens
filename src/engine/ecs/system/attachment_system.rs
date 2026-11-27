@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
-    AvatarControlComponent, ComponentRef, ControllerHand, InputComponent, InputXRGamepadComponent,
-    MountableComponent, QueryRootMode, RiderComponent, SerializeComponent, TransformComponent,
-    TransformOperatorComponent, XRHandComponent, resolve_component_ref,
+    AvatarControlComponent, ComponentRef, ControllerHand, MountableComponent, QueryRootMode,
+    RiderComponent, SerializeComponent, TransformComponent, TransformOperatorComponent,
+    XRHandComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::grabbable_system::ensure_generated_raycastable;
 use crate::engine::ecs::system::pointer_system::nearest_ancestor_transform;
@@ -14,18 +14,6 @@ use crate::utils::math::{mat_to_quat, mat4_inverse, mat4_mul, quat_normalize, qu
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]
-enum SuspendedInput {
-    Desktop {
-        component: ComponentId,
-        translation_enabled: bool,
-    },
-    XrGamepad {
-        component: ComponentId,
-        locomotion: bool,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
 struct ActiveMount {
     rider: ComponentId,
     mountable: ComponentId,
@@ -35,7 +23,6 @@ struct ActiveMount {
     helper_serialize: ComponentId,
     attachment: AttachmentRef,
     original_parent: Option<ComponentId>,
-    suspended_input: SuspendedInput,
     suspended_velocity: Option<(ComponentId, bool)>,
 }
 
@@ -66,7 +53,16 @@ pub struct AttachmentSystem {
     mounted_avatar_revision: Option<u64>,
     riders: HashSet<ComponentId>,
     mountables: HashSet<ComponentId>,
+    /// Riders standing on a carry mountable's deck (see attachment_carry.rs).
+    carries: HashMap<ComponentId, carry::ActiveCarry>,
+    /// Each carry mountable's frame world matrix at the previous fixed step.
+    carrier_frames: HashMap<ComponentId, [[f32; 4]; 4]>,
+    carry_contacts: Vec<carry::CarryContact>,
 }
+
+#[path = "attachment_carry.rs"]
+mod carry;
+pub(crate) use carry::CarryContact;
 
 impl AttachmentSystem {
     pub fn mounted_relationship(
@@ -163,6 +159,9 @@ impl AttachmentSystem {
         }
         // Builder calls may set the auto-mount zone after registration.
         self.mountables.insert(mountable);
+        if component.carry {
+            return;
+        }
         let Some(owner) = world.parent_of(mountable).filter(|id| {
             world
                 .get_component_by_id_as::<TransformComponent>(*id)
@@ -271,7 +270,9 @@ impl AttachmentSystem {
         };
         let Some(mountable) = world
             .get_component_by_id_as::<MountableComponent>(mountable_id)
-            .filter(|component| component.enabled && (component.on_grip || !by_grip))
+            .filter(|component| {
+                component.enabled && !component.carry && (component.on_grip || !by_grip)
+            })
             .cloned()
         else {
             return false;
@@ -291,9 +292,6 @@ impl AttachmentSystem {
         let Some(rider_anchor) = resolve_required(world, rider_id, rider.anchor.as_ref())
             .and_then(|id| nearest_ancestor_transform(world, id))
         else {
-            return false;
-        };
-        let Some(input) = resolve_required(world, rider_id, rider.input.as_ref()) else {
             return false;
         };
         let Some(entry_zone) = resolve_required(world, mountable_id, mountable.entry_zone.as_ref())
@@ -336,9 +334,6 @@ impl AttachmentSystem {
         else {
             return false;
         };
-        let Some(suspended_input) = snapshot_input(world, input) else {
-            return false;
-        };
 
         let original_parent = world.parent_of(rider_root);
         let target_guid = match world.get_component_record(mount_anchor) {
@@ -379,7 +374,8 @@ impl AttachmentSystem {
             let _ = world.remove_component_subtree(transform_parent);
             return false;
         }
-        suspend_input(world, suspended_input);
+        // Walking is the vehicle script's decision (MountStarted); only the
+        // seat's own motion freeze belongs to the connection.
         let suspended_velocity = original_parent.and_then(|owner| {
             let velocity = world
                 .get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(
@@ -403,7 +399,6 @@ impl AttachmentSystem {
                 .attachment_of(rider_root)
                 .expect("committed mount has a structural attachment"),
             original_parent,
-            suspended_input,
             suspended_velocity,
         };
         self.by_rider.insert(rider_id, edge);
@@ -465,6 +460,11 @@ impl AttachmentSystem {
                 .iter()
                 .copied()
                 .filter(|seat| !self.rider_by_mountable.contains_key(seat))
+                .filter(|seat| {
+                    world
+                        .get_component_by_id_as::<MountableComponent>(*seat)
+                        .is_some_and(|mountable| !mountable.carry)
+                })
                 .collect();
             for seat in seats {
                 let inside = world
@@ -540,7 +540,6 @@ impl AttachmentSystem {
                 let _ = world.set_parent(edge.attachment.child(), original_parent);
             }
         }
-        restore_input(world, edge.suspended_input);
         if let Some((owner, enabled)) = edge.suspended_velocity
             && let Some(v) = world
                 .get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(
@@ -808,61 +807,6 @@ fn set_parent_and_world(
     Ok(())
 }
 
-fn snapshot_input(world: &World, component: ComponentId) -> Option<SuspendedInput> {
-    if let Some(input) = world.get_component_by_id_as::<InputComponent>(component) {
-        return Some(SuspendedInput::Desktop {
-            component,
-            translation_enabled: input.translation_enabled,
-        });
-    }
-    world
-        .get_component_by_id_as::<InputXRGamepadComponent>(component)
-        .map(|input| SuspendedInput::XrGamepad {
-            component,
-            locomotion: input.locomotion,
-        })
-}
-
-fn suspend_input(world: &mut World, input: SuspendedInput) {
-    match input {
-        SuspendedInput::Desktop { component, .. } => {
-            if let Some(input) = world.get_component_by_id_as_mut::<InputComponent>(component) {
-                input.translation_enabled = false;
-            }
-        }
-        SuspendedInput::XrGamepad { component, .. } => {
-            if let Some(input) =
-                world.get_component_by_id_as_mut::<InputXRGamepadComponent>(component)
-            {
-                input.locomotion = false;
-            }
-        }
-    }
-}
-
-fn restore_input(world: &mut World, input: SuspendedInput) {
-    match input {
-        SuspendedInput::Desktop {
-            component,
-            translation_enabled,
-        } => {
-            if let Some(input) = world.get_component_by_id_as_mut::<InputComponent>(component) {
-                input.translation_enabled = translation_enabled;
-            }
-        }
-        SuspendedInput::XrGamepad {
-            component,
-            locomotion,
-        } => {
-            if let Some(input) =
-                world.get_component_by_id_as_mut::<InputXRGamepadComponent>(component)
-            {
-                input.locomotion = locomotion;
-            }
-        }
-    }
-}
-
 fn edge_is_valid(world: &World, edge: ActiveMount) -> bool {
     world
         .get_component_by_id_as::<RiderComponent>(edge.rider)
@@ -879,14 +823,6 @@ fn edge_is_valid(world: &World, edge: ActiveMount) -> bool {
         && world
             .get_component_record(edge.attachment.parent())
             .is_some()
-        && match edge.suspended_input {
-            SuspendedInput::Desktop { component, .. } => world
-                .get_component_by_id_as::<InputComponent>(component)
-                .is_some(),
-            SuspendedInput::XrGamepad { component, .. } => world
-                .get_component_by_id_as::<InputXRGamepadComponent>(component)
-                .is_some(),
-        }
         && world.attachment_is_live(edge.attachment)
 }
 
@@ -896,7 +832,8 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::RxWorld;
     use crate::engine::ecs::component::{
-        ControllerPoseKind, PointerComponent, RaycastableComponent, ZoneComponent,
+        ControllerPoseKind, InputComponent, InputXRGamepadComponent, PointerComponent,
+        RaycastableComponent, ZoneComponent,
     };
 
     fn guid_ref(world: &World, component: ComponentId) -> ComponentRef {
@@ -1274,7 +1211,6 @@ mod tests {
             "anchor",
             "target",
             "dismount",
-            "input",
             "root",
             "helper",
         ] {
@@ -1299,7 +1235,6 @@ mod tests {
                 "anchor" => fixture.anchor,
                 "target" => relation.mount_anchor,
                 "dismount" => system.by_rider[&fixture.rider].dismount_anchor,
-                "input" => fixture.input,
                 "root" => fixture.root,
                 "helper" => helper,
                 _ => unreachable!(),
@@ -1401,7 +1336,7 @@ mod tests {
     }
 
     #[test]
-    fn mount_then_grip_anywhere_dismounts_and_restores_input() {
+    fn mount_then_grip_anywhere_dismounts_and_leaves_input_alone() {
         let mut fixture = fixture([0.0, 0.0, 0.0]);
         let mut system = AttachmentSystem::default();
         let mut emit = CommandQueue::new();
@@ -1419,8 +1354,9 @@ mod tests {
             Some(EventSignal::MountStarted { rider, mountable })
                 if rider == fixture.rider && mountable == fixture.mountable
         )));
+        // Walking is the vehicle script's decision, not the attachment's.
         assert!(
-            !fixture
+            fixture
                 .world
                 .get_component_by_id_as::<InputXRGamepadComponent>(fixture.input)
                 .unwrap()
@@ -1592,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn desktop_mount_suspends_only_translation_and_restores_it() {
+    fn desktop_mount_leaves_input_to_the_vehicle_script() {
         let mut fixture = fixture([0.0, 0.0, 0.0]);
         let desktop_input = fixture.world.add_component(InputComponent::new());
         fixture
@@ -1614,16 +1550,12 @@ mod tests {
             fixture.car,
             &mut emit,
         ));
-
         let mounted_input = fixture
             .world
             .get_component_by_id_as::<InputComponent>(desktop_input)
             .unwrap();
-        assert!(
-            mounted_input.enabled,
-            "master pose-driver gate remains enabled"
-        );
-        assert!(!mounted_input.translation_enabled);
+        assert!(mounted_input.enabled);
+        assert!(mounted_input.translation_enabled);
         assert!(mounted_input.rotation_enabled);
 
         system.begin_frame();
@@ -1632,9 +1564,39 @@ mod tests {
             .world
             .get_component_by_id_as::<InputComponent>(desktop_input)
             .unwrap();
-        assert!(restored_input.enabled);
         assert!(restored_input.translation_enabled);
-        assert!(restored_input.rotation_enabled);
+    }
+
+    #[test]
+    fn rider_without_an_input_mounts_and_dismounts() {
+        let mut fixture = fixture([0.0, 0.0, 0.0]);
+        fixture
+            .world
+            .get_component_by_id_as_mut::<RiderComponent>(fixture.rider)
+            .unwrap()
+            .input = None;
+        fixture
+            .world
+            .remove_component_subtree(fixture.input)
+            .unwrap();
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit,
+        ));
+        system.tick(&mut fixture.world, &mut emit);
+        assert!(
+            system
+                .mounted_relationship(&fixture.world, fixture.rider)
+                .is_some(),
+            "a missing input no longer invalidates the mount"
+        );
+        system.begin_frame();
+        assert!(system.try_dismount_for_pointer(&mut fixture.world, fixture.pointer, &mut emit,));
+        assert_eq!(lifecycle_counts(&mut emit), (1, 1));
     }
 
     #[test]

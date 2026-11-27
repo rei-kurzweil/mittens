@@ -124,10 +124,41 @@ shared avatar construction.
 
 ## Equipped rocket exhaust
 
-Sakura Twilight Simpler calls the loose rounds' `activate()` and
-`deactivate()` methods from its thigh equipment controller. The rig uses
-`XrGamepadLocomotion` and `gamepad.flying()` together. Translating in flight
-lights both cones, including ascent and descent. Hover ends emission and lets
-the short, widening smoke tail fade. Losing an equipped round cuts ignition
-and revokes flight permission. The exhaust uses the lower tip on the existing
-nose-down thigh mount. It is local to the equipment owner.
+Sakura Twilight Simpler listens for `XrGamepadFlightChanged` and
+`XrGamepadLocomotion` when driving the two equipped thigh rockets. The prefab
+resizes its flame and sets the native tube trail's hover or thrust profile on
+these edges. Hover emits continuously. Translation, including ascent and
+descent, lengthens the flame and the trail. The shader shades the connected
+tube with the projectile smoke's two waves, a warm start, and a translucent
+gray tail. The engine samples posed emitters after avatar IK without an
+exhaust `FrameTick` callback.
+
+Leaving flight or losing an equipped round cuts the flames and lets existing
+smoke fade in world space. Losing controller input while still in flight
+returns exhaust to hover. The nozzles use the lower tips of the nose-down
+thigh mounts. Visuals are local to the equipment owner.
+
+`source.set_tube_trail(material, options)` attaches the shared tube to a
+transform with a skinnable generic surface material. `offset` is local,
+`speed` in meters per second points down local
+−Z, and `lifetime` sets how much recent emitter motion the tube follows.
+`source_radius`, `tail_radius`, `opacity`, and `edge_wobble` shape the plume.
+`flow_wavelength` optionally lets the shader read animation phase and trail
+length in cycles from instance color R and G. The wave advances at the trail's
+speed. `source.set_tube_trail()` lets the current trail fade in place over
+`stop_fade` seconds. The leg rockets use 0.24 seconds of history and fade in
+0.15 seconds after stopping. The nozzle history has no gravity term.
+
+### Shared particle emitter
+
+Call `source.set_particle_emission(material, options)` on any transform. A
+material alone uses the default smoke-like profile. Overlapping low-poly
+spheres use a common mesh. `capacity` defaults to 16 and accepts 1–64 slots.
+The engine uses local `offset` and `velocity` at birth, then applies optional
+world-space `acceleration`. `interval` and `lifetime` are in seconds, `spread`
+adds a velocity variation in meters per second, and `diameter` is in meters.
+`growth`, `opacity`, `fade_start`, and three RGB `colors` control appearance
+over normalized age. `color_times` places the middle and final colors.
+Each birth retains its settings when the source changes
+profile. Calling `set_particle_emission()` stops births and lets the pool
+drain. Removing the transform also stops births.

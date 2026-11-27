@@ -74,7 +74,9 @@ impl VisualWorld {
             is_stencil_clip: false,
         });
         self.handle_to_index.insert(handle, idx);
-        self.component_to_handle.insert(cid, handle);
+        if cid != ComponentId::default() {
+            self.component_to_handle.insert(cid, handle);
+        }
         self.morph_inputs.push(Vec::new());
 
         visual_topology_dirty!(self, Register);
@@ -268,10 +270,16 @@ impl VisualWorld {
 
     pub fn update_color(&mut self, handle: InstanceHandle, color: [f32; 4]) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].color = color;
+            let instance = &mut self.instances[idx];
+            if instance.color == color {
+                return true;
+            }
+            let was_transparent = Self::is_transparent(instance);
+            instance.color = color;
+            if Self::is_transparent(instance) != was_transparent {
+                visual_topology_dirty!(self, UpdateColor);
+            }
             visual_data_dirty!(self, UpdateColor);
-            // Color alpha can change transparent/opaque classification.
-            visual_topology_dirty!(self, UpdateColor);
             true
         } else {
             false

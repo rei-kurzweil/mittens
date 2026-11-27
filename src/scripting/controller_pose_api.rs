@@ -6,7 +6,7 @@ use meow_meow_script as mms;
 
 pub(super) fn configure(component: &mut mms::ComponentBuilder<'_, MittensBinding>) {
     component.constructor(
-        "new",
+        mms::POSITIONAL_COMPONENT_CONSTRUCTOR,
         component_signature([
             mms::ValueType::Bool,
             mms::ValueType::String,

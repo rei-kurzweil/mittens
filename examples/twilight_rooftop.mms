@@ -14,6 +14,7 @@ import { shared_grabbable } from "../assets/components/network/shared_grabbable.
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
+import { require_leg_rockets_for_flight } from "../assets/components/characters/rocket_flight_equipment.mms"
 import { avatar_picker_panel } from "../assets/components/panels/avatar_picker_panel.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
@@ -203,7 +204,7 @@ if net.is_host() { grab_rank = 1 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
-let pickup = pickup_truck([1.0, 0.606, 0.047], null, true, {
+let pickup = pickup_truck([1.0, 0.86, 0.34], null, true, {
     socket = socket vehicle_id = "arena.pickup.1" rank = grab_rank mounts = mounts bed_mount = 1 })
 T.position(roof_x + 4.0, roof_height, 0.0) { name = "twilight_rooftop_pickup" pickup }
 fn weapon_options(id) {
@@ -254,6 +255,9 @@ if use_desktop && !use_xr {
         local.root
     }
 } else { local.locomotion }
+// Equip one STA rocket on each thigh to unlock flight.
+let flight_gamepad = query("#local_xr_locomotion")
+if flight_gamepad { require_leg_rockets_for_flight(local.root, flight_gamepad) }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
 let xr_calibration_file = null
@@ -351,8 +355,8 @@ if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
-let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 }
+let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null height = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 sent_height = -1.0 height_repeats = 0 }
 let connection = { root = null avatar_group = null address = null peer_avatar = null
     avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
 let hand_curls = controller_hand_curls({
@@ -420,6 +424,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.avatar_retry = null
     connection.avatar_retries = 0
     channel_state.sent_avatar = null
+    channel_state.sent_height = -1.0
     for item in shared_objects { item.connect(group, address) }
     station.connect(socket, group, address)
     pickup.connect(group, address)
@@ -433,6 +438,15 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     links.left_valid = publish("left-hand.valid", address, f32)
     links.right_valid = publish("right-hand.valid", address, f32)
     links.avatar = publish("avatar", address, str)
+    links.height = publish("avatar.height", address, f32)
+    let height_channel = socket.subscribe("avatar.height").from(address).type(f32)
+    group.attach(height_channel)
+    on(height_channel, "UdpSample", fn(sample) {
+        // Zero means the model's default height.
+        let height = null
+        if sample.value > 0.0 { height = sample.value }
+        remote.set_remote_height(height, receive_avatar_status)
+    })
     let avatar_channel = socket.subscribe("avatar").from(address).type(str)
     group.attach(avatar_channel)
     on(avatar_channel, "UdpSample", fn(sample) {
@@ -466,6 +480,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     links.avatar = null
+    links.height = null
     roster.count = 0
     show_status(event.name + " left; holding last received pose")
 })
@@ -500,6 +515,18 @@ on_global("FrameTick", fn(event) {
     if choice != channel_state.sent_avatar {
         channel_state.sent_avatar = choice
         channel_state.avatar_repeats = 4
+    }
+    // Height changes go out in the same short bursts as avatar choices.
+    let height = local.desired_height()
+    if height != channel_state.sent_height {
+        channel_state.sent_height = height
+        channel_state.height_repeats = 4
+    }
+    if channel_state.height_repeats > 0 && links.height && links.height.ready() {
+        let sample = 0.0
+        if height != null { sample = height }
+        links.height.write(sample)
+        channel_state.height_repeats = channel_state.height_repeats - 1
     }
     if channel_state.avatar_repeats > 0 && links.avatar && links.avatar.ready() {
         links.avatar.write(choice)

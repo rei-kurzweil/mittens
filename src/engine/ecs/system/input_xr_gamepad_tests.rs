@@ -64,11 +64,15 @@ impl Fixture {
         );
     }
     fn tick(&mut self, dt: f32, down: bool) {
+        self.tick_with_preference(dt, down, XrStickMode::default());
+    }
+    fn tick_with_preference(&mut self, dt: f32, down: bool, mode: XrStickMode) {
         self.xr.hands[1].button_b = Some((down, if down { 1. } else { 0. }));
         self.system.tick_with_state(
             &mut self.world,
             &mut self.visuals,
             self.xr,
+            mode,
             &mut CommandQueue::new(),
             dt,
         );
@@ -120,7 +124,7 @@ fn flight_double_tap_is_opt_in_edge_triggered_and_has_a_strict_window() {
 
 #[test]
 fn runtime_flight_permission_preserves_jump_and_requires_fresh_taps() {
-    let mut f = Fixture::new(true);
+    let mut f = Fixture::new(false);
     f.world
         .get_component_by_id_as_mut::<VelocityComponent>(f.velocity)
         .unwrap()
@@ -454,4 +458,87 @@ fn turn_stick_mode_moves_on_the_left_stick_and_turns_on_the_right() {
     strafe.tick(0.1, false);
     assert_eq!(rotation(&strafe), [0., 0., 0., 1.]);
     assert!((strafe.position()[0] - 0.14).abs() < 1e-5);
+}
+
+#[test]
+fn third_person_orbit_inherits_settings_and_respects_stick_overrides() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+
+    let mut f = Fixture::new(false);
+    let input_xr = f.world.parent_of(f.input).unwrap();
+    let head = attach(&mut f.world, input_xr, TransformComponent::new());
+    let mut avatar = AvatarControlComponent::new();
+    avatar.third_person = true;
+    avatar.camera_follow_root = Some(f.target);
+    let avatar = attach(&mut f.world, head, avatar);
+    let mut camera = CameraXRComponent::new(true);
+    camera.avatar_view_owner = Some(avatar);
+    let camera = attach(&mut f.world, head, camera);
+    f.visuals.set_active_xr_camera(Some(camera));
+    f.propagate();
+
+    let orbit = |f: &Fixture| {
+        f.world
+            .get_component_by_id_as::<AvatarControlComponent>(avatar)
+            .unwrap()
+            .third_person_orbit
+    };
+    let rotation = |f: &Fixture| {
+        f.world
+            .get_component_by_id_as::<TransformComponent>(f.target)
+            .unwrap()
+            .transform
+            .rotation
+    };
+    f.xr.hands[0].thumbstick = Some([0., 0.]);
+    f.xr.hands[1].thumbstick = Some([0.1, 0.1]);
+    f.tick(0.1, false);
+    assert!(!orbit(&f).active);
+    f.xr.hands[1].thumbstick = Some([0.7, 0.7]);
+    f.tick(0.1, false);
+    let initial_orbit = orbit(&f);
+    assert!(initial_orbit.active && initial_orbit.yaw < 0. && initial_orbit.pitch < 0.29);
+    assert_eq!(rotation(&f), [0., 0., 0., 1.]);
+    assert_eq!(f.position(), [0.; 3]);
+
+    f.tick_with_preference(0.1, false, XrStickMode::Turn);
+    let turned = rotation(&f);
+    assert_ne!(turned, [0., 0., 0., 1.]);
+    assert_eq!(orbit(&f), initial_orbit);
+    f.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(f.input)
+        .unwrap()
+        .stick_mode = XrStickMode::Strafe;
+    f.tick(0.1, false);
+    assert_eq!(orbit(&f), initial_orbit);
+    assert_eq!(rotation(&f), turned);
+
+    f.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(f.input)
+        .unwrap()
+        .stick_mode = XrStickMode::Inherit;
+    f.xr.hands[0].thumbstick = None;
+    f.tick(0.1, false);
+    assert_eq!(orbit(&f), initial_orbit);
+    assert_ne!(
+        f.position(),
+        [0.; 3],
+        "one stick remains available for movement"
+    );
+}
+
+#[test]
+fn stick_locomotion_keeps_its_pace_in_body_lengths_on_a_scaled_rig() {
+    let mut f = Fixture::new(false);
+    let target = f
+        .world
+        .get_component_by_id_as_mut::<TransformComponent>(f.target)
+        .unwrap();
+    target.transform.scale = [0.1; 3];
+    target.transform.recompute_model();
+    f.propagate();
+    f.xr.hands[0].thumbstick = Some([1., 0.]);
+    f.tick(0.1, false);
+    // 1.4 m/s for 0.1 s at a tenth of the size.
+    assert!((f.position()[0] - 0.014).abs() < 1e-5, "{:?}", f.position());
 }

@@ -7,6 +7,7 @@ mod renderable_registry;
 #[path = "registries/spring_registry.rs"]
 mod spring_registry;
 use crate::engine::ecs::SignalEmitter;
+use meow_meow_script as mms;
 use crate::engine::ecs::component::AmbientOcclusionComponent;
 use crate::engine::ecs::component::AssetPayloadComponent;
 use crate::engine::ecs::component::TransformCameraSpecificMode;
@@ -160,6 +161,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "UdpPublication",
     "UdpSubscription",
     "MultiplayerSession",
+    "PathGraph",
     "XREyeTracking",
     "Zone",
     "XREyeTrackingHTC",
@@ -174,6 +176,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "ImplicitSurface",
     "Destroyable",
     "Damage",
+    "Blastable",
     "Input",
     "InputTransformMode",
     "InputXR",
@@ -189,6 +192,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Mesh",
     "Mirror",
     "Mountable",
+    "CollisionContext",
+    "Integrity",
     "MusicNote",
     "NormalVis",
     "ObserverRouter",
@@ -679,6 +684,7 @@ fn collect_referenced_guids_filtered(
                 mountable.mount_anchor.as_ref(),
                 mountable.dismount_anchor.as_ref(),
                 mountable.auto_mount_zone.as_ref(),
+                mountable.context.as_ref(),
             ]
             .into_iter()
             .flatten()
@@ -879,6 +885,7 @@ fn collect_referenced_guids_limited(
             mountable.mount_anchor.as_ref(),
             mountable.dismount_anchor.as_ref(),
             mountable.auto_mount_zone.as_ref(),
+            mountable.context.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -1818,6 +1825,7 @@ fn create_component(
         }
         "UdpPublication" | "UdpSubscription" => Err("create channels through a socket's publish/subscribe methods".into()),
         "MultiplayerSession" => multiplayer_registry::create(world, type_name, ctor, args),
+        "PathGraph" => super::path_graph_api::create(world, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
         "VRChatOSCEyeTracking" => match ctor { Some("on") | None => add!(VRChatOSCEyeTrackingComponent::on()), Some("listen") => add!(VRChatOSCEyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("VRChatOSCEyeTracking: unknown constructor '{method}'")) },
@@ -1835,7 +1843,7 @@ fn create_component(
             None => add!(CombineMeshComponent::default()),
             Some(method) => return Err(format!("CombineMesh: unknown constructor '{method}'")),
         },
-        "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => geometry_registry::create(world, type_name, ctor, args),
+        "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" | "Blastable" => geometry_registry::create(world, type_name, ctor, args),
         "Background" => {
             let id = world.add_component(BackgroundComponent::new());
             if let Some(method) = ctor {
@@ -1990,7 +1998,7 @@ fn create_component(
             _ => add!(XrComponent::on()),
         },
         "XRHand" | "XrHand" | "VRHand" | "VrHand" => match ctor {
-            Some("new") => {
+            Some(mms::POSITIONAL_COMPONENT_CONSTRUCTOR) => {
                 let enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
                     "Left" => ControllerHand::Left,
@@ -2005,7 +2013,7 @@ fn create_component(
                 };
                 add!(XRHandComponent::new(enabled, hand, pose))
             }
-            _ => Err("XRHand requires .new(enabled, hand, pose)".into()),
+            _ => Err("XRHand requires XRHand(enabled, hand, pose)".into()),
         },
         "TransformOperator" => match ctor {
             Some("parent") => {
@@ -2254,10 +2262,30 @@ fn create_component(
             )?)),
             _ => add!(RiderComponent::new()),
         },
+        "Integrity" => {
+            let mut integrity = crate::engine::ecs::component::IntegrityComponent::new();
+            if ctor == Some("max") {
+                integrity.max = arg_f32(args, 0)?.max(0.0);
+                integrity.current = integrity.max;
+            }
+            add!(integrity)
+        }
+        "CollisionContext" => match ctor {
+            Some("passthrough") => add!(
+                crate::engine::ecs::component::CollisionContextComponent::new()
+                    .passthrough(arg_bool(args, 0)?)
+            ),
+            Some("overlay") => add!(
+                crate::engine::ecs::component::CollisionContextComponent::new()
+                    .overlay(arg_bool(args, 0)?)
+            ),
+            _ => add!(crate::engine::ecs::component::CollisionContextComponent::new()),
+        },
         "Mountable" => match ctor {
             Some("entry_zone") => add!(MountableComponent::new().entry_zone(arg_component_ref(
                 world, args, 0
             )?)),
+            Some("carry") => add!(MountableComponent::new().carry()),
             _ => add!(MountableComponent::new()),
         },
         "Draggable" => match ctor {
@@ -2403,7 +2431,12 @@ fn create_component(
                 Some("static") => CollidableComponent::static_(),
                 Some("slide") => CollidableComponent::slide(),
                 Some("sensor") => CollidableComponent::sensor(),
-                _ => return Err("Collidable requires .static(), .slide(), or .sensor()".into()),
+                Some("obstacle") => CollidableComponent::obstacle(),
+                _ => {
+                    return Err(
+                        "Collidable requires .static(), .slide(), .sensor() or .obstacle()".into(),
+                    );
+                }
             };
             Ok(world.add_component(collidable))
         }
@@ -2984,6 +3017,9 @@ fn apply_call(
             .is_some()
         || world
             .get_component_by_id_as::<crate::engine::ecs::component::DamageComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::BlastableComponent>(id)
             .is_some()
     {
         return geometry_registry::apply(world, id, method, args);
@@ -3582,6 +3618,43 @@ fn apply_call(
             .expect("checked rider") = updated;
         return Ok(());
     }
+    if let Some(integrity) =
+        world.get_component_by_id_as_mut::<crate::engine::ecs::component::IntegrityComponent>(id)
+    {
+        match method {
+            "max" => {
+                integrity.max = arg_f32(args, 0)?.max(0.0);
+                integrity.current = integrity.max;
+            }
+            "reach" => integrity.reach = arg_f32(args, 0)?.max(0.0),
+            "threshold" => {
+                let name = arg_str(args, 0)?.to_string();
+                let fraction = arg_f32(args, 1)?.clamp(0.0, 1.0);
+                integrity.thresholds.push((name, fraction, false));
+            }
+            "enabled" => integrity.enabled = arg_bool(args, 0)?,
+            _ => return Err(format!("Integrity: unknown builder '{method}'")),
+        }
+        return Ok(());
+    }
+    if let Some(context) = world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::CollisionContextComponent>(id)
+    {
+        match method {
+            "passthrough" => context.passthrough = arg_bool(args, 0)?,
+            "enabled" => context.enabled = arg_bool(args, 0)?,
+            "overlay" => context.overlay = arg_bool(args, 0)?,
+            "exclude" => {
+                use crate::engine::ecs::component::CollisionContextComponent as Context;
+                let reference = arg_component_ref(world, args, 0)?;
+                if let Some(context) = world.get_component_by_id_as_mut::<Context>(id) {
+                    context.exclude = Some(reference);
+                }
+            }
+            _ => return Err(format!("CollisionContext: unknown builder '{method}'")),
+        }
+        return Ok(());
+    }
     if world
         .get_component_by_id_as::<MountableComponent>(id)
         .is_some()
@@ -3595,6 +3668,8 @@ fn apply_call(
             "mount_anchor" => current.mount_anchor(arg_component_ref(world, args, 0)?),
             "dismount_anchor" => current.dismount_anchor(arg_component_ref(world, args, 0)?),
             "auto_mount_zone" => current.auto_mount_zone(arg_component_ref(world, args, 0)?),
+            "carry" => current.carry(),
+            "context" => current.context(arg_component_ref(world, args, 0)?),
             "on_grip" => current.on_grip(),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             _ => return Err(format!("Mountable: unknown builder '{method}'")),

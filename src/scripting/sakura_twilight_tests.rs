@@ -53,26 +53,83 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
             .unwrap()
             .replace("AudioInput {}", "AudioInput { enabled(false) }");
         let mut scene = Universe::new(World::default());
-        scene.systems.xr.set_external_frame(Some(Default::default()));
+        scene
+            .systems
+            .xr
+            .set_external_frame(Some(Default::default()));
         scene.load_mms_source_at_path(&source, path).unwrap();
         for _ in 0..3 {
             scene.update(1.0 / 60.0, &Default::default());
         }
-        scene
-    };
-    let layout = |scene: &Universe| {
-        ["sakura_twilight_ground", "sakura_twilight_road"].map(|label| {
+        let dock_slot = named(&scene, "sakura_twilight_dock_slot_frame");
+        assert!(
             scene
                 .world
-                .find_all_components(named(scene, label), "transform")
-                .into_iter()
-                .map(|id| TransformSystem::world_model(&scene.world, id).unwrap())
-                .collect::<Vec<_>>()
-        })
+                .find_component(dock_slot, "renderable")
+                .is_none()
+        );
+        scene
     };
-    let full_layout = layout(&load("examples/sakura-twilight.mms"));
-    let scene = load("examples/sakura-twilight-simpler.mms");
-    assert_eq!(layout(&scene), full_layout);
+    let layout = |scene: &Universe, label: &str| {
+        scene
+            .world
+            .find_all_components(named(scene, label), "transform")
+            .into_iter()
+            .map(|id| TransformSystem::world_model(&scene.world, id).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let full = load("examples/sakura-twilight.mms");
+    let mut scene = load("examples/sakura-twilight-simpler.mms");
+    assert_eq!(
+        layout(&scene, "sakura_twilight_road"),
+        layout(&full, "sakura_twilight_road")
+    );
+    // The ground has neither grass nor collision over the sunken pool hall:
+    // no ground piece's extent reaches into its 14 x 12 m footprint.
+    let hole = [-1.0, 13.0, -32.0, -20.0];
+    for model in layout(&scene, "sakura_twilight_ground") {
+        let mut min = [f32::MAX; 3];
+        let mut max = [f32::MIN; 3];
+        for corner in 0..8 {
+            let local = [0, 1, 2].map(|axis| if corner >> axis & 1 == 0 { -0.5 } else { 0.5 });
+            for row in 0..3 {
+                let value = (0..3).map(|col| model[col][row] * local[col]).sum::<f32>() + model[3][row];
+                min[row] = min[row].min(value);
+                max[row] = max[row].max(value);
+            }
+        }
+        let inside = max[0] > hole[0] + 0.01
+            && min[0] < hole[1] - 0.01
+            && max[2] > hole[2] + 0.01
+            && min[2] < hole[3] - 0.01;
+        assert!(!inside, "ground piece {min:?}..{max:?} covers the pool hall");
+    }
+    for (head, display) in [
+        ("local_head_target", "local_health_hud"),
+        ("remote_head_target", "remote_health_overhead"),
+    ] {
+        let head = named(&scene, head);
+        let display = scene
+            .world
+            .find_component(head, &format!("#{display}"))
+            .unwrap();
+        assert!(scene.world.find_component(display, "#health_bar").is_some());
+        if scene.world.component_label(head) == Some("remote_head_target") {
+            let [head_x, head_y, head_z] =
+                TransformSystem::world_position(&scene.world, head).unwrap();
+            let [bar_x, bar_y, bar_z] =
+                TransformSystem::world_position(&scene.world, display).unwrap();
+            assert!((head_x - bar_x).abs() < 1e-4 && (head_z - bar_z).abs() < 1e-4);
+            assert!((bar_y - head_y - 0.37).abs() < 1e-4);
+        }
+    }
+    assert!(
+        scene
+            .systems
+            .secondary_motion
+            .chain_anchor(named(&scene, "local_health_hud_spring"))
+            .is_some()
+    );
     let gamepad = named(&scene, "local_xr_locomotion");
     assert!(
         !scene
@@ -81,6 +138,7 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
             .unwrap()
             .flight_enabled()
     );
+    check_input_settings(&mut scene);
     let labels: Vec<_> = scene
         .world
         .all_components()
@@ -97,7 +155,7 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
         count(&|name| name.starts_with("rooftop_machine_pistol") && name.ends_with("_ammo_count")),
         6
     );
-    for label in ["main", "row_0", "row_1", "row_2", "row_3"] {
+    for label in ["main", "row_0", "row_1", "row_3"] {
         let building = format!("sakura_twilight_{label}");
         let floor_prefix = format!("{building}_floor_");
         assert!(has_label(&scene, &format!("{floor_prefix}0")));
@@ -111,6 +169,89 @@ fn sakura_twilight_simpler_reduces_counts_and_keeps_ground_and_street() {
     }
     let roof = named(&scene, "sakura_twilight_main_roof");
     assert!((TransformSystem::world_position(&scene.world, roof).unwrap()[1] - 3.2).abs() < 1e-4);
+    let pedestal = named(&scene, "vehicle_respawn_pedestal");
+    let button = scene
+        .world
+        .find_component(pedestal, "#button_root")
+        .unwrap();
+    let old_pickup = named(&scene, "pickup_truck");
+    click(&mut scene, button);
+    for _ in 0..12 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+    assert!(scene.world.get_component_record(old_pickup).is_none());
+    assert_ne!(named(&scene, "pickup_truck"), old_pickup);
+    check_pool_hall(&mut scene);
+}
+
+fn advance_frames(scene: &mut Universe) {
+    for _ in 0..4 {
+        scene.update(1.0 / 60.0, &Default::default());
+    }
+}
+
+/// Places the rig directly and checks it settles on the floor at that height.
+fn move_player(scene: &mut Universe, player: ComponentId, translation: [f32; 3]) {
+    // Discard the preceding physics sweep so a waypoint move cannot catch on
+    // the geometry between the two places.
+    scene
+        .systems
+        .static_contact
+        .forget_target(&scene.world, player);
+    scene.command_queue.push_intent_now(
+        player,
+        IntentValue::UpdateTransform {
+            component_id: player,
+            translation,
+            rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0; 3],
+        },
+    );
+    advance_frames(scene);
+    let position = TransformSystem::world_position(&scene.world, player).unwrap();
+    assert!(
+        (position[1] - translation[1]).abs() < 0.3,
+        "player should be at the floor level: {position:?}"
+    );
+}
+
+/// The pool hall exists only while the player is close to its building.
+fn check_pool_hall(scene: &mut Universe) {
+    let count = |scene: &Universe, label: &str| {
+        scene
+            .world
+            .all_components()
+            .filter(|&id| scene.world.component_label(id) == Some(label))
+            .count()
+    };
+    let player = named(scene, "local_root");
+    assert!(has_label(scene, "sakura_twilight_pool_hall_shell"));
+    assert!(has_label(scene, "sakura_twilight_pool_hall_hallway_white"));
+
+    // Far across the road (more than 6 m out): nothing.
+    let far = [0.5, -0.22, -5.0];
+    // On the street 2 m from the facade (within 3 m of the building).
+    let near = [0.5, -0.22, -18.0];
+    let deck = [9.0, -3.10, -30.5];
+    move_player(scene, player, far);
+    assert_eq!(count(scene, "indoor_pool"), 0);
+
+    // Coming close builds the hall once, water included; its deck holds the
+    // player 3.1 m below the street.
+    move_player(scene, player, near);
+    assert_eq!(count(scene, "indoor_pool"), 1);
+    assert_eq!(count(scene, "pool_water_surface"), 1);
+    move_player(scene, player, deck);
+    move_player(scene, player, near);
+    assert_eq!(count(scene, "indoor_pool"), 1);
+
+    // Walking well away removes it; coming back builds it again.
+    move_player(scene, player, far);
+    assert_eq!(count(scene, "indoor_pool"), 0);
+    assert_eq!(count(scene, "pool_water_surface"), 0);
+    move_player(scene, player, near);
+    assert_eq!(count(scene, "indoor_pool"), 1);
+    move_player(scene, player, far);
 }
 
 #[test]
@@ -693,25 +834,31 @@ fn check_input_settings(scene: &mut Universe) {
             .text
             .clone()
     }
-    assert_eq!(stick_mode(scene), XrStickMode::Strafe);
+    assert_eq!(stick_mode(scene), XrStickMode::Inherit);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "strafe"), "(o) Left stick only");
-    assert_eq!(label(scene, "turn"), "( ) Right stick turns");
+    assert_eq!(label(scene, "orbit"), "(o) Orbit in third person");
+    assert_eq!(label(scene, "turn"), "( ) Turn player");
     click(scene, named(scene, "input_stick_mode_turn"));
     assert_eq!(
         scene.systems.input_settings.xr_stick_mode(),
         XrStickMode::Turn
     );
-    assert_eq!(stick_mode(scene), XrStickMode::Turn);
-    assert_eq!(label(scene, "strafe"), "( ) Left stick only");
-    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
+    assert_eq!(stick_mode(scene), XrStickMode::Inherit);
+    assert_eq!(label(scene, "orbit"), "( ) Orbit in third person");
+    assert_eq!(label(scene, "turn"), "(o) Turn player");
 
     // Clicking the dock item again closes the panel; reopening reflects the setting.
     open_dock_items(scene, &["input"]);
     assert!(!has_label(scene, "sakura_twilight_input_settings"));
-    assert_eq!(stick_mode(scene), XrStickMode::Turn);
+    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Turn);
     open_dock_items(scene, &["input"]);
-    assert_eq!(label(scene, "turn"), "(o) Right stick turns");
+    assert_eq!(label(scene, "turn"), "(o) Turn player");
+    click(scene, named(scene, "input_stick_mode_strafe"));
+    assert_eq!(label(scene, "strafe"), "(o) Off");
+    click(scene, named(scene, "input_stick_mode_orbit"));
+    assert_eq!(scene.systems.input_settings.xr_stick_mode(), XrStickMode::Orbit);
+    assert_eq!(label(scene, "orbit"), "(o) Orbit in third person");
+    open_dock_items(scene, &["input"]);
 }
 
 fn check_mirror_controls(scene: &mut Universe) {
@@ -721,34 +868,6 @@ fn check_mirror_controls(scene: &mut Universe) {
             .get_component_by_id_as::<MirrorComponent>(mirror)
             .unwrap()
             .enabled
-    }
-    fn advance(scene: &mut Universe) {
-        for _ in 0..4 {
-            scene.update(1.0 / 60.0, &Default::default());
-        }
-    }
-    fn move_player(scene: &mut Universe, player: ComponentId, translation: [f32; 3]) {
-        // These waypoints place the rig directly. Discard the preceding physics
-        // sweep so the move from the roof cannot catch on the bathroom roof.
-        scene
-            .systems
-            .static_contact
-            .forget_target(&scene.world, player);
-        scene.command_queue.push_intent_now(
-            player,
-            IntentValue::UpdateTransform {
-                component_id: player,
-                translation,
-                rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
-                scale: [1.0; 3],
-            },
-        );
-        advance(scene);
-        let position = TransformSystem::world_position(&scene.world, player).unwrap();
-        assert!(
-            (position[1] - translation[1]).abs() < 0.3,
-            "player should be at the doorway's floor level: {position:?}"
-        );
     }
     fn readout(scene: &Universe) -> &str {
         let label = named(scene, "sakura_twilight_mirror_toggle_label");

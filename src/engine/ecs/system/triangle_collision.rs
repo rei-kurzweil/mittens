@@ -174,10 +174,25 @@ impl TriangleMesh {
         }
     }
     pub fn ray(&self, origin: [f32; 3], dir: [f32; 3]) -> Option<f32> {
-        fn walk(mesh: &TriangleMesh, index: usize, o: [f32; 3], d: [f32; 3], best: &mut f32) {
+        self.ray_hit::<false>(origin, dir)
+            .map(|(distance, _)| distance)
+    }
+
+    pub(super) fn ray_hit<const FACE: bool>(
+        &self,
+        origin: [f32; 3],
+        dir: [f32; 3],
+    ) -> Option<(f32, usize)> {
+        fn walk<const FACE: bool>(
+            mesh: &TriangleMesh,
+            index: usize,
+            o: [f32; 3],
+            d: [f32; 3],
+            best: &mut (f32, usize),
+        ) {
             let node = &mesh.nodes[index];
             let mut near = 0f32;
-            let mut far = *best;
+            let mut far = best.0;
             for i in 0..3 {
                 if d[i].abs() < 1e-12 {
                     if o[i] < node.bounds.min[i] || o[i] > node.bounds.max[i] {
@@ -194,21 +209,30 @@ impl TriangleMesh {
                 return;
             }
             if let Some([a, b]) = node.children {
-                walk(mesh, a, o, d, best);
-                walk(mesh, b, o, d, best);
+                walk::<FACE>(mesh, a, o, d, best);
+                walk::<FACE>(mesh, b, o, d, best);
             } else {
-                for tri in &mesh.triangles[node.start..node.end] {
-                    if let Some(t) = ray_triangle(o, d, *tri) {
-                        *best = best.min(t);
+                for (offset, triangle) in mesh.triangles[node.start..node.end].iter().enumerate() {
+                    if let Some(t) = ray_triangle(o, d, *triangle)
+                        && t < best.0
+                    {
+                        best.0 = t;
+                        if FACE {
+                            best.1 = node.start + offset;
+                        }
                     }
                 }
             }
         }
-        let mut best = f32::INFINITY;
+        let mut best = (f32::INFINITY, 0);
         if !self.nodes.is_empty() {
-            walk(self, 0, origin, dir, &mut best);
+            walk::<FACE>(self, 0, origin, dir, &mut best);
         }
-        best.is_finite().then_some(best)
+        best.0.is_finite().then_some(best)
+    }
+
+    pub(super) fn triangle(&self, index: usize) -> Option<[[f32; 3]; 3]> {
+        self.triangles.get(index).copied()
     }
     pub fn translation(&self, center: [f32; 3], shape: CollisionShape) -> Option<[f32; 3]> {
         let (lo, hi) = shape.aabb_local();
@@ -502,6 +526,15 @@ mod tests {
         let floor = floor();
         assert!(floor.ray([0., 1., 0.], [0., -1., 0.]).is_none());
         assert!((floor.ray([1., 1., 0.], [0., -1., 0.]).unwrap() - 1.).abs() < 1e-5);
+        let (distance, face) = floor.ray_hit::<true>([1., 1., 0.], [0., -1., 0.]).unwrap();
+        assert!((distance - 1.).abs() < 1e-5);
+        assert!(
+            floor
+                .triangle(face)
+                .unwrap()
+                .iter()
+                .all(|point| point[1].abs() < 1e-5)
+        );
         let shape = CollisionShape::capsule_y(0.1, 0.4);
         assert!(floor.translation([0., 0., 0.], shape).is_none());
         assert!(floor.translation([0.58, 0., 0.], shape).is_some());

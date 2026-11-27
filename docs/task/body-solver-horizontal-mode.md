@@ -8,7 +8,9 @@ Narrows the posture table in
 Follow-up for `body_solver_scene_tests.rs` — group posture and crawling cases
 apart from collision and mounted recovery. Share explicit rig fixtures so scene
 defaults can change independently. Preserve test frame counts and pose tolerances,
-and keep the production solver's fixed-step path out of the split.
+and keep the production solver's fixed-step path out of the split. Validate
+stationary kneeling, alternating crawl steps, and transitions at both normal
+and tiny avatar scales.
 
 ## Implementation status (2026-11-16)
 
@@ -48,6 +50,24 @@ and keep the production solver's fixed-step path out of the split.
 - **Test:** `body_solver_scene_tests` lowers the twilight remote avatar's head
   target to 0.7 m and checks horizontal mode, knees and ankles on the roof, a
   near-horizontal torso, and a clean return to vertical.
+
+### MMS posture and worn equipment
+
+`avatar.posture_state()` reads the current solved `mode` and `pose`. Subscribe
+to `PostureChanged` on the same avatar for changes. Its event includes
+`avatar`, `mode`, `previous`, `pose`, and `reason`.
+
+```mms
+let initial = avatar.posture_state()
+on(avatar, "PostureChanged", fn(event) {
+    print(event.previous + " -> " + event.mode + " / " + event.pose)
+})
+```
+
+Rooftop players bind their shield mount with `avatar.bind_body_mount(mount)`.
+The mount starts under the avatar model root. The mapped torso takes over
+when ready, and the shell and bullet proxy follow its pose and scale during
+posture transitions.
 
 ### Not yet
 

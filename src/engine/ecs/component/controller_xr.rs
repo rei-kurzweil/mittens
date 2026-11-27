@@ -188,7 +188,11 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Grip => "Grip",
             ControllerPoseKind::GripAim => "GripAim",
         };
-        let mut expression = ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)]);
+        let mut expression = ce_call(
+            "XRHand",
+            meow_meow_script::POSITIONAL_COMPONENT_CONSTRUCTOR,
+            vec![b(self.enabled), s(hand), s(pose)],
+        );
         if self.externally_driven {
             expression = expression.with_call("external", vec![b(true)]);
         }

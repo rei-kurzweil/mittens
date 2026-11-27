@@ -283,6 +283,30 @@ impl AnimationSystem {
                 if local_beat + 1e-9 >= loop_len {
                     let wraps = (local_beat / loop_len).floor();
                     if wraps >= 1.0 {
+                        // Keyframes the cycle passed without firing (near its
+                        // end, between two frames) fire before the wrap.
+                        let remaining = self.scheduler.visual_due_keyframes(
+                            world,
+                            &runtime.keyframes,
+                            &runtime.fired_keyframes,
+                            min_beat,
+                            loop_len,
+                        );
+                        for kf_id in remaining {
+                            let already_scheduled = runtime
+                                .audio_scheduled_cycle_by_keyframe
+                                .get(&kf_id)
+                                .copied()
+                                == Some(runtime.audio_cycle);
+                            self.keyframe_evaluator.evaluate_visual_due_keyframe(
+                                world,
+                                rx,
+                                kf_id,
+                                beat_now,
+                                already_scheduled,
+                                executor.as_deref_mut(),
+                            );
+                        }
                         local_beat -= wraps * loop_len;
                         runtime.start_beat = beat_now - local_beat;
                         runtime.fired_keyframes.clear();

@@ -154,17 +154,21 @@ pub(super) fn try_init_or_route_capsule(
     {
         return;
     }
-    let world_scale = if xr.is_some() {
-        let Some(scale) = uniform_world_scale(world, model_root_id) else {
-            return;
-        };
-        scale
-    } else {
-        1.0
+    // Bounds are measured in the model root's space; a scaled rig (a tiny
+    // player) scales its capsule with it. Desktop keeps the unscaled capsule
+    // under a non-uniform scale, as before.
+    let world_scale = match (xr.is_some(), uniform_world_scale(world, model_root_id)) {
+        (_, Some(scale)) => scale,
+        (true, None) => return,
+        (false, None) => 1.0,
     };
 
-    let measured_bounds =
-        BoundsSystem::measure_renderable_subtree_bounds(world, render_assets, model_root_id);
+    let measured_bounds = BoundsSystem::measure_renderable_subtree_bounds_pruned(
+        world,
+        render_assets,
+        model_root_id,
+        |node| Some(node) == avc.body_mount,
+    );
     let measured_inference = match measured_bounds {
         RenderableBoundsMeasure::Measured(bounds) => {
             infer_upright_capsule(&bounds, avc.capsule_radius).map(|inferred| (bounds, inferred))
@@ -198,9 +202,9 @@ pub(super) fn try_init_or_route_capsule(
             };
             ("fallback_avatar_height", bounds, inferred)
         };
-    let inferred = if xr.is_some() {
-        // STAGE's floor-relative origin is the pre-tracking frame's Y. Geometry
-        // supplies a stable rest-pose offset; never calibrate from live head Y.
+    // STAGE's floor-relative origin is the pre-tracking frame's Y. Geometry
+    // supplies a stable rest-pose offset; never calibrate from live head Y.
+    let inferred = if world_scale != 1.0 {
         let scaled = crate::engine::graphics::bounds::Aabb {
             min: inference_bounds.min.map(|value| value * world_scale),
             max: inference_bounds.max.map(|value| value * world_scale),
@@ -279,6 +283,8 @@ pub(super) fn try_init_or_route_capsule(
         avc.capsule_sample_id = sample;
         avc.capsule_vertical_source = vertical_source;
         avc.capsule_world_scale = world_scale;
+        avc.capsule_standing = Some((inferred.shape, inferred.center_y));
+        avc.capsule_crawling = false;
     }
     refresh_capsule_routing(avc_id, world);
     // Untracked rigs do not emit head/body splice transforms. Publish the new
@@ -351,6 +357,68 @@ pub(super) fn publish_capsule_readiness(
                 },
             );
         }
+    }
+}
+
+/// The crawling collider's radius, as a share of the standing capsule's.
+const CRAWL_RADIUS_FRACTION: f32 = 0.75;
+
+/// Crawling and hands-and-knees (horizontal posture) collide as a low,
+/// narrow sphere resting where the standing capsule's base was, instead of
+/// the full-height capsule, so the avatar fits under what a kneeling body
+/// would. The torso detail spheres, which follow the pitched hips and chest,
+/// give it length along the body. Standing back up restores the capsule;
+/// it doesn't yet check for headroom first.
+pub(crate) fn set_crawling_collider(world: &mut World, avc_id: ComponentId, crawling: bool) {
+    let Some(avc) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+        return;
+    };
+    if avc.capsule_crawling == crawling {
+        return;
+    }
+    let (Some((standing, center_y)), Some(capsule_transform)) =
+        (avc.capsule_standing, avc.capsule_transform_id)
+    else {
+        return;
+    };
+    let CollisionShape::CapsuleY {
+        radius,
+        half_segment,
+    } = standing
+    else {
+        return;
+    };
+    let Some(zone) = world
+        .children_of(capsule_transform)
+        .iter()
+        .copied()
+        .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+    else {
+        return;
+    };
+    let crawl_radius = radius * CRAWL_RADIUS_FRACTION;
+    let bottom = center_y - radius - half_segment;
+    let (shape, y) = if crawling {
+        (CollisionShape::Sphere { radius: crawl_radius }, bottom + crawl_radius)
+    } else {
+        (standing, center_y)
+    };
+    if let Some(zone) = world.get_component_by_id_as_mut::<ZoneComponent>(zone) {
+        zone.shape = shape;
+    }
+    if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(capsule_transform) {
+        // The capsule's parent fork drops rotation and scale, so its world
+        // matrix is a translation: move the cached one with the local offset
+        // until the next propagation recomputes it.
+        let delta = y - t.transform.translation[1];
+        t.transform.translation[1] = y;
+        t.transform.recompute_model();
+        t.transform.matrix_world[3][1] += delta;
+    }
+    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        avc.capsule_crawling = crawling;
+        // The shape changed under the same zone; forget its old contacts.
+        avc.capsule_reset_contact_history = true;
     }
 }
 
@@ -461,7 +529,9 @@ pub(super) fn fallback_avatar_height(
         .get_component_by_id_as::<TransformComponent>(bone)?
         .transform
         .matrix_world[3][1];
-    Some((bone_y - root_y).abs())
+    // World distance back to model-root units; the caller applies the scale.
+    let scale = uniform_world_scale(world, model_root_id).unwrap_or(1.0);
+    Some((bone_y - root_y).abs() / scale)
 }
 
 pub(super) fn ancestor_input_xr_is_ready(world: &World, start: ComponentId) -> bool {

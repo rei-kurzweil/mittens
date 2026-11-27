@@ -4,6 +4,9 @@ import { mini_explosion } from "./mini-explosion.mms"
 import { ui_unlit_material } from "./materials/ui_unlit.mms"
 import { pistol_replication } from "./network/pistol_replication.mms"
 
+// Shot sounds play at 60% of the clips' level.
+let SHOT_GAIN = 0.6
+
 // Semi: one shot. Burst: three fast shots. Auto: slower, continuous firing.
 export fn laser_machine_pistol(options) {
     let label = "laser_machine_pistol"
@@ -21,9 +24,9 @@ export fn laser_machine_pistol(options) {
         if device_state.ammunition < 0 { device_state.ammunition = 0 }
     }
     let flash = muzzle_flash({ name = label size = options.flash_size beats_per_second = beats_per_second })
-    let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" }
-    let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav") { name = label + "_sound" }
-    let auto_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_B.0.wav") { name = label + "_auto_sound" }
+    let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" AudioGain.new(SHOT_GAIN) }
+    let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav") { name = label + "_sound" AudioGain.new(SHOT_GAIN) }
+    let auto_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_B.0.wav") { name = label + "_auto_sound" AudioGain.new(SHOT_GAIN) }
     let completion = T { name = label + "_completion" }
     let first_aim = T { name = label + "_first_aim" }
     let second_aim = T.rotation(0.009, 0.012, 0.0) { name = label + "_second_aim" }
@@ -53,8 +56,9 @@ export fn laser_machine_pistol(options) {
     }
     let on_hit = default_impact
     if options["on_hit"] != null { on_hit = options.on_hit }
+    fn can_fire(user) { return !options["can_fire"] || options.can_fire(user) }
     fn emit_shot(projectile, aim, index) {
-        if options["can_fire"] && !options.can_fire() { return }
+        if !can_fire(device_state.user) { return }
         if !device_state.cancelled && (device_state.ammunition == null || device_state.ammunition > 0) {
             // Spend synchronously at the actual shot, including each burst keyframe.
             if device_state.ammunition != null { device_state.ammunition = device_state.ammunition - 1 }
@@ -64,6 +68,7 @@ export fn laser_machine_pistol(options) {
             if device_state.burst_mode=="auto" {damage=1.5}
             let pose = aim.world_trs()
             projectile.launch({ pose = pose source_tool = device_state.tool source_user = device_state.user damage=damage on_hit = on_hit })
+            if options["on_shot"] { options.on_shot(pose, device_state.burst_mode) }
             if network { network.shot(index, pose, device_state.burst_mode) }
             emit_data(completion, "ShotFired")
         }
@@ -98,6 +103,7 @@ export fn laser_machine_pistol(options) {
     }
     fn begin_fire() {
         if device_state.ammunition != null && device_state.ammunition <= 0 { return }
+        if !can_fire(device_state.requested_user) { return }
         device_state.user = device_state.requested_user
         device_state.firing = true
         device_state.cancelled = false
@@ -118,6 +124,13 @@ export fn laser_machine_pistol(options) {
             if device_state.trigger_held && device_state.mode == "auto" { begin_fire() }
         }
         if event == "AutoCycle" && device_state.firing && !device_state.cancelled && device_state.burst_mode == "auto" && (device_state.ammunition == null || device_state.ammunition > 0) {
+            if !can_fire(device_state.user) {
+                automatic.pause()
+                device_state.cancelled = true
+                device_state.firing = false
+                flash.stop()
+                return
+            }
             auto_sound.play()
             device_state.bursts_fired = device_state.bursts_fired + 1
         }
@@ -145,6 +158,7 @@ export fn laser_machine_pistol(options) {
     }
     device_state.tool = root
     fn use_start(context) {
+        if !can_fire(context.user) { return false }
         if device_state.ammunition != null && device_state.ammunition <= 0 { return false }
         if device_state.trigger_held { return false }
         device_state.trigger_held = true

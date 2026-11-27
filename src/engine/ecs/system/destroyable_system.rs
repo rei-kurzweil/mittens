@@ -58,6 +58,9 @@ struct Surface {
     suppression: Option<ComponentId>,
     zone_suppression: Option<ComponentId>,
     view: Option<SurfaceView>,
+    /// The world-space impact behind the cut in flight, so its debris can be
+    /// launched by that impact's blast.
+    cut_impact: Option<DamageComponent>,
 }
 #[derive(Debug)]
 struct SurfaceView {
@@ -71,6 +74,8 @@ struct Debris {
     render: ComponentId,
     mesh: CpuMeshHandle,
     velocity: [f32; 3],
+    /// World-space angular velocity about the fragment's centroid (rad/s).
+    angular: [f32; 3],
     expires: Instant,
 }
 #[derive(Debug, Default)]
@@ -83,8 +88,13 @@ pub struct DestroyableSystem {
     last_tick: Option<Instant>,
     pub cuts: u64,
     pub last_cut_time: std::time::Duration,
+    /// This frame's valid impacts, for the integrity pass after destruction.
+    impacts: Vec<DamageComponent>,
 }
 impl DestroyableSystem {
+    pub(crate) fn take_impacts(&mut self) -> Vec<DamageComponent> {
+        std::mem::take(&mut self.impacts)
+    }
     pub fn prepare(
         &mut self,
         systems: &mut SystemWorld,
@@ -446,6 +456,7 @@ impl DestroyableSystem {
                     model,
                     surface.style,
                     now,
+                    surface.cut_impact,
                 ) {
                     self.debris.push_back(d);
                 }
@@ -483,6 +494,16 @@ impl DestroyableSystem {
             for i in 0..3 {
                 t.transform.translation[i] += d.velocity[i] * dt;
             }
+            let spin = crate::utils::math::vec3_len(d.angular);
+            if spin > 1e-5 {
+                let step = crate::utils::math::quat_from_axis_angle(
+                    crate::utils::math::vec3_scale(d.angular, 1. / spin),
+                    spin * dt,
+                );
+                t.transform.rotation = crate::utils::math::quat_normalize(
+                    crate::utils::math::quat_mul(step, t.transform.rotation),
+                );
+            }
             t.transform.recompute_model();
             t.transform.matrix_world = t.transform.model;
             if let Some(handle) = world
@@ -493,7 +514,7 @@ impl DestroyableSystem {
             }
             self.debris.push_back(d);
         }
-        let mut events: Vec<_> = world
+        let mut components: Vec<_> = world
             .damage_ids()
             .filter_map(|id| {
                 world
@@ -502,9 +523,17 @@ impl DestroyableSystem {
                     .map(|e| (id, e))
             })
             .collect();
-        events.sort_unstable_by_key(|(id, _)| *id);
-        for (id, event) in events {
+        components.sort_unstable_by_key(|(id, _)| *id);
+        // Damage components (nested in authored trees) are consumed as before;
+        // queued impacts (`Damage.at` from scripts) arrive without components.
+        let mut events = Vec::with_capacity(components.len());
+        for (id, event) in components {
             let _ = world.remove_component_subtree(id);
+            events.push(event);
+        }
+        events.extend(world.take_queued_damage());
+        self.impacts.clear();
+        for event in events {
             if event.radius <= 0.
                 || event.amount <= 0.
                 || !event
@@ -515,6 +544,7 @@ impl DestroyableSystem {
             {
                 continue;
             }
+            self.impacts.push(event);
             let owners: Vec<_> = world
                 .destroyable_ids()
                 .filter(|&id| {
@@ -530,7 +560,7 @@ impl DestroyableSystem {
                     }
                     if let Some(surface) = self
                         .imported
-                        .discover(world, visuals, owner, event)
+                        .discover(world, visuals, &systems.combine_mesh, owner, event)
                         .or_else(|| discover(world, visuals, owner, event))
                     {
                         self.surfaces.insert(owner, surface);
@@ -695,6 +725,7 @@ impl DestroyableSystem {
                 continue;
             }
             surface.revision += 1;
+            surface.cut_impact = Some(event);
             let job = CutJob {
                 owner,
                 revision: surface.revision,
@@ -843,6 +874,7 @@ fn discover(
         clear: vec![],
         suppression: None,
         zone_suppression: None,
+        cut_impact: None,
         view: None,
     })
 }
@@ -969,8 +1001,11 @@ fn spawn_debris(
     model: TransformMatrix,
     style: VisualInstance,
     now: Instant,
+    impact: Option<DamageComponent>,
 ) -> Option<Debris> {
-    // Bake into world coordinates; debris is independent of subsequent owner motion.
+    // Bake into world coordinates; debris is independent of subsequent owner
+    // motion. Vertices are relative to the fragment's centroid, where its
+    // root sits, so it spins about its own middle.
     let inverse = mat4_inverse(model)?;
     for v in &mut mesh.vertices {
         v.pos = point(model, v.pos);
@@ -978,6 +1013,20 @@ fn spawn_debris(
             (0..3).map(|j| inverse[i][j] * v.normal[j]).sum()
         }));
     }
+    if mesh.vertices.is_empty() {
+        return None;
+    }
+    let count = mesh.vertices.len() as f32;
+    let centroid: [f32; 3] = std::array::from_fn(|i| {
+        mesh.vertices.iter().map(|v| v.pos[i]).sum::<f32>() / count
+    });
+    for v in &mut mesh.vertices {
+        v.pos = crate::utils::math::vec3_sub(v.pos, centroid);
+    }
+    let (velocity, angular) = debris_motion(
+        centroid,
+        impact.and_then(|impact| impact.blast.map(|blast| (impact.position, blast))),
+    );
     let cpu = assets.register_transient_mesh(mesh);
     let gpu = match assets.gpu_mesh_handle(uploader, cpu) {
         Ok(g) => g,
@@ -986,20 +1035,17 @@ fn spawn_debris(
             return None;
         }
     };
-    let root = world.add_component(TransformComponent::new());
+    let mut transform = TransformComponent::new().with_position(centroid[0], centroid[1], centroid[2]);
+    transform.transform.matrix_world = transform.transform.model;
+    let root_model = transform.transform.model;
+    let root = world.add_component(transform);
     attach(world, root, SerializeComponent::off());
     let render = attach(
         world,
         root,
         RenderableComponent::from_cpu_mesh_handle(cpu, style.renderable.material),
     );
-    let handle = register_visual(
-        visuals,
-        render,
-        gpu,
-        crate::utils::math::mat4_identity(),
-        style,
-    );
+    let handle = register_visual(visuals, render, gpu, root_model, style);
     world
         .get_component_by_id_as_mut::<RenderableComponent>(render)
         .unwrap()
@@ -1008,9 +1054,47 @@ fn spawn_debris(
         root,
         render,
         mesh: cpu,
-        velocity: [0.3, 1.2, 0.2],
+        velocity,
+        angular,
         expires: now + std::time::Duration::from_secs(4),
     })
+}
+
+/// A fragment's launch velocity and spin. Without a blast, a small drift;
+/// with one, away from the blast centre (biased upward) at up to the blast's
+/// speed, faster nearer it, spinning about a pseudo-random axis at up to the
+/// blast's spin. Fragments come from inside the cut, so they always get at
+/// least a third of the push.
+pub(crate) fn debris_motion(
+    centroid: [f32; 3],
+    blast: Option<([f32; 3], Blast)>,
+) -> ([f32; 3], [f32; 3]) {
+    use crate::utils::math::{vec3_len, vec3_normalize, vec3_scale, vec3_sub};
+    let Some((origin, blast)) = blast else {
+        return ([0.3, 1.2, 0.2], [0.; 3]);
+    };
+    let offset = vec3_sub(centroid, origin);
+    let distance = vec3_len(offset);
+    let away = if distance > 1e-4 {
+        vec3_scale(offset, 1. / distance)
+    } else {
+        [0., 1., 0.]
+    };
+    let strength = 0.35 + 0.65 * blast.falloff(distance);
+    let velocity = vec3_scale(
+        vec3_normalize([away[0], away[1] + 0.6, away[2]]),
+        blast.speed * strength,
+    );
+    let noise = |k: f32| {
+        let x = (centroid[0] * 12.9898 + centroid[1] * 78.233 + centroid[2] * 37.719 + k * 11.13)
+            .sin()
+            * 43758.547;
+        x - x.floor()
+    };
+    let axis = vec3_normalize([noise(1.) - 0.5, noise(2.) - 0.5, noise(3.) - 0.5]);
+    let axis = if vec3_len(axis) > 0.5 { axis } else { [1., 0., 0.] };
+    let angular = vec3_scale(axis, blast.spin * strength * (0.5 + 0.5 * noise(4.)));
+    (velocity, angular)
 }
 fn retire(
     systems: &mut SystemWorld,

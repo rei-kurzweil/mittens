@@ -2,6 +2,7 @@ use crate::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
     ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement, Span,
     Statement, TableFieldValue, TypeExpression, TypeField, UnaryOpKind,
+    POSITIONAL_COMPONENT_CONSTRUCTOR,
 };
 use crate::token::{Token, TokenKind};
 use std::collections::HashSet;
@@ -254,7 +255,10 @@ impl MeowMeowParser {
             }
             TokenKind::Import => {
                 self.bump(); // consume 'import'
-                let ast = self.try_consume(&TokenKind::Ast);
+                // `import ast { ... }`; `ast` is a word here, not a keyword.
+                let ast = self.is_word("ast")
+                    && matches!(self.peek_kind_at(1), TokenKind::LBrace)
+                    && self.try_consume_word("ast");
                 self.consume(&TokenKind::LBrace)?;
                 let mut items = Vec::new();
                 if !self.try_consume(&TokenKind::RBrace) {
@@ -263,13 +267,13 @@ impl MeowMeowParser {
                             TokenKind::Number(n) => {
                                 self.bump();
                                 let index = n as usize;
-                                self.consume(&TokenKind::As)?;
+                                self.consume_word("as")?;
                                 let alias = self.expect_ident()?;
                                 items.push(ImportItem::PositionalAlias { index, alias });
                             }
                             TokenKind::Ident(_) => {
                                 let name = self.expect_ident()?;
-                                if self.try_consume(&TokenKind::As) {
+                                if self.try_consume_word("as") {
                                     let alias = self.expect_ident()?;
                                     items.push(ImportItem::NamedAlias { name, alias });
                                 } else {
@@ -291,7 +295,7 @@ impl MeowMeowParser {
                     }
                     self.consume(&TokenKind::RBrace)?;
                 }
-                self.consume(&TokenKind::From)?;
+                self.consume_word("from")?;
                 let path = match self.peek_kind().clone() {
                     TokenKind::String(s) => {
                         self.bump();
@@ -672,8 +676,9 @@ impl MeowMeowParser {
         let is_builtin_table = matches!(ident.0.as_str(), "Math" | "MusicNote");
         let is_component_type = self.is_component_name(&ident.0);
 
-        // Registered component constructors also accept Type(args), equivalent
-        // to Type.new(args). Ordinary lower-case function calls are unchanged.
+        // Registered component constructors also accept Type(args), usually
+        // equivalent to Type.new(args). XRHand uses a private positional
+        // constructor marker so its public `.new` spelling can be removed.
         if !is_builtin_table
             && is_component_type
             && ident
@@ -685,8 +690,14 @@ impl MeowMeowParser {
             && self.try_consume(&TokenKind::LParen)
         {
             let args = self.parse_call_args()?;
+            let constructor =
+                if matches!(ident.0.as_str(), "XRHand" | "XrHand" | "VRHand" | "VrHand") {
+                    POSITIONAL_COMPONENT_CONSTRUCTOR
+                } else {
+                    "new"
+                };
             let mut constructors = vec![ConstructorCall {
-                method: Ident("new".into()),
+                method: Ident(constructor.into()),
                 args,
             }];
             while self.try_consume(&TokenKind::Dot) {
@@ -793,15 +804,40 @@ impl MeowMeowParser {
         }
     }
 
-    /// Component method names occupy a namespace after `.`. `from` remains a
-    /// keyword in statement position for imports, but is a valid method name
-    /// here (`Amplitude.rolling_window(...).from(source)`).
+    /// Component method names occupy a namespace after `.`
+    /// (`Amplitude.rolling_window(...).from(source)`).
     fn expect_component_method_ident(&mut self) -> Result<Ident, ParseError> {
-        match self.bump().kind {
-            TokenKind::Ident(s) => Ok(Ident(s)),
-            TokenKind::From => Ok(Ident("from".into())),
-            _ => Err(self.err("Expected identifier")),
+        self.expect_ident()
+    }
+
+    /// Whether the next token is the plain word `word` (a contextual
+    /// keyword such as `from` in an import).
+    fn is_word(&self, word: &str) -> bool {
+        matches!(self.peek_kind(), TokenKind::Ident(name) if name == word)
+    }
+
+    fn try_consume_word(&mut self, word: &str) -> bool {
+        if self.is_word(word) {
+            self.pos += 1;
+            true
+        } else {
+            false
         }
+    }
+
+    fn consume_word(&mut self, word: &str) -> Result<(), ParseError> {
+        if self.try_consume_word(word) {
+            Ok(())
+        } else {
+            Err(self.err(&format!("Expected '{word}'")))
+        }
+    }
+
+    fn peek_kind_at(&self, offset: usize) -> &TokenKind {
+        self.tokens
+            .get(self.pos + offset)
+            .map(|t| &t.kind)
+            .unwrap_or(&TokenKind::Eof)
     }
 
     fn consume(&mut self, kind: &TokenKind) -> Result<(), ParseError> {

@@ -6,13 +6,15 @@ pub(super) fn register(
 ) {
     let methods: &[(&str, usize)] = match canonical {
         "Destroyable" => &[("threshold", 1), ("cell_size", 1), ("chunk_size", 1)],
-        "Damage" => &[("at", 5)],
+        "Damage" => &[("at", 5), ("blast", 3)],
+        "Blastable" => &[("mass", 1), ("spin", 1), ("tumble", 0)],
         "ImplicitSurface" => &[
             ("bounds", 6),
             ("voxel_size", 1),
             ("iso_level", 1),
             ("smooth_min_radius", 1),
             ("clip_floor", 1),
+            ("uv_scale", 1),
         ],
         "ImplicitSphere" => &[("radius", 1)],
         _ => unreachable!(),

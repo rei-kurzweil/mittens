@@ -187,6 +187,24 @@ transparent frames; function calls push a hard barrier. Closures capture the
 visible env at definition time. See
 [`spec/env-heap-object-world.md`](../../../../docs/meow_meow/spec/env-heap-object-world.md).
 
+### Arrays and tables
+
+`[]` arrays are values: `let b = a` copies, and a closure captures a copy.
+`{}` tables are shared. A list that several callbacks change together belongs
+in a table field.
+
+`xs.push(v)` appends one value and returns the new length. On a variable or a
+table entry (`state.list.push(v)`, `state["list"].push(v)`) it appends in
+place without copying the array. On a temporary such as `[1, 2].push(3)` it
+returns the length and the array is discarded. A table with its own `push`
+field calls that instead.
+
+```mms
+let state = { open = [] }
+let open = fn(window) { state.open.push(window) }
+let copy = state.open      // later pushes don't change copy
+```
+
 ---
 
 ## Conditionals

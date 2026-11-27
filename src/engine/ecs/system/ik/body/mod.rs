@@ -12,6 +12,10 @@ use crate::engine::transform::TransformMatrix;
 use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
 use std::collections::HashMap;
 
+mod debug_overlay;
+mod paw_capture;
+mod support_outline;
+
 /// Vertical is everything an upright avatar does today. Horizontal is on hands
 /// and knees.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -58,6 +62,7 @@ const HORIZONTAL_YAW_THRESHOLD: f32 = 10.0 * std::f32::consts::PI / 180.0;
 #[derive(Debug, Default)]
 pub struct BodySolverSystem {
     avatars: HashMap<ComponentId, BodyInstance>,
+    debug: debug_overlay::DebugOverlay,
 }
 
 #[derive(Debug, Default)]
@@ -119,6 +124,7 @@ impl BodySolverSystem {
 
     /// Tighten each avatar's body yaw-follow deadband as it blends into
     /// horizontal, from its authored `body_yaw_threshold` toward 10 degrees.
+    /// A paused avatar's body holds its heading (rate 0).
     pub fn apply_body_yaw(&self, world: &mut World) {
         use crate::engine::ecs::component::TransformOperatorComponent;
         use crate::engine::ecs::component::transform_operator::TransformQuatOp;
@@ -132,6 +138,7 @@ impl BodySolverSystem {
             let authored = avatar.body_yaw_threshold;
             let wanted =
                 authored + (HORIZONTAL_YAW_THRESHOLD.min(authored) - authored) * instance.weight;
+            let wanted_rate = if avatar.paused { 0.0 } else { avatar.body_yaw_rate };
             let Some(settings) = world
                 .get_component_by_id_as_mut::<TransformOperatorComponent>(operator)
                 .and_then(|o| o.fork_trs_settings_mut())
@@ -139,18 +146,33 @@ impl BodySolverSystem {
                 continue;
             };
             for op in &mut settings.rotation_ops {
-                if let TransformQuatOp::YawFollow { threshold, .. } = op
-                    && *threshold != wanted
-                {
-                    *threshold = wanted;
+                if let TransformQuatOp::YawFollow { threshold, rate, .. } = op {
+                    if *threshold != wanted {
+                        *threshold = wanted;
+                    }
+                    if *rate != wanted_rate {
+                        *rate = wanted_rate;
+                    }
                 }
             }
         }
     }
 
+    /// Horizontal posture collides as a low crawling sphere, vertical as
+    /// the standing capsule (`set_crawling_collider`).
+    pub fn apply_posture_colliders(&self, world: &mut World) {
+        for (&id, instance) in &self.avatars {
+            crate::engine::ecs::system::avatar_control_system::capsule::set_crawling_collider(
+                world,
+                id,
+                instance.mode == BodyMode::Horizontal,
+            );
+        }
+    }
+
     pub fn tick(
         &mut self,
-        world: &World,
+        world: &mut World,
         emit: &mut dyn SignalEmitter,
         upper: &UpperBodyIkSystem,
         lower: &LowerBodyIkSystem,
@@ -172,10 +194,23 @@ impl BodySolverSystem {
                 upper.spine(id).and_then(|s| world_matrix(world, s.root)),
             ) else {
                 *instance = BodyInstance::default();
+                if avatar.solved_posture != instance.mode {
+                    publish_posture(world, emit, id, instance.mode, "rig_unavailable");
+                }
                 continue;
             };
             let mounted = attachments.is_avatar_mounted(id);
             let flying = !mounted && avatar.posture == BodyPosture::Auto && is_flying(world, id);
+            let feet = (!mounted && !flying).then(|| lower.feet(id)).flatten();
+            let sampled = feet.and_then(|feet| {
+                feet.iter()
+                    .filter_map(|foot| foot.support_height.zip(foot.support))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+            });
+            let body_floor = (!mounted && !flying && sampled.is_none())
+                .then(|| lower.posture_floor(id))
+                .flatten();
+            let knees = !flying && instance.weight >= 0.5;
             if mounted && !instance.mounted {
                 // Feet stop reporting support while riding. The seat may carry
                 // the rider to an entirely different floor before dismount.
@@ -184,13 +219,9 @@ impl BodySolverSystem {
                 instance.weight = 0.0;
             } else if flying {
                 instance.support = None;
-            } else if !mounted
-                && let Some(height) = lower.feet(id).and_then(|feet| {
-                    feet.iter()
-                        .filter_map(|f| f.support_height)
-                        .min_by(f32::total_cmp)
-                })
-            {
+            } else if let Some((height, _)) = sampled {
+                instance.support = Some(height);
+            } else if let Some((height, _, _)) = body_floor {
                 instance.support = Some(height);
             }
             instance.mounted = mounted;
@@ -198,6 +229,13 @@ impl BodySolverSystem {
             let scale = (0..3).map(|r| root[0][r] * root[0][r]).sum::<f32>().sqrt();
             let head_above = instance.support.map(|floor| head[3][1] - floor);
             let standing = spine.head_rest_height * scale;
+            let lower_status = lower.status(id);
+            let enter = if lower_status == LowerBodyStatus::Limited {
+                ENTER_LIMITED_HEAD_FRACTION * standing
+            } else {
+                ENTER_HEAD_FRACTION * standing
+            };
+            let exit = EXIT_HEAD_FRACTION * standing;
             let (next, reason) = match avatar.posture {
                 BodyPosture::Vertical => (BodyMode::Vertical, "forced"),
                 BodyPosture::Horizontal => (BodyMode::Horizontal, "forced"),
@@ -211,40 +249,32 @@ impl BodySolverSystem {
                     (BodyMode::Vertical, "no_neck_constraint")
                 }
                 BodyPosture::Auto => match (instance.mode, head_above) {
-                    (_, None) => (instance.mode, ""),
-                    _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, ""),
+                    (_, None) => (instance.mode, "no floor"),
+                    _ if instance.dwell < MIN_DWELL_SEC => (instance.mode, "minimum dwell"),
                     (BodyMode::Vertical, Some(above)) => {
-                        let limited = lower.status(id) == LowerBodyStatus::Limited;
                         if above < ENTER_HEAD_FRACTION * standing {
                             (BodyMode::Horizontal, "head_height")
-                        } else if limited && above < ENTER_LIMITED_HEAD_FRACTION * standing {
+                        } else if above < enter {
                             (BodyMode::Horizontal, "crouch_exhausted")
                         } else {
-                            (BodyMode::Vertical, "")
+                            (BodyMode::Vertical, "above crawl threshold")
                         }
                     }
                     (BodyMode::Horizontal, Some(above)) => {
-                        if above > EXIT_HEAD_FRACTION * standing {
+                        if above > exit {
                             (BodyMode::Vertical, "head_height")
                         } else {
-                            (BodyMode::Horizontal, "")
+                            (BodyMode::Horizontal, "below stand threshold")
                         }
                     }
                 },
             };
             if next != instance.mode {
-                emit.push_event(
-                    id,
-                    EventSignal::PostureChanged {
-                        avatar: id,
-                        mode: next.as_str(),
-                        previous: instance.mode.as_str(),
-                        pose: next.pose(),
-                        reason,
-                    },
-                );
                 instance.mode = next;
                 instance.dwell = 0.0;
+            }
+            if avatar.solved_posture != instance.mode {
+                publish_posture(world, emit, id, instance.mode, reason);
             }
             let goal = if instance.mode == BodyMode::Horizontal {
                 1.0
@@ -265,6 +295,45 @@ impl BodySolverSystem {
                 instance.held_pitch = 0.0;
             }
             instance.pitch = instance.weight * instance.held_pitch;
+            if self.debug.target == Some(id) {
+                let source_foot = sampled.and_then(|(height, _)| {
+                    feet?.iter().find(|foot| foot.support_height == Some(height) && foot.support.is_some())
+                });
+                let contacts = feet.map_or([None; 2], |feet| {
+                    feet.map(|foot| {
+                        let point = if knees { foot.knee } else { foot.solved_sole };
+                        let floor = if foot.support.is_some() {
+                            foot.support_height
+                        } else {
+                            instance.support
+                        };
+                        floor
+                            .map(|floor| debug_overlay::Contact {
+                                point,
+                                floor,
+                                sampled: foot.support.is_some(),
+                            })
+                    })
+                });
+                self.debug.sample = Some(debug_overlay::Sample {
+                    head: [head[3][0], head[3][1], head[3][2]],
+                    standing,
+                    floor: instance.support,
+                    source: body_floor
+                        .map(|(_, zone, _)| zone)
+                        .or_else(|| source_foot.and_then(|foot| foot.support)),
+                    surface: body_floor
+                        .and_then(|(_, _, surface)| surface)
+                        .or_else(|| source_foot.and_then(|foot| lower.support_surface(id, foot))),
+                    floor_from_body: body_floor.is_some(),
+                    contacts,
+                    enter,
+                    exit,
+                    mode: instance.mode,
+                    reason,
+                    mounted,
+                });
+            }
             if debug_body_solver_enabled() {
                 instance.debug_elapsed += dt;
                 if instance.debug_elapsed >= 0.5 {
@@ -274,7 +343,9 @@ impl BodySolverSystem {
                     let hip_target = instance
                         .support
                         .map(|floor| floor + (spine.thigh_length + KNEE_RADIUS) * scale);
-                    let knees = lower.feet(id).map(|feet| [feet[0].knee[1], feet[1].knee[1]]);
+                    let knees = lower
+                        .feet(id)
+                        .map(|feet| [feet[0].knee[1], feet[1].knee[1]]);
                     // Wall clock, so lines from both machines line up.
                     let unix_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -299,6 +370,29 @@ impl BodySolverSystem {
             }
         }
     }
+}
+
+fn publish_posture(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    id: ComponentId,
+    mode: BodyMode,
+    reason: &'static str,
+) {
+    let Some(avatar) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) else {
+        return;
+    };
+    let previous = std::mem::replace(&mut avatar.solved_posture, mode);
+    emit.push_event(
+        id,
+        EventSignal::PostureChanged {
+            avatar: id,
+            mode: mode.as_str(),
+            previous: previous.as_str(),
+            pose: mode.pose(),
+            reason,
+        },
+    );
 }
 
 fn world_matrix(world: &World, id: ComponentId) -> Option<TransformMatrix> {
@@ -328,7 +422,11 @@ pub(crate) fn hip_joint_height(
     let mut turned_so_far = 0.0;
     for (i, segment) in spine.segments().iter().enumerate() {
         turned_so_far += shares.get(i).copied().unwrap_or(0.0);
-        let angle = if i < spine.count { turned_so_far } else { pitch };
+        let angle = if i < spine.count {
+            turned_so_far
+        } else {
+            pitch
+        };
         let turned = quat_rotate_vec3(quat_from_axis_angle(spine.pitch_axis, angle), *segment);
         head_above_hips += rise(root, turned);
     }

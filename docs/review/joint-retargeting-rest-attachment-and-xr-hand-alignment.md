@@ -88,7 +88,7 @@ See the normative component and retained-system specifications:
 authored component. It describes an immutable rest-space relationship between two imported nodes:
 
 ```mms
-XRHand.new(true, Left, GripAim).laser() {
+XRHand(true, Left, GripAim).laser() {
   T {
     RestAttachment.new("#J_Bip_L_Hand", "#J_Bip_L_Middle3") {
       Pointer {}

@@ -10,12 +10,14 @@ fn cable(x, z) {
     }
 }
 
-export fn suspended_platform() {
+// `destroyable` (optional) lets damage cut the walkway; the cables stay.
+export fn suspended_platform(destroyable) {
     return T {
         name = "suspended_platform"
 
         T.scale(1.5, 0.05, 15.0) {
             name = "walkway"
+            if destroyable { Destroyable.threshold(3.0) }
             Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
             R.cube() { C.rgba(0.30, 0.32, 0.35, 1.0) }
         }

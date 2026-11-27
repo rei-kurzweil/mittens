@@ -52,9 +52,11 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
         specular_strength = 1.0
         shininess = 120.0
     })
+    // The ripple clock is removable, so a hall built on demand can stop it
+    // before removing its subtree (stop_water on the returned root).
+    let state = { time = 0.0 tick = null }
     if water_enabled {
-        let state = { time = 0.0 }
-        on_global("FrameTick", fn(event) {
+        state.tick = on(world, "FrameTick", fn(event) {
             state.time = (state.time + event.dt_sec) % (Math.pi * 20.0)
             water.set_input("time_seconds", state.time)
         })
@@ -76,7 +78,7 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
     if cut_width > 1.4 { cut_width = 1.4 }
     let light_range = Math.sqrt(width * width + hall_height * hall_height) * 1.8
 
-    return T.position(origin[0], origin[1], origin[2]) {
+    let root = T.position(origin[0], origin[1], origin[2]) {
         name = "indoor_pool"
         Material(MaterialDefinition.anime()).inputs({
             shade_color = [0.48, 0.48, 0.50]
@@ -144,11 +146,13 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
                 }
                 // Throw across the width toward the opposite wall, with only
                 // a shallow downward pitch instead of aiming below the basin.
+                // Local rotations, so the hall can sit under a turned parent.
                 T.position(center_x + side * (half_width - 0.03), (cut_bottom + cut_top) / 2.0, z)
-                    .looking_at([origin[0] + center_x - side * half_width,
-                        origin[1] + (cut_bottom + cut_top) / 2.0 - width * 0.25, origin[2] + z]) {
-                    SL.color(window_light_color[0], window_light_color[1], window_light_color[2])
-                        .intensity(1.8).distance(light_range).angle(0.85).penumbra(0.35)
+                    .rotation_euler(0.0, -side * Math.pi / 2.0, 0.0) {
+                    T.rotation_euler(Math.atan2(width * 0.25, width - 0.03), 0.0, 0.0) {
+                        SL.color(window_light_color[0], window_light_color[1], window_light_color[2])
+                            .intensity(1.8).distance(light_range).angle(0.85).penumbra(0.35)
+                    }
                 }
             }
         }
@@ -213,7 +217,7 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
             ambient_strength = 0.16
             shininess = 64.0
             rim_strength = 0.30
-            normal_sign = -1.0
+            normal_sign = 1.0
         })
         let slide_z = basin_end_z - 1.25
         let slide_radius = 1.62
@@ -232,7 +236,8 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
                     C.rgba(0.24, 0.67, 0.80, 1.0)
                     outer_plastic
                 }
-                R.helix_tube(slide_radius, 0.56, slide_height, 0.0, slide_sweep, 320, 32) {
+                // Reverse the liner's faces so they stay visible inside the tube.
+                R.helix_tube(slide_radius, 0.56, slide_height, 0.0, slide_sweep, 320, 32, true) {
                     name = "pool_helix_slide_inner"
                     C.rgba(0.24, 0.67, 0.80, 1.0)
                     inner_plastic
@@ -354,6 +359,13 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
             }
         }
     }
+    root.stop_water = fn() {
+        if state.tick {
+            state.tick.remove()
+            state.tick = null
+        }
+    }
+    return root
 }
 
 export fn indoor_pool(origin, width, length, basin_width, basin_length, water_enabled) {

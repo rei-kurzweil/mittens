@@ -4,7 +4,7 @@ import { studio_environment_material } from "../assets/components/materials/stud
 // Run with:
 //   cargo run --release -- load examples/car.mms
 //
-// W/S drive, A/D steer, Space fires. This fixture starts in its cockpit;
+// W/S drive, A/D steer; Space fires the laser, the red dashboard button (or R) three rockets. This fixture starts in its cockpit;
 // click POWER to enable controls. Native Velocity owns movement and contact.
 
 

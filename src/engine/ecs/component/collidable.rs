@@ -6,6 +6,9 @@ pub enum CollidableMode {
     Static,
     Slide,
     Sensor,
+    /// Blocks movers but never moves or observes, and isn't walkable: moving
+    /// obstacles such as an avatar's limbs (in an overlay CollisionContext).
+    Obstacle,
 }
 
 /// Collision participation is independent of permission to correct movement.
@@ -53,6 +56,10 @@ pub struct CollidableComponent {
     /// `ZoneContact` sweeps. Unset, every Velocity driving a transform above
     /// the zone carries it.
     pub velocity_source: Option<ComponentRef>,
+    /// Runtime: a read-only mover that is not also indexed as an obstacle.
+    /// An avatar with limb obstacles sets it on its capsule, so others can
+    /// pass between its legs while the capsule still moves the avatar.
+    pub mover_only: bool,
 }
 
 impl CollidableComponent {
@@ -66,6 +73,10 @@ impl CollidableComponent {
 
     pub fn sensor() -> Self {
         Self::new(CollidableMode::Sensor)
+    }
+
+    pub fn obstacle() -> Self {
+        Self::new(CollidableMode::Obstacle)
     }
 
     fn new(mode: CollidableMode) -> Self {
@@ -84,6 +95,7 @@ impl CollidableComponent {
             movement_target_id: None,
             movement_target_required: false,
             velocity_source: None,
+            mover_only: false,
         }
     }
 
@@ -91,8 +103,10 @@ impl CollidableComponent {
         if self.mode == CollidableMode::Sensor {
             return Err("sensor collidables do not have a contact response".into());
         }
-        if self.mode == CollidableMode::Static && response != CollisionResponse::ReadOnly {
-            return Err("static geometry cannot have slide response".into());
+        if matches!(self.mode, CollidableMode::Static | CollidableMode::Obstacle)
+            && response != CollisionResponse::ReadOnly
+        {
+            return Err("static geometry and obstacles cannot have slide response".into());
         }
         self.response = response;
         Ok(self)
@@ -153,6 +167,7 @@ impl Component for CollidableComponent {
             CollidableMode::Static => "static",
             CollidableMode::Slide => "slide",
             CollidableMode::Sensor => "sensor",
+            CollidableMode::Obstacle => "obstacle",
         };
         let mut ce = ce_call("Collidable", ctor, vec![]);
         if self.mode == CollidableMode::Slide && self.response != CollisionResponse::Slide {

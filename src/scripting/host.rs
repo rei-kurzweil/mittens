@@ -8,6 +8,10 @@ pub(super) mod xr_settings_api;
 pub(super) mod avatar_settings_api;
 #[path = "input_settings_api.rs"]
 pub(super) mod input_settings_api;
+#[path = "network_settings_api.rs"]
+pub(super) mod network_settings_api;
+#[path = "physics_api.rs"]
+pub(super) mod physics_api;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -67,6 +71,69 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             handle: mms::ComponentHandle::from_raw(u64::MAX),
             component_type,
         }
+    }
+
+    /// `Damage.at(x, y, z, radius, amount)`, optionally followed by
+    /// `.blast(radius, speed, spin)`, queues an impact on the world
+    /// instead of creating a temporary component, so a hit changes no
+    /// topology and never forces a collision-index refresh. The returned
+    /// value is inert, like a phase-gated expression.
+    fn queue_damage(
+        &mut self,
+        tree: &mms::MaterializedCE,
+        operation: &str,
+    ) -> Result<mms::HostResponse, mms::HostError> {
+        let numbers: Vec<f32> = tree
+            .constructor
+            .arguments
+            .iter()
+            .filter_map(|value| match value {
+                mms::Value::Number(number) => Some(*number as f32),
+                _ => None,
+            })
+            .collect();
+        // At most one `.blast(radius, speed, spin)` may follow.
+        let mut blast = None;
+        for call in &tree.initializer_calls {
+            let values: Vec<f32> = call
+                .arguments
+                .iter()
+                .filter_map(|value| match value {
+                    mms::Value::Number(number) => Some(*number as f32),
+                    _ => None,
+                })
+                .collect();
+            let parsed = (call.name == "blast" && blast.is_none() && values.len() == 3)
+                .then(|| crate::engine::ecs::component::Blast::new(values[0], values[1], values[2]).ok())
+                .flatten();
+            let Some(parsed) = parsed else {
+                return Err(mms::HostError::failure(
+                    operation,
+                    "Damage.at(...) takes only one .blast(radius, speed, spin) with a positive radius and non-negative speed and spin",
+                ));
+            };
+            blast = Some(parsed);
+        }
+        let valid = tree.constructor.name.as_deref() == Some("at")
+            && tree.constructor.arguments.len() == 5
+            && numbers.len() == 5
+            && numbers.iter().all(|v| v.is_finite())
+            && numbers[3] > 0.0
+            && numbers[4] > 0.0;
+        if !valid {
+            return Err(mms::HostError::failure(
+                operation,
+                "Damage requires .at(x,y,z,radius,amount) with finite coordinates and positive radius/amount",
+            ));
+        }
+        self.world
+            .queue_damage(crate::engine::ecs::component::DamageComponent {
+                position: [numbers[0], numbers[1], numbers[2]],
+                radius: numbers[3],
+                amount: numbers[4],
+                blast,
+            });
+        Ok(Self::inert_component("Damage".into()))
     }
 
     pub fn legacy_component_fallbacks(&self) -> usize {
@@ -241,6 +308,13 @@ impl mms::Host for MittensHost<'_, '_> {
                         super::runtime_config::MittensApi::InputXrStickModeGet
                         | super::runtime_config::MittensApi::InputXrStickModeSet,
                     ) => self.invoke_input_settings(&args),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::NetworkAutoAcceptGet
+                        | super::runtime_config::MittensApi::NetworkAutoAcceptSet,
+                    ) => self.invoke_network_settings(&args),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::PhysicsRaycast,
+                    ) => self.invoke_physics_raycast(&args),
                     super::runtime_config::MittensBinding::Api(api)
                         if xr_settings_api::supports(*api) =>
                     {
@@ -311,6 +385,9 @@ impl mms::Host for MittensHost<'_, '_> {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
                 }
+                if tree.component_type == "Damage" {
+                    return self.queue_damage(&tree, "spawn");
+                }
                 let mut tree = tree;
                 super::rigging_binding::materialize_descendants(self, &mut tree)?;
                 if let Some(bindings) = self.bindings {
@@ -355,6 +432,9 @@ impl mms::Host for MittensHost<'_, '_> {
             R::Register { tree } => {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
+                }
+                if tree.component_type == "Damage" {
+                    return self.queue_damage(&tree, "register");
                 }
                 let mut tree = tree;
                 super::rigging_binding::materialize_descendants(self, &mut tree)?;
@@ -501,8 +581,9 @@ impl mms::Host for MittensHost<'_, '_> {
                     *component_type,
                     "AudioOscillator" | "AudioClip" | "AudioGain"
                 );
+                // The visual pass only runs non-audio statements, so audio here comes
+                // from a called function and plays now.
                 if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
-                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
                 {
                     return Ok(S::Value(mms::Value::Null));
                 }
@@ -585,6 +666,11 @@ impl mms::Host for MittensHost<'_, '_> {
                     return super::morph_api::invoke(self.world, id, method, &args)
                         .map(S::Value)
                         .map_err(|e| mms::HostError::failure(format!("GLTF.{method}"), e));
+                }
+                if *component_type == "PathGraph" {
+                    return super::path_graph_api::invoke(self.world, id, method, &args)
+                        .map(S::Value)
+                        .map_err(|e| mms::HostError::failure(format!("PathGraph.{method}"), e));
                 }
                 if super::udp_channel_api::supports(component_type) {
                     return self.invoke_udp(id, component_type, method, args);
@@ -784,8 +870,9 @@ impl mms::Host for MittensHost<'_, '_> {
                     component_type.as_str(),
                     "AudioOscillator" | "AudioClip" | "AudioGain"
                 );
+                // The visual pass only runs non-audio statements, so audio here comes
+                // from a called function and plays now.
                 if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
-                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
                 {
                     return Ok(S::Value(mms::Value::Null));
                 }
@@ -990,6 +1077,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "ParentChanged" => SignalKind::ParentChanged,
         "AttachmentChanged" => SignalKind::AttachmentChanged,
         "RayIntersected" => SignalKind::RayIntersected,
+        "RayMissed" => SignalKind::RayMissed,
         "Scrolling" => SignalKind::Scrolling,
         "TextInputChanged" => SignalKind::TextInputChanged,
         "TextInputFocusChanged" => SignalKind::TextInputFocusChanged,
@@ -1002,6 +1090,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "XrButtonChanged" => SignalKind::XrButtonChanged,
         "XrAxisChanged" => SignalKind::XrAxisChanged,
         "XrGamepadLocomotion" => SignalKind::XrGamepadLocomotion,
+        "XrGamepadFlightChanged" => SignalKind::XrGamepadFlightChanged,
         "HttpRequest" => SignalKind::HttpRequest,
         "HttpResponse" => SignalKind::HttpResponse,
         "HttpError" => SignalKind::HttpError,

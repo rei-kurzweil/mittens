@@ -2,6 +2,13 @@
 
 Status: planned, 2026-09-12. Follows the `Rider` + `Mountable` first slice.
 
+2026-11-24: the platform/carrier case and per-edge follow policy (snap vs
+preserve offset; follow translation + yaw or full) are now planned concretely
+as `Mountable.carry()` in [collision contexts and vehicle carry](collision-contexts-and-vehicle-carry.md),
+with the `car.glb` mech's deck and the pickup bed as the first consumers.
+Grab unification, wearables and nesting (slices 2 and 4 to 6) are not needed
+for that work and remain here.
+
 Focused prerequisite: [AttachmentSystem topology/lifecycle cleanup](attachment-system-world-owned-topology-cleanup.md).
 Verify existing managed car attachments before multi-parent support; full generic
 role/valence and grab consolidation remain in this task.

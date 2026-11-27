@@ -293,7 +293,17 @@ fn pistol_hit_context_carries_mode_damage_and_burst_totals_six() {
             tool.set_mode("__MODE__")
             let control=T {name="damage_control"}
             T {tool.root control last total for projectile in tool.projectiles {projectile}}
-            T.position(0,100,0) {R.cube() {name="damage_target"}}
+            // A closed box around the pistol, so every shot's raycast hits
+            // whichever way the muzzle points.
+            T {
+                Raycastable.enabled()
+                T.position(0,0,-6).scale(20,20,0.5) {R.cube() {name="damage_target"}}
+                T.position(0,0,6).scale(20,20,0.5) {R.cube() {}}
+                T.position(-6,0,0).scale(0.5,20,20) {R.cube() {}}
+                T.position(6,0,0).scale(0.5,20,20) {R.cube() {}}
+                T.position(0,-6,0).scale(20,0.5,20) {R.cube() {}}
+                T.position(0,6,0).scale(20,0.5,20) {R.cube() {}}
+            }
             on(control,"DataEvent",fn(event) {
                 if event=="Fire" {tool.use_start({user=null})}
                 if event=="Switch" {tool.set_mode("burst")}
@@ -312,7 +322,6 @@ fn pistol_hit_context_carries_mode_damage_and_burst_totals_six() {
                 payload: None,
             },
         );
-        let target = named(&scene.world, "damage_target");
         for step in 0..15 {
             advance(&mut scene, &clock);
             if step == 0 && mode == "semi" {
@@ -322,19 +331,6 @@ fn pistol_hit_context_carries_mode_damage_and_burst_totals_six() {
                     EventSignal::DataEvent {
                         name: "Switch".into(),
                         payload: None,
-                    },
-                );
-            }
-            for slot in ["first", "second", "third"] {
-                let raycaster = named(&scene.world, &format!("damage_test_{slot}_raycaster"));
-                scene.command_queue.push_event(
-                    raycaster,
-                    EventSignal::RayIntersected {
-                        raycaster,
-                        renderable: target,
-                        t: 1.,
-                        origin: [0.; 3],
-                        dir: [0., 0., -1.],
                     },
                 );
             }

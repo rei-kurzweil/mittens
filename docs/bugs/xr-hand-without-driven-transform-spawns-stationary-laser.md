@@ -15,7 +15,7 @@ Source inspection identified an authoring error and a misleading renderer
 fallback. Both affected scenes used:
 
 ```mms
-XRHand.new(true, "Left", "GripAim").laser() { Pointer {} }
+XRHand(true, "Left", "GripAim").laser() { Pointer {} }
 ```
 
 OpenXR applies each controller pose to the first direct Transform child of
@@ -29,7 +29,7 @@ also inherited that outer transform rather than a tracked controller pose.
 This is not an avatar requirement. A complete controller-space pointer is:
 
 ```mms
-XRHand.new(true, "Left", "GripAim").laser() {
+XRHand(true, "Left", "GripAim").laser() {
     T { Pointer {} }
 }
 ```

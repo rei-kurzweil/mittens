@@ -13,6 +13,11 @@ import { f32, str, vec3, vec4 } from "types"
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
 import { shared_impact } from "../assets/components/network/shared_impact.mms"
+import { shared_player_health } from "../assets/components/network/shared_player_health.mms"
+import { arena_shields } from "../assets/components/network/arena_shields.mms"
+import { arena_audio } from "../assets/components/arena_audio.mms"
+import { player_death } from "../assets/components/player_death.mms"
+import { player_down_hooks } from "../assets/components/characters/downed.mms"
 import { shared_mounts } from "../assets/components/network/shared_mounts.mms"
 import { controller_hand_curls } from "../assets/components/network/controller_hand_curls.mms"
 import { make_rooftop_player } from "../assets/components/characters/rooftop_player.mms"
@@ -26,14 +31,20 @@ import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, pool_washroom_building } from "../assets/components/buildings/pool_building.mms"
 import { ship_washroom_suite } from "../assets/components/rooms/ship_washroom_suite.mms"
+import { sakura_pool_hall, sakura_pool_hall_hole } from "../assets/components/rooms/sakura_pool_hall.mms"
 import { sakura_twilight_street } from "../assets/components/buildings/sakura_twilight_street.mms"
 import { sakura_twilight_lighting } from "../assets/components/buildings/sakura_twilight_lighting.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { sakura_pickup_fleet } from "../assets/components/vehicles/sakura_pickup_fleet.mms"
+import { vehicle_respawn_pedestal } from "../assets/components/vehicles/vehicle_respawn_pedestal.mms"
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
 import { shared_sta_launcher } from "../assets/components/weapons/shared_sta_launcher.mms"
 import { sta_ammo_cabinet } from "../assets/components/sta_ammo_cabinet.mms"
 import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/components/weapons/ship_machine_pistol.mms"
+import { practice_target } from "../assets/components/target_practice.mms"
+import { mitten_antagonist } from "../assets/components/characters/target_combat.mms"
+import { npc_target_switch, shared_npc } from "../assets/components/network/npc_replication.mms"
+import { button } from "../assets/components/button.mms"
 
 // Sakura Twilight with five single-storey buildings, six pistols, one
 // pickup, and one radio tower. The same street and ground connect the
@@ -52,6 +63,13 @@ import { ship_machine_pistol, apply_machine_pistol_impact } from "../assets/comp
 // Equip one STA rocket on each thigh to unlock flight. Double-tap B to
 // toggle it, then hold B/A to rise/descend. Removing either rocket ends flight.
 // Use Third person camera in Humanoid, V on desktop, or Y on the left XR controller.
+// Pistol hits take 10% health and rocket splash takes 50%. At zero health
+// you're let out of any seat or truck bed and put back on your spawn spot on
+// the main rooftop; choose an avatar from its Panels dock to heal (a fresh
+// avatar) and fire again.
+// Grab and release a cyan shield pickup to wear it (two on the main roof, one
+// in the women's washroom, one down the road toward the radio tower). It
+// drops at zero health.
 // The Panels dock beside the spawn opens the avatar picker and the mirror,
 // input, humanoid (avatar settings) and graphics panels; Input switches the
 // left stick between strafing and turning. Collapse it from its title bar,
@@ -93,7 +111,7 @@ let hardware = Material(anime).inputs({
     rim_color = [1.0, 0.84, 0.92]
     rim_strength = 0.22
 })
-let lighting = sakura_twilight_lighting(grab_rank, hardware)
+let lighting = sakura_twilight_lighting(grab_rank, hardware, true)
 lighting.world
 // On the south side of the main roof, facing back toward the spawn.
 T.position(roof_x + 1.3, roof_height, 3.4).rotation(0.0, Math.pi, 0.0) {
@@ -135,10 +153,14 @@ pool_building_with_stairs("sakura_twilight_main", [roof_x, 0.0, 0.0], [storey_he
     { side = 1.0 center = ramp_entry_z width = 5.0 })
 roof_tree([roof_x, 0.0, 0.0], roof_height)
 
-sakura_twilight_street(roof_x, roof_height, ramp_entry_z, ground_material, road_material, hardware, true)
-
 // Each street side (+Z) faces the road from the same 14 x 12 m footprint.
 let row_z = -26.0
+// The pool hall beside the washroom is sunk below the street; the ground has
+// a hole under it instead of drawing grass beneath its floor.
+let pool_hall_origin = [6.0, 0.0, row_z]
+sakura_twilight_street(roof_x, roof_height, ramp_entry_z, ground_material, road_material, hardware, true,
+    [sakura_pool_hall_hole(pool_hall_origin)])
+
 // Detect the local player even when the selected avatar has collision disabled.
 let washroom_probe = Zone.sphere(0.18) {
     name = "sakura_twilight_washroom_probe"
@@ -148,7 +170,7 @@ let washroom_probe_frame = T.position(0.0, 1.0, 0.0) { washroom_probe }
 let row = [
     { name = "sakura_twilight_row_0" x = -26.0 color = white },
     { name = "sakura_twilight_row_1" x = -10.0 color = blue },
-    { name = "sakura_twilight_row_2" x = 6.0 color = white },
+    { name = "sakura_twilight_pool_hall" x = 6.0 color = white pool_hall = true },
     { name = "sakura_twilight_row_3" x = 22.0 color = blue washroom = true },
 ]
 for building in row {
@@ -157,6 +179,9 @@ for building in row {
         pool_washroom_building(building.name, origin, tiles, building.color)
         T.position(origin[0], origin[1], origin[2]) { ship_washroom_suite(washroom_probe) }
         roof_tree(origin, 5.2)
+    } else if building["pool_hall"] {
+        sakura_pool_hall(building.name, origin, tiles, building.color, washroom_probe)
+        roof_tree(origin, 6.4)
     } else {
         pool_building(building.name, origin, 1, 1.0, false, tiles, building.color, true, true)
         roof_tree(origin, storey_height)
@@ -181,15 +206,27 @@ let remote_port = 7012
 if !net.is_host() { channel_port = 7012 remote_port = 7011 }
 let socket = UdpSocket.bind("0.0.0.0:" + channel_port) {}
 socket
+let combat_health = shared_player_health(socket)
+combat_health.root
+let arena_sounds = arena_audio()
+arena_sounds.root
+combat_health.bind_damage(arena_sounds.damage)
 let pose_type = { translation: vec3, rotation_quat_xyzw: vec4, scale: vec3 }
 // Use the imported hood's yellow base color for the combined paint.
 // Shared items mounted on these frames (the truck bed) sync by one event each.
 let mounts = shared_mounts()
 let pickups = sakura_pickup_fleet(socket, grab_rank, mounts, -0.23, true)
 pickups.root
+T.position(roof_x + 2.55, roof_height, -1.35) {
+    vehicle_respawn_pedestal(hardware, pickups.respawn)
+}
+// The NPC Mitten, spawned from pedestals on the main roof (see below). The
+// host runs her (current); link replicates her to the client as a puppet.
+let mitten_npc = { current = null spawns = 0 link = null }
 fn weapon_options(id) {
     return { socket = socket weapon_id = id rank = grab_rank mounts = mounts opaque_bucket = "near"
-        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar" }
+        left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
+        can_fire = combat_health.can_fire restock_beats_per_second = 2.0 }
 }
 let pistol_impacts = shared_impact({ socket = socket name = "arena.pistols" apply = apply_machine_pistol_impact })
 fn make_pistol(index) {
@@ -198,6 +235,15 @@ fn make_pistol(index) {
     let options = weapon_options("arena.pistol." + index)
     options.ammunition = 96
     options.shared_impacts = pistol_impacts
+    options.on_hit = fn(hit) {
+        combat_health.pistol_hit(hit)
+        // The host hits Mitten herself; the client hits her puppet, which
+        // reports the damage to the host.
+        if hit.source_user != null {
+            if mitten_npc.current { mitten_npc.current.pistol_hit(hit) }
+            if mitten_npc.link { mitten_npc.link.pistol_hit(hit) }
+        }
+    }
     return ship_machine_pistol(label, options)
 }
 let pistols = [
@@ -214,8 +260,19 @@ fn pistol_rack(label, first, x, y, z) {
 }
 pistol_rack("sakura_twilight_main_pistol_rack", 0, roof_x - 2.25, roof_height, -3.25)
 pistol_rack("sakura_twilight_row_pistol_rack", 3, row[1].x - 1.9, storey_height, row_z + 3.8)
-let launcher = shared_sta_launcher("rooftop_sta_launcher", weapon_options("arena.sta.1"))
-let street_launcher = shared_sta_launcher("sakura_twilight_row_sta_launcher", weapon_options("arena.sta.2"))
+fn make_launcher(label, id) {
+    let options = weapon_options(id)
+    options.on_explosion = fn(point) {
+        // Until rockets have their own explosion sound, use the damage cue.
+        arena_sounds.damage(1.0)
+        combat_health.rocket_splash(point)
+        // Explosions replay on both peers; only the host's Mitten takes them.
+        if mitten_npc.current { mitten_npc.current.rocket_splash(point) }
+    }
+    return shared_sta_launcher(label, options)
+}
+let launcher = make_launcher("rooftop_sta_launcher", "arena.sta.1")
+let street_launcher = make_launcher("sakura_twilight_row_sta_launcher", "arena.sta.2")
 fn weapon_stand(x, weapon) {
     return T.position(x, roof_height, -3.1) {
         T.position(0.0, 1.04, 0.0) { weapon }
@@ -236,8 +293,57 @@ ship_input_controller(false, [launcher.grip, street_launcher.grip], pistols)
 let local_avatar = client_avatar
 let remote_avatar = host_avatar
 if net.is_host() { local_avatar = host_avatar remote_avatar = client_avatar }
-let local = make_rooftop_player({ prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning opaque_bucket = "near" })
-let remote = make_rooftop_player({ prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop opaque_bucket = "near" })
+let local = make_rooftop_player({
+    prefix = "local" local_player = true avatar = local_avatar use_xr = use_xr use_desktop = use_desktop
+    camera_far = 250.0 third_person = start_in_third_person voice_level = voice_level mouth_tuning = mouth_tuning
+    opaque_bucket = "near" show_health = true shield_mount = true
+})
+let remote = make_rooftop_player({
+    prefix = "remote" local_player = false avatar = remote_avatar use_xr = use_xr use_desktop = use_desktop
+    opaque_bucket = "near" show_health = true health_view = local.health_view shield_mount = true
+})
+combat_health.bind(local.health, remote.health, remote.hit_zone)
+// Dying leaves the local player lying where they fell for 30 s, unable to
+// move (downed.mms, which also releases any seat). Then they get up back at
+// their spawn on the main rooftop, by the dock, with full health; choosing an
+// avatar also restores health. The peer sees the move through the replicated
+// root. The lying body itself isn't replicated yet: the peer sees the head go
+// down with the body hanging from it.
+// Animation lengths are in beats: 2 per second at 120 bpm.
+let RESPAWN_BEATS = 30.0 * 2.0
+let respawn = { at = null }
+let respawn_events = T { name = "sakura_twilight_respawn_events" }
+respawn_events
+let respawn_delay = Animation.paused().length(RESPAWN_BEATS) {
+    Keyframe.at(0.0) {}
+    Keyframe.at(RESPAWN_BEATS) { emit_data(respawn_events, "ReturnToRoof") }
+}
+respawn_events.attach(respawn_delay)
+let player_down = player_down_hooks(local, fn() { return { desktop = query("#local_desktop_locomotion") } })
+on(respawn_events, "DataEvent", fn(event) {
+    if event != "ReturnToRoof" { return }
+    player_down.up()
+    if local.velocity { local.velocity.reset() }
+    if respawn.at { local.root.update_transform(respawn.at) }
+    combat_health.reset()
+})
+combat_health.bind_death(fn(is_local) {
+    let center = remote.shield_mount
+    if is_local { center = local.shield_mount }
+    player_death(center.world_trs().translation, 2.0)
+    if is_local {
+        player_down.down()
+        respawn_delay.play()
+    }
+})
+// Shield pickups: two on the main roof, one in the women's washroom, and one
+// down the road toward the radio tower.
+let shields = arena_shields(socket, grab_rank, mounts, local, remote,
+    [[roof_x - 0.85, roof_height + 0.24, -1.35], [roof_x + 0.85, roof_height + 0.24, -1.35],
+        [19.0, 1.0, -28.5], [130.0, 0.8, -15.0]],
+    combat_health.can_fire)
+shields.root
+combat_health.bind_shields(shields)
 if use_desktop {
     on_global("KeyUp", fn(event) { if event.code == "KeyV" { local.toggle_camera_view() } })
 }
@@ -252,12 +358,98 @@ fn report_avatar_status(message) {
     if line { line.set_text(message) }
 }
 fn select_local_avatar(choice) {
-    local.select_avatar(choice, report_avatar_status)
+    local.select_avatar(choice, fn(message, success) {
+        if success == true { combat_health.reset() }
+        report_avatar_status(message)
+    })
 }
 local.label.set_text(net.local_name())
 let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
 local.root.update_transform([roof_x + spawn_x, roof_height, 0.0])
+
+// Spawn and Remove pedestals for Mitten on the main roof, beside the lighting
+// pedestal and facing the spawn. She appears on the other roof (row 1), the
+// one with the second pistol rack and rocket launcher, and isn't spawned by
+// default. She uses her own pistol (no armory: the scene's pistols are
+// networked), aims at the nearer living player and hurts them through
+// combat_health. She's host-authoritative: the host runs her and the client
+// sees a puppet (npc_replication.mms), whose pedestals ask the host.
+fn mitten_pedestal(name, label, x, z, tint, action) {
+    let control = button(label, { compact = true background_color = tint color = [0.12, 0.07, 0.15, 1.0] })
+    let face = T.position(-0.29, 1.17, 0.23).scale(0.086, 0.086, 0.086) {
+        name = name + "_control"
+        LayoutRoot { available_width(7.0) available_height(2.0) control }
+    }
+    on(control, "Click", fn(event) { action() })
+    return T.position(x, roof_height, z).rotation(0.0, Math.pi, 0.0) {
+        name = name
+        box([0.0, 0.08, 0.0], [0.50, 0.16, 0.48], white)
+        box([0.0, 0.58, 0.0], [0.22, 0.84, 0.26], white)
+        box([0.0, 1.10, 0.0], [0.65, 0.20, 0.40], white)
+        face
+    }
+}
+let mitten_position = [row[1].x + 2.5, storey_height, row_z + 2.0]
+// The host's Mitten aims at whichever player is nearer: the local one, or
+// the peer's, whose hits travel through combat_health's damage reports.
+let mitten_aim = npc_target_switch("sakura_twilight_mitten_aim", [
+    { mount = local.shield_mount alive = combat_health.alive hit = combat_health.local_hit },
+    { mount = remote.shield_mount alive = combat_health.remote_alive hit = combat_health.remote_hit },
+], fn() {
+    if mitten_npc.current { return mitten_npc.current.center() }
+    return null
+})
+mitten_aim.root
+// Host only: the real Mitten. Her hooks feed the replication link.
+fn spawn_mitten() {
+    if mitten_npc.current { return }
+    let weapon_name = "sakura_twilight_mitten_pistol"
+    if mitten_npc.spawns > 0 { weapon_name = weapon_name + "_" + mitten_npc.spawns }
+    mitten_npc.spawns = mitten_npc.spawns + 1
+    let target = practice_target({
+        prefix = "sakura_twilight_mitten" avatar = "mitten" use_xr = true use_desktop = false
+        position = mitten_position yaw = Math.pi
+        combat = mitten_antagonist player_alive = mitten_aim.alive
+        health_view = local.health_view player = mitten_aim.root on_damage = arena_sounds.damage
+        on_player_hit = mitten_aim.hit
+        world_damage = false weapon_name = weapon_name
+        on_shot = fn(pose, mode) { mitten_npc.link.shot(pose, mode) }
+        on_lie_down = fn(kind) { mitten_npc.link.down(kind) }
+        on_respawn = fn() { mitten_npc.link.respawned() }
+    })
+    target.root
+    mitten_npc.current = target
+    mitten_aim.start()
+    mitten_npc.link.spawned()
+}
+fn remove_mitten() {
+    if !mitten_npc.current { return }
+    mitten_aim.stop()
+    mitten_npc.current.remove()
+    mitten_npc.current = null
+    mitten_npc.link.removed()
+}
+mitten_npc.link = shared_npc({
+    socket = socket name = "mitten" host = net.is_host()
+    prefix = "sakura_twilight_mitten" avatar = "mitten" position = mitten_position
+    health_view = local.health_view on_damage = arena_sounds.damage
+    current = fn() { return mitten_npc.current } spawn = spawn_mitten remove = remove_mitten
+})
+mitten_npc.link.root
+// The host spawns and removes her; the client asks the host to.
+fn press_mitten(wanted) {
+    if !net.is_host() {
+        mitten_npc.link.request(wanted)
+        return
+    }
+    if wanted { spawn_mitten() } else { remove_mitten() }
+}
+mitten_pedestal("sakura_twilight_spawn_mitten", "Spawn Mitten", roof_x + 2.6, 3.4,
+    [0.59, 0.77, 0.57, 1.0], fn() { press_mitten(true) })
+mitten_pedestal("sakura_twilight_remove_mitten", "Remove Mitten", roof_x + 3.31, 3.4,
+    [0.85, 0.50, 0.55, 1.0], fn() { press_mitten(false) })
+respawn.at = [roof_x + spawn_x, roof_height, 0.0]
 local.root.attach(washroom_probe_frame)
 remote.root.update_transform([roof_x - spawn_x, roof_height, 0.0])
 if use_desktop && !use_xr {
@@ -369,13 +561,14 @@ fn bind_local_item(item) {
 }
 for item in shared_objects { bind_local_item(item) }
 for item in pistols { bind_local_item(item) }
+bind_local_item(shields)
 if use_desktop { local.watch_pointer(query("[name='local_desktop_pointer']"), "desktop") }
 if use_xr {
     local.watch_pointer(query("[name='local_left_pointer']"), "left")
     local.watch_pointer(query("[name='local_right_pointer']"), "right")
 }
-let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null flight = null }
-let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0
+let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null avatar = null height = null flight = null }
+let channel_state = { ticks = 0.0 send_elapsed = 0.0 sent_avatar = null avatar_repeats = 0 sent_height = -1.0 height_repeats = 0
     sent_flight = null flight_repeats = 0 flight_elapsed = 0.0 }
 let connection = { root = null avatar_group = null address = null peer_avatar = null
     avatar_retry = null avatar_retry_elapsed = 0.0 avatar_retries = 0 }
@@ -446,10 +639,14 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     connection.avatar_retry = null
     connection.avatar_retries = 0
     channel_state.sent_avatar = null
+    channel_state.sent_height = -1.0
     channel_state.sent_flight = null
+    combat_health.connect(group, address)
+    shields.connect(group, address)
     for item in shared_objects { item.connect(group, address) }
     for item in pistols { item.connect(group, address) }
     pistol_impacts.connect(group, address)
+    mitten_npc.link.connect(group, address)
     pickups.connect(group, address)
     hand_curls.connect(group, address)
     lighting.connect(socket, group, address)
@@ -462,6 +659,15 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     links.left_valid = publish("left-hand.valid", address, f32)
     links.right_valid = publish("right-hand.valid", address, f32)
     links.avatar = publish("avatar", address, str)
+    links.height = publish("avatar.height", address, f32)
+    let height_channel = socket.subscribe("avatar.height").from(address).type(f32)
+    group.attach(height_channel)
+    on(height_channel, "UdpSample", fn(sample) {
+        // Zero means the model's default height.
+        let height = null
+        if sample.value > 0.0 { height = sample.value }
+        remote.set_remote_height(height, receive_avatar_status)
+    })
     links.flight = publish("avatar.flight", address, f32)
     let flight_channel = socket.subscribe("avatar.flight").from(address).type(f32)
     group.attach(flight_channel)
@@ -490,9 +696,13 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     show_status(event.name + " joined; typed pose and face channels")
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
+    combat_health.disconnect()
+    shields.disconnect()
     for item in shared_objects { item.disconnect() }
     for item in pistols { item.disconnect() }
     pistol_impacts.disconnect()
+    // The client's Mitten puppet goes with the host.
+    mitten_npc.link.disconnect()
     pickups.disconnect()
     hand_curls.disconnect()
     lighting.disconnect()
@@ -501,6 +711,7 @@ on(net, "MultiplayerPeerLeft", fn(event) {
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     links.avatar = null
+    links.height = null
     links.flight = null
     remote.set_remote_flying(false)
     roster.count = 0
@@ -539,6 +750,18 @@ on_global("FrameTick", fn(event) {
     if choice != channel_state.sent_avatar {
         channel_state.sent_avatar = choice
         channel_state.avatar_repeats = 4
+    }
+    // Height changes go out in the same short bursts as avatar choices.
+    let height = local.desired_height()
+    if height != channel_state.sent_height {
+        channel_state.sent_height = height
+        channel_state.height_repeats = 4
+    }
+    if channel_state.height_repeats > 0 && links.height && links.height.ready() {
+        let sample = 0.0
+        if height != null { sample = height }
+        links.height.write(sample)
+        channel_state.height_repeats = channel_state.height_repeats - 1
     }
     if channel_state.avatar_repeats > 0 && links.avatar && links.avatar.ready() {
         links.avatar.write(choice)

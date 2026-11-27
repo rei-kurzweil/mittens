@@ -4,6 +4,7 @@ pub mod benchmark;
 pub mod cli;
 pub mod ecs;
 pub mod graphics;
+pub(crate) mod network_settings;
 pub mod repl;
 pub(crate) mod startup_trace;
 pub mod transform;

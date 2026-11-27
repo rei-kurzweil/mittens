@@ -1,8 +1,11 @@
 // Reusable studio light fixture.
 //
 // `mounted_light` may be any light component (AL, DL, PL, SL) or may be omitted.
-// An empty fixture has no luminous face, making its appearance match its behavior.
-export fn tripod_light(light_name, position, look_target, mounted_light) {
+// An empty fixture has no luminous face. `emitter` optionally sets its tint and intensity.
+export fn tripod_light(light_name, position, look_target, mounted_light, emitter) {
+    let tint = [1.0, 1.0, 1.0]
+    let gain = 2.5
+    if emitter { tint = emitter.tint gain = emitter.intensity }
     return T.position(position[0], position[1], position[2]) {
         name = light_name
         Grabbable {}
@@ -57,8 +60,8 @@ export fn tripod_light(light_name, position, look_target, mounted_light) {
                     T.position(0.0, 0.0, 0.116).scale(0.68, 0.42, 0.012) {
                         name = "tripod_light_emissive_face"
                         R.cube() {
-                            C.rgba(1.0, 1.0, 1.0, 1.0)
-                            EM.on() { intensity(2.5) }
+                            C.rgba(tint[0], tint[1], tint[2], 1.0)
+                            EM.on() { intensity(gain) }
                         }
                     }
                     mounted_light

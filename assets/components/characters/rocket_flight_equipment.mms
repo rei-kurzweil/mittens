@@ -1,6 +1,6 @@
 // One loose STA rocket must be attached directly to each thigh drop zone.
 export fn require_leg_rockets_for_flight(avatar_root, gamepad) {
-    let state = { enabled = false thrust = false lit_left = null lit_right = null departures = null }
+    let state = { enabled = false moving = false mode = null left = null right = null departures = null }
     gamepad.set_flight_enabled(false)
 
     fn equipped_rocket(selector) {
@@ -10,18 +10,29 @@ export fn require_leg_rockets_for_flight(avatar_root, gamepad) {
         return null
     }
 
-    fn switch_rocket(previous, next) {
-        if previous == next { return }
-        if previous && previous.is_alive() { previous.deactivate() }
-        if next { next.activate() }
+    fn update_round(previous, next, mode) {
+        if previous && previous.is_alive() && (previous != next || !mode) { previous.deactivate() }
+        if next && next.is_alive() && mode && (previous != next || state.mode != mode) {
+            next.activate(mode)
+        }
+    }
+
+    fn update_exhaust(left, right) {
+        let mode = null
+        if left && right && gamepad.is_alive() && gamepad.flying() {
+            mode = "hover"
+            if state.moving { mode = "thrust" }
+        }
+        update_round(state.left, left, mode)
+        update_round(state.right, right, mode)
+        state.left = left
+        state.right = right
+        state.mode = mode
     }
 
     fn refresh(event) {
         if !avatar_root.is_alive() || !gamepad.is_alive() {
-            switch_rocket(state.lit_left, null)
-            switch_rocket(state.lit_right, null)
-            state.lit_left = null
-            state.lit_right = null
+            update_exhaust(null, null)
             state.departures.remove()
             return
         }
@@ -32,26 +43,21 @@ export fn require_leg_rockets_for_flight(avatar_root, gamepad) {
             state.enabled = enabled
             gamepad.set_flight_enabled(enabled)
             state.departures.bypass(!enabled)
-            if !enabled { state.thrust = false }
         }
-        if !enabled || !state.thrust {
-            left = null
-            right = null
-        }
-        switch_rocket(state.lit_left, left)
-        switch_rocket(state.lit_right, right)
-        state.lit_left = left
-        state.lit_right = right
+        if enabled { update_exhaust(left, right) }
+        else { update_exhaust(null, null) }
     }
 
     // A pickup or deletion can move a rocket out of the avatar's signal scope.
-    // Listen outside that scope only while both rockets are equipped.
     state.departures = on_global("ParentChanged", refresh)
     state.departures.bypass(true)
     on(avatar_root, "ParentChanged", fn(event) { if !state.enabled { refresh(event) } })
     on(gamepad, "XrGamepadLocomotion", fn(event) {
-        state.thrust = event.active && gamepad.flying()
-        refresh(event)
+        state.moving = event.active
+        update_exhaust(state.left, state.right)
+    })
+    on(gamepad, "XrGamepadFlightChanged", fn(event) {
+        update_exhaust(state.left, state.right)
     })
     refresh(null)
 }

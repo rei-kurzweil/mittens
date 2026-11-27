@@ -1,7 +1,8 @@
-//! Procedural surface and runtime damage authoring bindings.
+//! Procedural surface, runtime damage and blast-response authoring bindings.
 use super::{ComponentId, Value, World, arg_f32};
 use crate::engine::ecs::component::{
     DamageComponent, DestroyableComponent, ImplicitSphereComponent, ImplicitSurfaceComponent,
+    BlastableComponent,
 };
 pub(super) fn create(
     world: &mut World,
@@ -15,9 +16,11 @@ pub(super) fn create(
             position: [0.; 3],
             radius: 0.28,
             amount: 1.,
+            blast: None,
         }),
         "ImplicitSurface" => world.add_component(ImplicitSurfaceComponent::default()),
         "ImplicitSphere" => world.add_component(ImplicitSphereComponent::default()),
+        "Blastable" => world.add_component(BlastableComponent::default()),
         _ => unreachable!(),
     };
     if let Some(method) = ctor {
@@ -37,6 +40,22 @@ pub(super) fn apply(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if let Some(k) = world.get_component_by_id_as_mut::<BlastableComponent>(id) {
+        if method == "tumble" {
+            k.tumble = true;
+            return Ok(());
+        }
+        let value = arg_f32(args, 0)?;
+        match method {
+            "mass" if value.is_finite() && value > 0. => k.mass = value,
+            "spin" if value.is_finite() && value >= 0. => k.spin = value,
+            "mass" | "spin" => {
+                return Err(format!("Blastable.{method} expects a positive finite number"));
+            }
+            _ => return Err(format!("Blastable: unknown builder '{method}'")),
+        }
+        return Ok(());
+    }
     if let Some(s) = world.get_component_by_id_as_mut::<DestroyableComponent>(id) {
         let value = arg_f32(args, 0)?;
         if !value.is_finite() || value <= 0. {
@@ -51,6 +70,14 @@ pub(super) fn apply(
         return Ok(());
     }
     if let Some(d) = world.get_component_by_id_as_mut::<DamageComponent>(id) {
+        if method == "blast" {
+            d.blast = Some(crate::engine::ecs::component::Blast::new(
+                arg_f32(args, 0)?,
+                arg_f32(args, 1)?,
+                arg_f32(args, 2)?,
+            )?);
+            return Ok(());
+        }
         if method != "at" {
             return Err(format!("Damage: unknown builder '{method}'"));
         }
@@ -70,6 +97,7 @@ pub(super) fn apply(
             position,
             radius,
             amount,
+            blast: d.blast,
         };
         return Ok(());
     }
@@ -83,6 +111,7 @@ pub(super) fn apply(
             "iso_level" => s.iso_level = arg_f32(args, 0)?,
             "smooth_min_radius" => s.smooth_min_radius = arg_f32(args, 0)?,
             "clip_floor" => s.clip_floor = Some(arg_f32(args, 0)?),
+            "uv_scale" => s.uv_scale = arg_f32(args, 0)?,
             _ => return Err(format!("ImplicitSurface: unknown builder '{method}'")),
         };
         return Ok(());

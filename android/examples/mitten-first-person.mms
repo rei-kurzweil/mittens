@@ -78,8 +78,8 @@ let player_motion = Velocity {
                     // the eye module, else UDP sources). Lid closure only; eye
                     // direction stays with the ambient saccade animation.
                     XREyeTracking.on().enable_pupil_direction_tracking(false)
-                    XRHand.new(true, "Left", "GripAim") { controller_pointer("L") }
-                    XRHand.new(true, "Right", "GripAim") { controller_pointer("R") }
+                    XRHand(true, "Left", "GripAim") { controller_pointer("L") }
+                    XRHand(true, "Right", "GripAim") { controller_pointer("R") }
                 }
                 control
                 on(avatar, "GLTFInitialized", fn(event) {

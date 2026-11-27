@@ -15,8 +15,8 @@ T {
     InputXR.on() {
         InputXRGamepad { locomotion() speed(1.5) }
         T { CXR { Pointer {} } }
-        XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
-        XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
+        XRHand(true, "Left", "GripAim").laser() { T { Pointer {} } }
+        XRHand(true, "Right", "GripAim").laser() { T { Pointer {} } }
     }
 }
 XR.on()

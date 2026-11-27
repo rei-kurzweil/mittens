@@ -42,8 +42,8 @@ T {
         // one reports the right controller (A launches) without moving.
         InputXRGamepad { hand("right") locomotion(false) }
         T { CXR {} }
-        XRHand.new(true, "Left", "Aim") { controller_pointer("launcher_left_pointer") }
-        XRHand.new(true, "Right", "Aim") { controller_pointer("launcher_right_pointer") }
+        XRHand(true, "Left", "Aim") { controller_pointer("launcher_left_pointer") }
+        XRHand(true, "Right", "Aim") { controller_pointer("launcher_right_pointer") }
     }
 }
 

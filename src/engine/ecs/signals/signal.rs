@@ -125,6 +125,17 @@ pub enum EventSignal {
         dir: [f32; 3],
     },
 
+    /// A requested raycast (`request_raycast()`) hit nothing within
+    /// `max_distance`. Delivered to the raycaster's scope, so a script can tell
+    /// a miss from a result that hasn't arrived yet. Rays cast every frame for
+    /// pointers don't report misses.
+    RayMissed {
+        raycaster: ComponentId,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+    },
+
     /// A drag gesture started.
     DragStart {
         activation_source: PointerActivationSource,
@@ -395,6 +406,9 @@ pub enum EventSignal {
     XrGamepadLocomotion {
         active: bool,
     },
+    XrGamepadFlightChanged {
+        flying: bool,
+    },
 
     HttpRequest {
         request_id: u64,
@@ -485,6 +499,7 @@ impl EventSignal {
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::AttachmentChanged { .. } => SignalKind::AttachmentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
+            EventSignal::RayMissed { .. } => SignalKind::RayMissed,
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
@@ -518,6 +533,7 @@ impl EventSignal {
             EventSignal::XrButtonChanged { .. } => SignalKind::XrButtonChanged,
             EventSignal::XrAxisChanged { .. } => SignalKind::XrAxisChanged,
             EventSignal::XrGamepadLocomotion { .. } => SignalKind::XrGamepadLocomotion,
+            EventSignal::XrGamepadFlightChanged { .. } => SignalKind::XrGamepadFlightChanged,
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
@@ -1018,6 +1034,14 @@ pub enum IntentValue {
         component_id: ComponentId,
         enabled: bool,
     },
+    SetTubeTrail {
+        component_id: ComponentId,
+        config: Option<Box<crate::engine::ecs::system::tube_trail_system::TubeTrail>>,
+    },
+    SetParticleEmission {
+        component_id: ComponentId,
+        config: Option<Box<crate::engine::ecs::system::particle_system::ParticleEmission>>,
+    },
     RemoveInputXr {
         component_id: ComponentId,
     },
@@ -1295,6 +1319,8 @@ impl IntentValue {
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
             IntentValue::RegisterInputXrGamepad { .. } => "register_input_xr_gamepad",
             IntentValue::SetXrFlightEnabled { .. } => "set_xr_flight_enabled",
+            IntentValue::SetParticleEmission { .. } => "set_particle_emission",
+            IntentValue::SetTubeTrail { .. } => "set_tube_trail",
             IntentValue::RemoveInputXr { .. } => "remove_input_xr",
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
             IntentValue::RemoveInputXrGamepad { .. } => "remove_input_xr_gamepad",
@@ -1365,6 +1391,7 @@ pub enum SignalKind {
     ParentChanged,
     AttachmentChanged,
     RayIntersected,
+    RayMissed,
     DragStart,
     DragMove,
     DragEnd,
@@ -1403,6 +1430,7 @@ pub enum SignalKind {
     XrButtonChanged,
     XrAxisChanged,
     XrGamepadLocomotion,
+    XrGamepadFlightChanged,
     HttpRequest,
     HttpResponse,
     HttpError,

@@ -164,7 +164,7 @@ fn xr_vehicle_input_handlers_exist_only_while_powered_and_occupied() {
         .find(|&id| {
             f.world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
     f.click_power();
@@ -210,7 +210,7 @@ fn display_car_power_gates_controls_but_keeps_physics_and_momentum() {
         .find(|&id| {
             f.world
                 .get_component_by_id_as::<crate::engine::ecs::component::MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .unwrap();
     let key = || {
@@ -472,7 +472,7 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
         .find(|&id| {
             world
                 .get_component_by_id_as::<MountableComponent>(id)
-                .is_some()
+                .is_some_and(|m| !m.carry)
         })
         .expect("desktop scene should expose a mountable car");
     let motion = world.parent_of(car_root).unwrap();
@@ -628,7 +628,7 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             .find(|&id| {
                 world
                     .get_component_by_id_as::<MountableComponent>(id)
-                    .is_some()
+                    .is_some_and(|m| !m.carry)
                     && world
                         .parent_of(id)
                         .and_then(|parent| world.component_label(parent))
@@ -685,12 +685,14 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             assert_eq!(relationship.mountable, mountable_id);
             assert!(world.attachment_is_live(relationship.attachment));
             assert_eq!(world.component_count(), baseline + 2);
+            // The attachment leaves walking alone; the car's MountStarted
+            // script turns it off (not run here, see the seat walking test).
             if let Some(input) = world.get_component_by_id_as::<InputComponent>(input) {
-                assert!(!input.translation_enabled);
+                assert!(input.translation_enabled);
                 assert!(input.rotation_enabled);
             } else {
                 assert!(
-                    !world
+                    world
                         .get_component_by_id_as::<InputXRGamepadComponent>(input)
                         .unwrap()
                         .locomotion
@@ -759,4 +761,120 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             }
         }
     }
+}
+
+#[test]
+fn seats_turn_rider_walking_off_while_mounted_and_restore_it() {
+    use crate::engine::ecs::component::{InputXRGamepadComponent, MountableComponent};
+    let mut f = Fixture::new(
+        r##"
+        import {display_car} from "../assets/components/vehicles/display_car.mms"
+        display_car("test_car",[0,0,0],0,"test_mount",[])
+        T {
+            name = "test_rider_root"
+            InputXRGamepad.locomotion() { name = "test_rider_pad" }
+            Rider.anchor("#test_rider_root").movement_root("#test_rider_root").input("#test_rider_pad") {}
+        }
+    "##,
+    );
+    let pad = f.named("test_rider_pad");
+    let rider = f
+        .world
+        .all_components()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<crate::engine::ecs::component::RiderComponent>(id)
+                .is_some()
+        })
+        .unwrap();
+    let mountable = f
+        .world
+        .children_of(f.named("test_car"))
+        .iter()
+        .copied()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<MountableComponent>(id)
+                .is_some_and(|m| !m.carry)
+        })
+        .unwrap();
+    let walking = |f: &Fixture| {
+        f.world
+            .get_component_by_id_as::<InputXRGamepadComponent>(pad)
+            .unwrap()
+            .locomotion
+    };
+    assert!(walking(&f));
+    for _ in 0..2 {
+        f.event(mountable, EventSignal::MountStarted { rider, mountable });
+        assert!(!walking(&f), "a seated rider cannot walk");
+        f.event(mountable, EventSignal::MountEnded { rider, mountable });
+        assert!(walking(&f), "dismounting restores walking");
+    }
+
+    // A rider whose walking was already off stays off after dismounting.
+    f.world
+        .get_component_by_id_as_mut::<InputXRGamepadComponent>(pad)
+        .unwrap()
+        .locomotion = false;
+    f.event(mountable, EventSignal::MountStarted { rider, mountable });
+    f.event(mountable, EventSignal::MountEnded { rider, mountable });
+    assert!(!walking(&f));
+
+    // Placeholder riders (no live Rider) are ignored without errors.
+    f.event(
+        mountable,
+        EventSignal::MountStarted {
+            rider: ComponentId::default(),
+            mountable,
+        },
+    );
+}
+
+#[test]
+fn powered_mounted_car_starts_its_laser_pair_and_rocket_burst() {
+    use crate::engine::ecs::component::{AnimationComponent, AnimationState, MountableComponent};
+    let mut f = Fixture::new(
+        r#"
+        import {display_car_desktop} from "../assets/components/vehicles/display_car.mms"
+        display_car_desktop("test_car",[0,4,0],0,"test_mount")
+    "#,
+    );
+    let body = f.named("test_car");
+    let seat = f
+        .world
+        .children_of(body)
+        .iter()
+        .copied()
+        .find(|&id| {
+            f.world
+                .get_component_by_id_as::<MountableComponent>(id)
+                .is_some_and(|m| !m.carry)
+        })
+        .unwrap();
+    let playing = |f: &Fixture, label: &str| {
+        f.world
+            .get_component_by_id_as::<AnimationComponent>(f.named(label))
+            .unwrap()
+            .state
+            != AnimationState::Paused
+    };
+    let key = |code: &str| {
+        EventSignal::KeyDown(KeyboardEvent {
+            code: Some(code.into()),
+            key: code.into(),
+        })
+    };
+    f.event(
+        seat,
+        EventSignal::MountStarted {
+            rider: ComponentId::default(),
+            mountable: seat,
+        },
+    );
+    f.click_power();
+    f.event(ComponentId::default(), key("Space"));
+    assert!(playing(&f, "car_laser_pair"), "Space fires the laser pair");
+    f.event(ComponentId::default(), key("KeyR"));
+    assert!(playing(&f, "car_rockets_burst"), "R starts the rocket burst");
 }

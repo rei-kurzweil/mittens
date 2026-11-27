@@ -47,6 +47,53 @@ impl<H: Host> Session<H> {
         self.module_cache = module_cache;
         result
     }
+    /// Invoke a retained keyframe callback for one pass; see `CallbackPhase`.
+    pub fn invoke_callback_in_phase(
+        &mut self,
+        handle: CallbackHandle,
+        args: Vec<Value>,
+        phase: crate::CallbackPhase,
+    ) -> Result<Value, EvalError> {
+        self.prune_component_fields()?;
+        if !self.context.owns_callback(handle) {
+            return Err(crate::HostError {
+                kind: crate::HostErrorKind::ForeignHandle,
+                operation: "invoke_callback".into(),
+                message: format!("callback handle {handle:?} belongs to another session"),
+            }
+            .into());
+        }
+        let callback = self
+            .callbacks
+            .get(&handle)
+            .cloned()
+            .ok_or_else(|| crate::HostError {
+                kind: crate::HostErrorKind::StaleHandle,
+                operation: "invoke_callback".into(),
+                message: format!(
+                    "callback handle {handle:?} is no longer retained by this session"
+                ),
+            })?;
+        let scopes = std::mem::take(&mut self.scopes);
+        let callbacks = std::mem::take(&mut self.callbacks);
+        let module_cache = std::mem::take(&mut self.module_cache);
+        let mut evaluator = Evaluator::for_session(
+            &mut self.host,
+            scopes,
+            self.heap.clone(),
+            callbacks,
+            self.runtime.catalog.clone(),
+            &mut self.context,
+            None,
+            module_cache,
+        );
+        let result = evaluator.invoke_value_in_phase(callback, args, phase);
+        let (scopes, callbacks, module_cache) = evaluator.into_session_state();
+        self.scopes = scopes;
+        self.callbacks = callbacks;
+        self.module_cache = module_cache;
+        result
+    }
     pub fn invoke_callback_invocation(
         &mut self,
         invocation: crate::CallbackInvocation,

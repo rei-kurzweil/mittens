@@ -13,6 +13,23 @@ Group the AmbientOcclusion constructor/builders (added for
 `docs/task/ambient-occlusion-baking.md`) with the rendering/materials family.
 Validate MMS round trips for `texcoord0`, the numeric builders and debug modes.
 
+`PathGraph` (2026-11-25) keeps its constructor, method declarations and
+host methods together in `src/scripting/path_graph_api.rs`, like
+`morph_api.rs`. The central registry, runtime config and host files only gained
+one dispatch line each; move that module with the physics/motion family if a
+split happens.
+
+Group AvatarControl runtime methods with the existing avatar and tracking
+bindings in a future registry split. Keep solved posture readable from the
+component and preserve scoped posture events. Validate getter/event agreement
+and torso mount registration against both standing and crawling avatars.
+
+Keep the XRHand positional constructor and its typed pose methods together in
+the avatar/rigging/tracking family when splitting the oversized registries.
+The constructor spelling migration is scoped and does not require new runtime
+dispatch or per-frame work. Validate MMS construction and serialization,
+rejection of the removed `.new` spelling, and representative XR scene loads.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation
@@ -90,6 +107,14 @@ and operation routing in host.rs. Keep typed direct calls, shared value conversi
 and existing phase gating; avoid per-operation runtime dispatch or new per-frame
 allocations. Validate language tests, partial transform execution, morph ownership
 and two-peer avatar tests. This proposal does not perform the split.
+
+## Persisted network preferences
+
+Keep the network preference schemas and host calls in a settings adapter.
+Consider grouping the settings API routing into one cohesive preferences
+dispatcher as more network settings are added. Keep file I/O on explicit
+preference calls and preserve direct dispatch in frame callbacks. Validate
+default and persisted preferences, the dock toggle, and existing calibration.
 
 ## Authored morph-animation API
 

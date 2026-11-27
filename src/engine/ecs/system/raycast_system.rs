@@ -1016,6 +1016,50 @@ mod tests {
             0
         );
     }
+    #[test]
+    fn a_requested_ray_that_hits_nothing_reports_one_miss() {
+        use crate::engine::ecs::EventSignal;
+        use crate::engine::ecs::component::{Camera3DComponent, RayCastComponent};
+        let mut world = World::default();
+        let camera = world.add_component(Camera3DComponent::new());
+        let muzzle = world.add_component(TransformComponent::new());
+        world.add_child(camera, muzzle).unwrap();
+        let mut ray = RayCastComponent::event_driven();
+        ray.parent_forward = true;
+        ray.nearest_hit_only = true;
+        ray.max_distance = 3.0;
+        ray.cast_requests = 1;
+        let ray = world.add_component(ray);
+        world.add_child(muzzle, ray).unwrap();
+        // Beyond the ray's reach.
+        let far = add_raycastable_cube(&mut world, -5.);
+        let mut system = RayCastSystem::default();
+        system.notify_renderable_added(&world, far);
+        let mut visuals = VisualWorld::default();
+        let mut rx = RxWorld::default();
+        system.register_raycast(&mut world, &mut visuals, ray);
+        for _ in 0..2 {
+            system.tick_with_queue(
+                &mut world,
+                &mut visuals,
+                &InputState::default(),
+                &mut rx,
+                &BvhSystem::default(),
+                &PointerActivations::default(),
+                &PointerSystem::default(),
+                0.016,
+            );
+        }
+        // The second tick had no request, so it casts nothing.
+        let events = rx.drain_ready_events();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].event,
+            Some(EventSignal::RayMissed { raycaster, origin: [0., 0., 0.], dir: [0., 0., -1.], max_distance })
+                if raycaster == ray && max_distance == 3.0
+        ));
+    }
+
     use super::RayCastSystem;
     use crate::engine::ecs::component::RaycastableShapeType;
     use crate::engine::ecs::component::{
