@@ -163,8 +163,12 @@ pub(super) fn try_init_or_route_capsule(
         (false, None) => 1.0,
     };
 
-    let measured_bounds =
-        BoundsSystem::measure_renderable_subtree_bounds(world, render_assets, model_root_id);
+    let measured_bounds = BoundsSystem::measure_renderable_subtree_bounds_pruned(
+        world,
+        render_assets,
+        model_root_id,
+        |node| Some(node) == avc.body_mount,
+    );
     let measured_inference = match measured_bounds {
         RenderableBoundsMeasure::Measured(bounds) => {
             infer_upright_capsule(&bounds, avc.capsule_radius).map(|inferred| (bounds, inferred))

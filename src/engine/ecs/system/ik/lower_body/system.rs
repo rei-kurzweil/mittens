@@ -1,6 +1,7 @@
 //! The only lower-body scheduler and pose writer. Per-avatar state lives here.
 use super::leg::solve_leg;
 use super::rig::*;
+use super::support::{Support, VisualFloorAnchor};
 use super::walking_debug::{WalkingFrame, WalkingOverlay};
 use super::{FootGoal, FootPhase, FootState, LowerBodyStatus, crouch, support::SupportQuery};
 use super::{WalkingDiagnostics, walking::WalkingState};
@@ -34,6 +35,8 @@ pub(super) struct LowerBodyInstance {
     bind_error: Option<&'static str>,
     status: LowerBodyStatus,
     feet: Option<[FootState; 2]>,
+    posture_floor: Option<Support>,
+    visual_floor_anchor: VisualFloorAnchor,
     support_frame: Option<(ComponentId, f32)>,
     walking: WalkingState,
     airborne: super::airborne::AirborneState,
@@ -74,12 +77,37 @@ impl LowerBodyIkSystem {
         id: ComponentId,
         foot: &FootState,
     ) -> Option<SupportSurface> {
+        self.traced_surface(
+            id,
+            foot.support?,
+            foot.support_height?,
+            foot.support_probe?,
+        )
+    }
+
+    /// A real surface near the collision body or locomotion origin when neither knee could plant.
+    pub(in crate::engine::ecs::system::ik) fn posture_floor(
+        &self,
+        id: ComponentId,
+    ) -> Option<(f32, ComponentId, Option<SupportSurface>)> {
+        let hit = self.avatars.get(&id)?.posture_floor?;
+        Some((
+            hit.height,
+            hit.zone,
+            self.traced_surface(id, hit.zone, hit.height, hit.probe),
+        ))
+    }
+
+    fn traced_surface(
+        &self,
+        id: ComponentId,
+        zone: ComponentId,
+        height: f32,
+        [x, z]: [f32; 2],
+    ) -> Option<SupportSurface> {
         if self.support_target != Some(id) {
             return None;
         }
-        let zone = foot.support?;
-        let height = foot.support_height?;
-        let [x, z] = foot.support_probe?;
         self.support_hits
             .borrow()
             .iter()
@@ -173,6 +201,7 @@ impl LowerBodyIkSystem {
         }
         let index = contacts.support_index(world);
         for (&id, instance) in &mut self.avatars {
+            instance.posture_floor = None;
             let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
                 continue;
             };
@@ -248,6 +277,8 @@ impl LowerBodyIkSystem {
                     &mut instance.walking,
                     &mut instance.airborne,
                     previous_floor,
+                    &mut instance.posture_floor,
+                    &mut instance.visual_floor_anchor,
                     world,
                     avatar,
                     &config,
@@ -364,6 +395,8 @@ fn solve_frame(
     walking: &mut WalkingState,
     airborne: &mut super::airborne::AirborneState,
     previous_floor: Option<f32>,
+    posture_floor: &mut Option<Support>,
+    visual_floor_anchor: &mut VisualFloorAnchor,
     world: &World,
     avatar: &AvatarControlComponent,
     walking_config: &WalkingIkComponent,
@@ -435,6 +468,13 @@ fn solve_frame(
     } else {
         0.0
     };
+    let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
+    let kneeling = kneeling.filter(|_| !flying);
+    let visual_floor_origin = if kneeling.is_some() && !avatar.collision_enabled {
+        visual_floor_anchor.position(world, id, avatar.movement_target.as_ref())
+    } else {
+        None
+    };
     let ground = SupportQuery::new(
         world,
         index,
@@ -442,30 +482,41 @@ fn solve_frame(
         id,
         soles,
         previous_floor,
+        kneeling.is_some(),
+        visual_floor_origin,
         body.scale[0],
         padding,
         stack,
         candidates,
         support_trace,
     )?;
-    let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
     let mut frame = walking_frame.map(|slot| slot.insert(WalkingFrame::new(body, soles)));
-    if let Some(kneel_floor) = kneeling.filter(|_| !flying) {
+    if let Some(kneel_floor) = kneeling {
         if let Some(frame) = &mut frame {
             frame.trace.reason = "kneeling";
         }
         walking.reset();
-        return super::kneel::solve(
+        let independent_floor_reference = avatar.collision_enabled || visual_floor_origin.is_some();
+        let feet = super::kneel::solve(
             rig,
             kneel_gait,
             bases,
             &ground,
             previous_floor.or(kneel_floor),
+            independent_floor_reference,
             body.rotation_quat_xyzw,
             avatar.crouch_knee_limit,
             dt_sec,
             emit,
         );
+        if independent_floor_reference
+            && !feet
+                .as_ref()
+                .is_ok_and(|feet| feet.iter().any(|foot| foot.support.is_some()))
+        {
+            *posture_floor = ground.at(ground.center());
+        }
+        return feet;
     }
     let rest = std::array::from_fn::<_, 2, _>(|i| {
         crouch::evaluate(

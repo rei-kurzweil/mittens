@@ -34,6 +34,7 @@ pub(crate) struct SpineRig {
     pub(crate) pitch_axis: [f32; 3],
     pub(crate) generation: u64,
     active: bool,
+    body_mount: Option<ComponentId>,
 }
 
 fn rest_in(
@@ -150,6 +151,7 @@ impl SpineRig {
             pitch_axis: left.map(|v| v / width),
             generation: report.generation,
             active: false,
+            body_mount: None,
         })
     }
 
@@ -171,6 +173,62 @@ impl SpineRig {
     /// Root-frame rest segments from the hips up to the head.
     pub(crate) fn segments(&self) -> &[[f32; 3]] {
         &self.segments[..=self.count]
+    }
+
+    /// Compensate for the chest joint's imported rest axes.
+    /// Once attached, ordinary transform propagation follows the solved pose.
+    pub(super) fn attach_body_mount(
+        &mut self,
+        world: &World,
+        emit: &mut dyn SignalEmitter,
+        mount: ComponentId,
+    ) {
+        let chest = self.bones[self.count - 1];
+        let parent = world.parent_of(mount);
+        if parent == Some(chest) && self.body_mount == Some(mount) {
+            return;
+        }
+        if parent != Some(self.root) && parent != Some(chest) {
+            return;
+        }
+        let mut ancestor = Some(chest);
+        while let Some(id) = ancestor {
+            if id == mount {
+                return;
+            }
+            ancestor = world.parent_of(id);
+        }
+        let Ok(rest) = rest_in(world, self.root, chest) else {
+            return;
+        };
+        if rest.scale.into_iter().any(|scale| scale <= 1e-5) {
+            return;
+        }
+        let scale = rest.scale.map(|scale| scale.recip());
+        let rotation = quat_conjugate(rest.rotation_quat_xyzw);
+        let offset = crate::utils::math::quat_rotate_vec3(
+            rotation,
+            [0.0, -self.head_rest_height * 0.08, 0.0],
+        );
+        if parent != Some(chest) {
+            emit.push_intent_now(
+                chest,
+                IntentValue::Attach {
+                    parent: chest,
+                    child: mount,
+                },
+            );
+        }
+        emit_pose(
+            emit,
+            mount,
+            TransformTrs::new(
+                std::array::from_fn(|i| offset[i] * scale[i]),
+                rotation,
+                scale,
+            ),
+        );
+        self.body_mount = Some(mount);
     }
 
     /// Per-bone pitch for a total torso pitch, hips first; entries past
@@ -281,6 +339,7 @@ mod tests {
             pitch_axis: [1.0, 0.0, 0.0],
             generation: 0,
             active: false,
+            body_mount: None,
         }
     }
 

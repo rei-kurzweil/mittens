@@ -1369,6 +1369,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_method(
                         component,
                         canonical,
+                        "posture_state",
+                        method(vec![], mms::ValueType::Table),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "bind_body_mount",
+                        method(vec![mms::ValueType::Component], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
                         "capsule_ready",
                         method(vec![], mms::ValueType::Bool),
                     );

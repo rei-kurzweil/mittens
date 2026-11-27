@@ -1,7 +1,10 @@
 //! Read-only flat support queries against the shared, retained contact BVH.
 use super::LowerBodyStatus;
 use super::rig::{below, matrix};
-use crate::engine::ecs::component::{AvatarControlComponent, ZoneComponent};
+use crate::engine::ecs::component::{
+    AvatarControlComponent, CollidableComponent, ComponentRef, QueryRootMode, ZoneComponent,
+    resolve_component_ref,
+};
 use crate::engine::ecs::system::{
     collidable_bvh::{CollidableBvh, SupportSurface},
     collision_geometry,
@@ -15,6 +18,40 @@ pub(super) struct Support {
     pub zone: ComponentId,
     pub height: f32,
     pub probe: [f32; 2],
+}
+
+/// Rigs with scene-owned collision can name a floor-relative movement root.
+/// Resolve its selector on topology changes and read the current pose directly.
+#[derive(Debug, Default)]
+pub(super) struct VisualFloorAnchor {
+    source: Option<ComponentRef>,
+    revision: Option<u64>,
+    target: Option<ComponentId>,
+}
+
+impl VisualFloorAnchor {
+    pub fn position(
+        &mut self,
+        world: &World,
+        owner: ComponentId,
+        source: Option<&ComponentRef>,
+    ) -> Option<[f32; 3]> {
+        let source = source?;
+        let revision = world.query_revision();
+        let source_changed = self.source.as_ref() != Some(source);
+        if source_changed || self.revision != Some(revision) {
+            self.target =
+                resolve_component_ref(world, source, Some(owner), QueryRootMode::WorldRoot)
+                    .filter(|&target| below(world, owner, target));
+            self.revision = Some(revision);
+            if source_changed {
+                self.source = Some(source.clone());
+            }
+        }
+        let frame = matrix(world, self.target?).ok()?;
+        let position = [frame[3][0], frame[3][1], frame[3][2]];
+        position.into_iter().all(f32::is_finite).then_some(position)
+    }
 }
 
 pub(super) struct SupportQuery<'a> {
@@ -39,6 +76,8 @@ impl<'a> SupportQuery<'a> {
         id: ComponentId,
         soles: [[f32; 3]; 2],
         previous_floor: Option<f32>,
+        kneeling: bool,
+        visual_floor_origin: Option<[f32; 3]>,
         scale: f32,
         horizontal_padding: f32,
         stack: &mut Vec<usize>,
@@ -59,8 +98,25 @@ impl<'a> SupportQuery<'a> {
                 .ok_or(Pending)?
                 .shape;
             let frame = matrix(world, capsule).map_err(UnsupportedRig)?;
-            let (center, shape) = collision_geometry::axis_aligned_world_shape(shape, frame)
+            let (mut center, shape) = collision_geometry::axis_aligned_world_shape(shape, frame)
                 .ok_or(UnsupportedRig("invalid capsule frame"))?;
+            if kneeling
+                && let Some(target) = avatar.capsule_vertical_source.or_else(|| {
+                    avatar.movement_target.as_ref()?;
+                    world
+                        .get_component_by_id_as::<CollidableComponent>(collider)?
+                        .movement_target_id
+                })
+                && below(world, id, target)
+                && let Ok(frame) = matrix(world, target)
+                && let Some((standing, standing_y)) = avatar.capsule_standing
+            {
+                // Network and scripted rigs can parent the collision body to
+                // their pitched model. Probe near the locomotion floor origin
+                // so a floating crawl pose can't move the query off the floor.
+                let base = frame[3][1] + standing_y + standing.aabb_local().0[1];
+                center[1] = base - shape.aabb_local().0[1];
+            }
             let (min, max) = collision_geometry::transformed_aabb(
                 shape,
                 TransformTrs::new(center, [0.0, 0.0, 0.0, 1.0], [1.0; 3])
@@ -68,6 +124,9 @@ impl<'a> SupportQuery<'a> {
                     .unwrap(),
             );
             (center, min, max, min[1])
+        } else if let Some([x, bottom, z]) = visual_floor_origin {
+            let center = [x, bottom + scale * 0.5, z];
+            (center, [x, bottom, z], center, bottom)
         } else {
             // Visual/network rigs still need read-only floor support. Derive a
             // query frame from their soles without enabling collision response

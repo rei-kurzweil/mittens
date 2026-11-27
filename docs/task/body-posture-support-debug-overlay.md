@@ -5,6 +5,12 @@ Body support** in Sakura Twilight Simpler. It follows the selected avatar,
 or the active avatar camera if the selection does not identify a rig. The
 adjacent **Walking gait** toggle uses the same selection.
 
+Enable **Paw capture HUD** in the same panel to show a paw button when the
+selected or active avatar has a posture sample. Clicking saves the displayed
+decision with its time, floor, contacts, and motion, and places a colored paw
+at the avatar's location. Captures stay in the live scene when the HUD is
+turned off.
+
 The third-person camera worked in the playtest. The avatar sometimes stayed
 in a plausible crawl pose at the wrong height above the surface. Getting in
 and out of a vehicle appeared to clear it. Tiny-player playtesting is still
@@ -12,16 +18,21 @@ pending in the [player grabbing and equipment tracker](player-grabbing-and-tiny-
 
 ## Retained floor hypothesis
 
-`BodySolverSystem` selects the lowest lower-body `support_height` and keeps
-its last value when no height arrives. `kneel.rs` can return that remembered
-height even when neither solved knee has a support zone. Auto posture compares
-head height to the stored floor, and entering a vehicle clears that floor.
-This is a candidate explanation for the recovery after dismount. Capture the
-floor and source before and after a stuck transition to verify it.
+`BodySolverSystem` uses the lowest live leg contact or a body floor hit.
+When both are unavailable it retains the last floor. Auto posture compares
+head height to that floor, and entering a vehicle clears it. A probe centered
+on the retained height can miss a new floor after a drop and keep the rig
+horizontal. Capture the floor and source before and after a stuck transition.
 
 Instrument the policy before changing it. A short loss of contact, a genuine
 fall, and a stale floor after moving to another surface can currently look
 similar in the avatar's pose.
+
+Miku's scene-owned capsule can land while posture still remembers the upper
+floor. For a kneeling rig without an avatar-owned collider, use its authored
+locomotion origin to look for nearby support. Keep the remembered floor
+during the drop and accept a new height only from a live surface. The green
+and blue thresholds both reference that same floor.
 
 ## Overlay for one avatar
 
@@ -138,3 +149,22 @@ the crawl state gets stuck again.
   visualization to a dedicated module and keep one lower-body solve per
   avatar per frame. Validate the existing gait, grounding, and crawl tests
   with both debug toggles disabled and then enabled.
+- Keep landing floor reacquisition with the lower-body support query and
+  preserve separate knee-contact and posture-floor results. If the scheduler
+  is split, reuse its existing BVH candidates for both. Validate stacked
+  floors, a drop while crouched, and the case where no live floor is in reach.
+  Cover Miku and other rigs with scene-owned collision. Keep explicit
+  locomotion-target resolution cached and preserve the support-query bounds
+  around that rig's current floor origin.
+- If AvatarControl runtime fields are split, keep the solved posture and
+  wearable mount binding with avatar pose state. Bind mounts when the mapped
+  torso changes and use transform propagation for live alignment. Check avatar
+  swaps, posture events, and wearer scale without adding per-frame lookups.
+  Keep capsule inference with collision setup and prune worn equipment from
+  model bounds so swapping avatars cannot change how their capsules are fitted.
+- Keep manual capture records, paw meshes, and HUD lifecycle in the
+  body diagnostics module. A future editor split can register all avatar
+  diagnostic settings together, including capture HUD visibility. A scheduler
+  split can group post-pose camera publication and camera-relative diagnostics.
+  Keep mesh preparation lazy, use the existing solve snapshot, and validate
+  capture clicks and HUD teardown through the Settings-only editor path.

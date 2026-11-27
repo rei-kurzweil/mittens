@@ -210,6 +210,10 @@ export fn make_rooftop_player(options) {
         }
     }
     let eye_tracking = XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
+    let shield_mount = null
+    if options["shield_mount"] == true {
+        shield_mount = T.position(0.0, 0.96, 0.0) { name = prefix + "_shield_mount" }
+    }
     // The lay pivot sits between AVC's model frame and the model, so a paused
     // body can be laid down without tipping the root or capsule (downed.mms).
     // It stays at identity whenever AVC is running.
@@ -231,6 +235,10 @@ export fn make_rooftop_player(options) {
         lay.frame = lay_frame
         lay.model_frame = model_frame
         avatar.attach(model_frame)
+        if shield_mount {
+            model_frame.attach(shield_mount)
+            avatar.bind_body_mount(shield_mount)
+        }
         avatar.attach(left_driver)
         avatar.attach(right_driver)
         if local_player {
@@ -254,14 +262,6 @@ export fn make_rooftop_player(options) {
     mount_body(avatar, initial, options.avatar)
     on(initial.model, "GLTFInitialized", fn(event) { animate_face(event.gltf, avatar) })
     let head = T.position(0.0, initial.eye_height, 0.0) { name = prefix + "_head_target" avatar }
-    let shield_mount = null
-    let shield_frame = null
-    if options["shield_mount"] == true {
-        shield_mount = T.position(0.0, -0.62, 0.0) { name = prefix + "_shield_mount" }
-        // Upright, but at the rig's scale so a tiny player's shield fits them.
-        shield_frame = TOP.fork_trs().drop("rotation") { shield_mount }
-        head.attach(shield_frame)
-    }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
     let health = null
     let health_view = null
@@ -457,7 +457,6 @@ export fn make_rooftop_player(options) {
             next_head.trs(state.head.trs())
             if local_player && !use_xr { next_head.update_transform([0.0, spec.eye_height, 0.0]) }
             driver.attach(next_head)
-            if shield_frame { next_head.attach(shield_frame) }
             if head_display { next_head.attach(head_display) }
             if hitbox { next_head.attach(hitbox.root) }
             detach_avatar_equipment(state.head)

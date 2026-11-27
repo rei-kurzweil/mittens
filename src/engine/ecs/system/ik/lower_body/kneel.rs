@@ -137,6 +137,7 @@ pub(super) fn solve(
     bases: [TransformMatrix; 2],
     ground: &SupportQuery,
     previous_floor: Option<f32>,
+    independent_floor_reference: bool,
     body_rotation: [f32; 4],
     knee_limit: f32,
     dt_sec: f32,
@@ -154,9 +155,8 @@ pub(super) fn solve(
     let pole = vec3_normalize(vec3_sub(forward, up));
     // Turn the upright foot over so it points back along the shin, sole up.
     let turn_over = quat_from_axis_angle(left, std::f32::consts::PI);
-    // The floor carries over from standing. A fresh query may replace it
-    // only within a step of that floor: the query's reference height
-    // follows the pitched body, and must not drag the floor down with it.
+    // A surface near the collision body or locomotion origin can supersede
+    // history across a drop. Retain the step limit for pose-relative queries.
     let Some(previous) = previous_floor else {
         return Err(LowerBodyStatus::NoSupport);
     };
@@ -169,7 +169,7 @@ pub(super) fn solve(
     let floors = hips.map(|hip| {
         ground
             .at(hip)
-            .filter(|s| (s.height - previous).abs() <= MAX_STEP * scale)
+            .filter(|s| independent_floor_reference || (s.height - previous).abs() <= MAX_STEP * scale)
             .map_or(previous, |s| s.height)
     });
     // Knee contact spots: where the thigh reaches the floor. Straight below

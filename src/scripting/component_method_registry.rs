@@ -143,6 +143,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "set_mouth_open_rms_center_range"
                     | "set_mouth_open_amount"
                     | "capsule_ready"
+                    | "posture_state"
+                    | "bind_body_mount"
                     | "set_third_person"
                     | "set_legs_enabled"
                     | "set_paused"
@@ -207,6 +209,32 @@ pub(crate) fn invoke_component_method(
                 }
                 _ => Err(format!("{method}(): invalid arguments")),
             }
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "posture_state") => {
+            if !args.is_empty() {
+                return Err("posture_state(): expected no arguments".into());
+            }
+            let avatar = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .ok_or("posture_state(): expected an AvatarControl")?;
+            let mode = avatar.solved_posture;
+            Ok(Value::Map(std::collections::HashMap::from([
+                ("mode".into(), Value::String(mode.as_str().into())),
+                ("pose".into(), Value::String(mode.pose().into())),
+            ])))
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "bind_body_mount") => {
+            let [Value::ComponentObject { id: mount, .. }] = args else {
+                return Err("bind_body_mount(): expected a Transform under the avatar model root".into());
+            };
+            if world.get_component_by_id_as::<TransformComponent>(*mount).is_none() {
+                return Err("bind_body_mount(): expected a Transform".into());
+            }
+            let avatar = world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                .ok_or("bind_body_mount(): expected an AvatarControl")?;
+            avatar.body_mount = Some(*mount);
+            Ok(Value::Null)
         }
         ("AvatarControl" | "AVC" | "avatar_control", "capsule_ready") => {
             if !args.is_empty() {

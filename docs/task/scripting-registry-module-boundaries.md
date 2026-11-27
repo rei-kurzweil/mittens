@@ -19,6 +19,11 @@ host methods together in `src/scripting/path_graph_api.rs`, like
 one dispatch line each; move that module with the physics/motion family if a
 split happens.
 
+Group AvatarControl runtime methods with the existing avatar and tracking
+bindings in a future registry split. Keep solved posture readable from the
+component and preserve scoped posture events. Validate getter/event agreement
+and torso mount registration against both standing and crawling avatars.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation

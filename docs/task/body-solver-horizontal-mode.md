@@ -51,6 +51,24 @@ and tiny avatar scales.
   target to 0.7 m and checks horizontal mode, knees and ankles on the roof, a
   near-horizontal torso, and a clean return to vertical.
 
+### MMS posture and worn equipment
+
+`avatar.posture_state()` reads the current solved `mode` and `pose`. Subscribe
+to `PostureChanged` on the same avatar for changes. Its event includes
+`avatar`, `mode`, `previous`, `pose`, and `reason`.
+
+```mms
+let initial = avatar.posture_state()
+on(avatar, "PostureChanged", fn(event) {
+    print(event.previous + " -> " + event.mode + " / " + event.pose)
+})
+```
+
+Rooftop players bind their shield mount with `avatar.bind_body_mount(mount)`.
+The mount starts under the avatar model root. The mapped torso takes over
+when ready, and the shell and bullet proxy follow its pose and scale during
+posture transitions.
+
 ### Not yet
 
 - Hands are not planted. Tracked VR hands follow the controllers as before;

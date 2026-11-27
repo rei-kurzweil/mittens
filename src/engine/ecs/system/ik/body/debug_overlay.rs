@@ -1,5 +1,6 @@
 //! Retained, editor-selected posture diagnostics. Reads the solver's decision
 //! inputs and never samples or changes collision geometry.
+use super::paw_capture::{Frame, PawCapture};
 use super::support_outline::Outline;
 use super::{BodyMode, BodySolverSystem};
 use crate::engine::ecs::component::{
@@ -11,8 +12,8 @@ use crate::engine::ecs::system::ik::debug_draw::{self, Point, Readout};
 use crate::engine::ecs::system::{
     CameraSystem, TransformSystem, VelocitySystem, collision_geometry, input_xr_flying::is_flying,
 };
-use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::engine::graphics::VisualWorld;
+use crate::engine::ecs::{CommandQueue, ComponentId, IntentValue, RxWorld, SignalEmitter, World};
+use crate::engine::graphics::{RenderAssets, VisualWorld};
 use crate::utils::math::quat_rotate_vec3;
 
 const IDENTITY: [f32; 4] = [0., 0., 0., 1.];
@@ -26,10 +27,12 @@ pub(super) struct Sample {
     pub floor: Option<f32>,
     pub source: Option<ComponentId>,
     pub surface: Option<SupportSurface>,
+    pub floor_from_body: bool,
     pub contacts: [Option<Contact>; 2],
     pub enter: f32,
     pub exit: f32,
     pub mode: BodyMode,
+    pub reason: &'static str,
     pub mounted: bool,
 }
 
@@ -46,6 +49,9 @@ pub(super) struct DebugOverlay {
     pub sample: Option<Sample>,
     visuals: Option<Visuals>,
     live_age: Option<(ComponentId, f32)>,
+    support: bool,
+    capture: bool,
+    paw: PawCapture,
 }
 
 #[derive(Debug)]
@@ -64,10 +70,13 @@ impl BodySolverSystem {
         cameras: &CameraSystem,
         support: bool,
         walking: bool,
+        capture: bool,
         selected: Option<ComponentId>,
     ) -> (Option<ComponentId>, Option<ComponentId>) {
         self.debug.sample = None;
-        let target = (support || walking)
+        self.debug.support = support;
+        self.debug.capture = capture;
+        let target = (support || walking || capture)
             .then(|| {
                 let mut node = selected;
                 while let Some(id) = node {
@@ -103,8 +112,21 @@ impl BodySolverSystem {
                     })
             })
             .flatten();
-        self.debug.target = target.filter(|_| support);
+        self.debug.target = target.filter(|_| support || capture);
         (self.debug.target, target.filter(|_| walking))
+    }
+
+    pub(crate) fn sync_paw_capture(
+        &mut self,
+        world: &mut World,
+        visuals: &VisualWorld,
+        assets: &mut RenderAssets,
+        rx: &mut RxWorld,
+        queue: &mut CommandQueue,
+    ) -> bool {
+        self.debug
+            .paw
+            .sync(world, visuals, assets, rx, queue, self.debug.capture)
     }
 
     pub(crate) fn draw_debug(
@@ -114,7 +136,22 @@ impl BodySolverSystem {
         emit: &mut dyn SignalEmitter,
         dt: f32,
     ) {
-        let (Some(avatar), Some(sample)) = (self.debug.target, self.debug.sample) else {
+        let frame = self.debug.target.zip(self.debug.sample);
+        self.debug.paw.frame = if self.debug.capture {
+            frame.map(|(avatar, sample)| Frame {
+                avatar,
+                sample,
+                base: collider_base(world, avatar),
+                motion: if sample.mounted {
+                    "MOUNTED"
+                } else {
+                    motion(world, avatar)
+                },
+            })
+        } else {
+            None
+        };
+        let Some((avatar, sample)) = frame.filter(|_| self.debug.support) else {
             self.debug.live_age = None;
             if let Some(old) = self.debug.visuals.take() {
                 emit.push_intent_now(
@@ -189,27 +226,29 @@ impl BodySolverSystem {
             let Some(floor) = sample.floor else {
                 return format!("{posture} | {motion}\nFLOOR NONE\nBASE -- | HEAD --");
             };
-            let source = if sample.source.is_some() {
+            let source = if sample.floor_from_body {
+                "LIVE (BODY)".into()
+            } else if sample.source.is_some() {
                 "LIVE".into()
             } else if let Some((_, age)) = age {
                 format!("REMEMBERED {age:.1} s")
             } else {
                 "REMEMBERED".into()
             };
-            let base = collider_base(world, avatar).map_or_else(|| "--".into(), |base| format!("{:+.2} m", base - floor));
+            let base = collider_base(world, avatar).map_or_else(|| "--".into(), |base| format!("{:+.2} m", base[1] - floor));
             let head = sample.head[1] - floor;
             format!("{posture} | {motion}\nFLOOR {floor:.2} m | {source}\nBASE {base} | HEAD {head:+.2} m")
         });
     }
 }
 
-fn collider_base(world: &World, id: ComponentId) -> Option<f32> {
+fn collider_base(world: &World, id: ComponentId) -> Option<Point> {
     let avatar = world.get_component_by_id_as::<AvatarControlComponent>(id)?;
     let zone = world.parent_of(avatar.capsule_collidable_id?)?;
     let shape = world.get_component_by_id_as::<ZoneComponent>(zone)?.shape;
     let frame = TransformSystem::world_model(world, avatar.capsule_transform_id?)?;
     let (center, shape) = collision_geometry::axis_aligned_world_shape(shape, frame)?;
-    Some(center[1] + shape.aabb_local().0[1])
+    Some([center[0], center[1] + shape.aabb_local().0[1], center[2]])
 }
 
 fn movement_target(world: &World, avatar: &AvatarControlComponent) -> Option<ComponentId> {

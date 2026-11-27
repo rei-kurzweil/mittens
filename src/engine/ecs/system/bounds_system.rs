@@ -53,10 +53,19 @@ impl BoundsSystem {
         render_assets: &RenderAssets,
         root: ComponentId,
     ) -> RenderableBoundsMeasure {
+        Self::measure_renderable_subtree_bounds_pruned(world, render_assets, root, |_| false)
+    }
+
+    pub(crate) fn measure_renderable_subtree_bounds_pruned(
+        world: &World,
+        render_assets: &RenderAssets,
+        root: ComponentId,
+        stop_at: impl Fn(ComponentId) -> bool,
+    ) -> RenderableBoundsMeasure {
         let measured = Self::measure_subtree_bounds(
             world,
             root,
-            |_| false,
+            stop_at,
             |node| {
                 let Some(r) = world.get_component_by_id_as::<RenderableComponent>(node) else {
                     return Ok(None);

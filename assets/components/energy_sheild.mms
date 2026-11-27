@@ -19,7 +19,16 @@ let DISC_RADIUS = 0.022
 export fn energy_shield(name, beats_per_second, options) {
     let state = { integrity = 100.0 worn = false opponent = false visual = null proxy = null pickup = null grab = null }
     let material = ui_unlit_material()
-    let root = T { name = name Selectable.off() material }
+    // The wearer mount is the transform above the item. Keep both the flash
+    // and the hit proxy on that pose even if the item's own grip pose is stale.
+    let worn_geometry = T {}
+    let root = T {
+        name = name
+        Selectable.off()
+        material
+        TOP.fork_trs().drop("rotation").sample_ancestor("rotation", 1)
+            .sample_ancestor("translation", 1) { worn_geometry }
+    }
 
     fn sync_collision() {
         let blocking = state.worn && state.opponent && state.integrity > 0.0
@@ -27,7 +36,7 @@ export fn energy_shield(name, beats_per_second, options) {
             let ray_box = R.cube() { Opacity.opacity(0.0).multiple_layers() Raycastable.enabled() }
             ray_box.energy_shield = root
             let proxy = T.scale(0.96, 1.92, 0.96) { name = name + "_bullet_proxy" ray_box }
-            root.attach(proxy)
+            worn_geometry.attach(proxy)
             state.proxy = proxy
         }
         if !blocking && state.proxy {
@@ -82,7 +91,7 @@ export fn energy_shield(name, beats_per_second, options) {
                 Opacity.opacity(0.4)
                 Raycastable.disabled()
             }
-            root.attach(shell)
+            worn_geometry.attach(shell)
             state.visual = shell
         }
         visibility.play()

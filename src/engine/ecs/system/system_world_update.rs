@@ -129,13 +129,20 @@ impl SystemWorld {
         cpu_profile.mark(Phase::FrameDispatch);
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
-        let (mesh_bounds_visible, body_support_enabled, walking_gait_enabled, debug_avatar_selection) = {
+        let (
+            mesh_bounds_visible,
+            body_support_enabled,
+            walking_gait_enabled,
+            paw_capture_enabled,
+            debug_avatar_selection,
+        ) = {
             let state = self.editor_context.shared_state();
             let state = state.lock().expect("editor context state mutex poisoned");
             (
                 state.bounds_visible,
                 state.active_editor.is_some() && state.body_support_visible,
                 state.active_editor.is_some() && state.walking_gait_visible,
+                state.paw_capture_visible,
                 state.selected_component,
             )
         };
@@ -445,6 +452,7 @@ impl SystemWorld {
             &self.camera,
             body_support_enabled,
             walking_gait_enabled,
+            paw_capture_enabled,
             debug_avatar_selection,
         );
         self.lower_body_ik.set_debug_targets(support_debug, walking_debug);
@@ -609,6 +617,12 @@ impl SystemWorld {
         // Mount/AVC/ancestor changes above are reflected before mirror captures.
         self.camera.refresh_window_avatar_view(world, visuals);
         self.xr.publish_eye_cameras(world, visuals);
+        if self
+            .body_solver
+            .sync_paw_capture(world, visuals, render_assets, &mut self.rx, queue)
+        {
+            queue.flush(world, self, visuals, render_assets);
+        }
         self.mirror.tick(world, visuals, input, dt_sec);
         for texture_component in self.mirror.take_pending_texture_registrations() {
             self.register_texture(world, visuals, texture_component);

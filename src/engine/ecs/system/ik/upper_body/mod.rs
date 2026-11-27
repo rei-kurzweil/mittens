@@ -105,10 +105,13 @@ impl UpperBodyIkSystem {
             let Some(spine) = &mut instance.spine else {
                 continue;
             };
-            if world
-                .get_component_by_id_as::<AvatarControlComponent>(id)
-                .is_some_and(|avatar| avatar.paused)
-            {
+            let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
+                continue;
+            };
+            if let Some(mount) = avatar.body_mount {
+                spine.attach_body_mount(world, emit, mount);
+            }
+            if avatar.paused {
                 continue;
             }
             let pitch = body.torso_pitch(id);

@@ -13,6 +13,7 @@ use crate::utils::math::{mat4_mul_vec4, quat_from_axis_angle, quat_rotate_vec3};
 use std::collections::HashMap;
 
 mod debug_overlay;
+mod paw_capture;
 mod support_outline;
 
 /// Vertical is everything an upright avatar does today. Horizontal is on hands
@@ -171,7 +172,7 @@ impl BodySolverSystem {
 
     pub fn tick(
         &mut self,
-        world: &World,
+        world: &mut World,
         emit: &mut dyn SignalEmitter,
         upper: &UpperBodyIkSystem,
         lower: &LowerBodyIkSystem,
@@ -193,6 +194,9 @@ impl BodySolverSystem {
                 upper.spine(id).and_then(|s| world_matrix(world, s.root)),
             ) else {
                 *instance = BodyInstance::default();
+                if avatar.solved_posture != instance.mode {
+                    publish_posture(world, emit, id, instance.mode, "rig_unavailable");
+                }
                 continue;
             };
             let mounted = attachments.is_avatar_mounted(id);
@@ -200,9 +204,12 @@ impl BodySolverSystem {
             let feet = (!mounted && !flying).then(|| lower.feet(id)).flatten();
             let sampled = feet.and_then(|feet| {
                 feet.iter()
-                    .filter_map(|foot| foot.support_height.map(|height| (height, foot.support)))
+                    .filter_map(|foot| foot.support_height.zip(foot.support))
                     .min_by(|a, b| a.0.total_cmp(&b.0))
             });
+            let body_floor = (!mounted && !flying && sampled.is_none())
+                .then(|| lower.posture_floor(id))
+                .flatten();
             let knees = !flying && instance.weight >= 0.5;
             if mounted && !instance.mounted {
                 // Feet stop reporting support while riding. The seat may carry
@@ -213,6 +220,8 @@ impl BodySolverSystem {
             } else if flying {
                 instance.support = None;
             } else if let Some((height, _)) = sampled {
+                instance.support = Some(height);
+            } else if let Some((height, _, _)) = body_floor {
                 instance.support = Some(height);
             }
             instance.mounted = mounted;
@@ -261,18 +270,11 @@ impl BodySolverSystem {
                 },
             };
             if next != instance.mode {
-                emit.push_event(
-                    id,
-                    EventSignal::PostureChanged {
-                        avatar: id,
-                        mode: next.as_str(),
-                        previous: instance.mode.as_str(),
-                        pose: next.pose(),
-                        reason,
-                    },
-                );
                 instance.mode = next;
                 instance.dwell = 0.0;
+            }
+            if avatar.solved_posture != instance.mode {
+                publish_posture(world, emit, id, instance.mode, reason);
             }
             let goal = if instance.mode == BodyMode::Horizontal {
                 1.0
@@ -300,8 +302,12 @@ impl BodySolverSystem {
                 let contacts = feet.map_or([None; 2], |feet| {
                     feet.map(|foot| {
                         let point = if knees { foot.knee } else { foot.solved_sole };
-                        foot.support_height
-                            .or(instance.support)
+                        let floor = if foot.support.is_some() {
+                            foot.support_height
+                        } else {
+                            instance.support
+                        };
+                        floor
                             .map(|floor| debug_overlay::Contact {
                                 point,
                                 floor,
@@ -313,12 +319,18 @@ impl BodySolverSystem {
                     head: [head[3][0], head[3][1], head[3][2]],
                     standing,
                     floor: instance.support,
-                    source: source_foot.and_then(|foot| foot.support),
-                    surface: source_foot.and_then(|foot| lower.support_surface(id, foot)),
+                    source: body_floor
+                        .map(|(_, zone, _)| zone)
+                        .or_else(|| source_foot.and_then(|foot| foot.support)),
+                    surface: body_floor
+                        .and_then(|(_, _, surface)| surface)
+                        .or_else(|| source_foot.and_then(|foot| lower.support_surface(id, foot))),
+                    floor_from_body: body_floor.is_some(),
                     contacts,
                     enter,
                     exit,
                     mode: instance.mode,
+                    reason,
                     mounted,
                 });
             }
@@ -358,6 +370,29 @@ impl BodySolverSystem {
             }
         }
     }
+}
+
+fn publish_posture(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    id: ComponentId,
+    mode: BodyMode,
+    reason: &'static str,
+) {
+    let Some(avatar) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) else {
+        return;
+    };
+    let previous = std::mem::replace(&mut avatar.solved_posture, mode);
+    emit.push_event(
+        id,
+        EventSignal::PostureChanged {
+            avatar: id,
+            mode: mode.as_str(),
+            previous: previous.as_str(),
+            pose: mode.pose(),
+            reason,
+        },
+    );
 }
 
 fn world_matrix(world: &World, id: ComponentId) -> Option<TransformMatrix> {

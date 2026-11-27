@@ -319,6 +319,8 @@ pub struct AvatarControlComponent {
 
     /// Body solver mode policy; see `BodyPosture`.
     pub posture: BodyPosture,
+    pub(crate) solved_posture: crate::engine::ecs::system::ik::BodyMode,
+    pub(crate) body_mount: Option<ComponentId>,
     /// Publish attached cameras from a view offset from the movement root.
     pub third_person: bool,
     pub(crate) camera_follow_root: Option<ComponentId>,
@@ -767,6 +769,8 @@ impl Default for AvatarControlComponent {
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
             posture: BodyPosture::Vertical,
+            solved_posture: Default::default(),
+            body_mount: None,
             third_person: false,
             camera_follow_root: None,
             third_person_orbit: Default::default(),

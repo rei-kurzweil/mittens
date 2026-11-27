@@ -478,7 +478,8 @@ fn energy_shield_hides_the_shell_and_reopens_a_broken_bullet_path() {
             r#"
             import { energy_shield } from "../assets/components/energy_sheild.mms"
             let shield = energy_shield("test_shield", 2.0)
-            shield
+            shield.update_transform([0.0, 0.0, 0.0], [Math.pi / 2.0, 0.0, 0.0])
+            T.position(2.0, 1.0, -3.0).scale(0.5, 0.5, 0.5) { shield }
             let report = Text { name = "shield_report" "" }
             report
             let events = T { name = "combat_test_events" }
@@ -512,6 +513,17 @@ fn energy_shield_hides_the_shell_and_reopens_a_broken_bullet_path() {
     event(&mut scene, "Hit");
     tick(&mut scene, 3);
     let shell = named(&scene, "test_shield_shell");
+    let proxy = named(&scene, "test_shield_bullet_proxy");
+    for (part, up) in [(shell, 0.5), (proxy, 0.96)] {
+        let world_model = TransformSystem::world_model(&scene.world, part).unwrap();
+        assert_eq!(&world_model[3][..3], &[2.0, 1.0, -3.0]);
+        assert!(
+            world_model[1][0].abs() < 1e-5
+                && (world_model[1][1] - up).abs() < 1e-5
+                && world_model[1][2].abs() < 1e-5,
+            "worn geometry should point up at the wearer's scale, got {world_model:?}"
+        );
+    }
     let opacity = scene.world.find_component(shell, "opacity").unwrap();
     assert_eq!(
         scene
