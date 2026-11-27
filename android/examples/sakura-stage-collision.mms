@@ -42,7 +42,7 @@ Gravity {
     let player_velocity = Velocity {
         T {
             name = "sakura_mobile_player"
-            T.position(0.0, -0.80, 0.0) {
+            T.position(0.0, 0.80, 0.0) {
                 Zone.capsule_y(0.25, 0.55) {
                     Collidable.slide().movement_target("/[name='sakura_mobile_player']")
                 }
@@ -77,9 +77,9 @@ Gravity {
     })
 }
 
-// Place the authored rooftop spawn at LOCAL eye height without enabling the
+// Place the authored rooftop at the STAGE floor (y = 0) without enabling the
 // engine's separate XR driver. Physical headset motion remains one-to-one.
-T.position(18.0, -(roof_height + 1.6), -3.0) {
+T.position(18.0, -roof_height, -3.0) {
     name = "android_sakura_world"
     pool_building("sakura_stage_tower", [-18.0, 0.0, 0.0], 8, 1.0, true, tiles, pink, true, false)
     // Keep exactly one cube per surrounding building in this first mobile scene.

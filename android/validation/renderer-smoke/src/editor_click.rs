@@ -87,6 +87,7 @@ fn click_row(universe: &mut Universe, row_name: &str, expected: EditorInteractio
             active: true,
             ..Default::default()
         },
+        eyes: None,
     };
     for phase in 0..3 {
         frame.input = XrInputState::default();

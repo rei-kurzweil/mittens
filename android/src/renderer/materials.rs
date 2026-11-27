@@ -35,7 +35,8 @@ pub(super) struct Materials {
     cameras: Vec<Buffer>,
     lights: Option<Buffer>,
     pub camera_sets: [[vk::DescriptorSet; 2]; 2],
-    pipelines: HashMap<(MaterialDefinitionId, bool, bool, bool), Pipeline>,
+    /// Keyed by definition, background, transparent, foveated and skinned.
+    pipelines: HashMap<(MaterialDefinitionId, bool, bool, bool, bool), Pipeline>,
     bindings: HashMap<BindingKey, Binding>,
 }
 impl Drop for Materials {
@@ -82,9 +83,16 @@ impl Materials {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+            // Deformed vertices for skinned meshes; custom fragments never use it.
+            let deformed = vk::DescriptorSetLayoutBinding::default()
+                .binding(2)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .stage_flags(vk::ShaderStageFlags::VERTEX);
             materials.layouts[0] = device
                 .create_descriptor_set_layout(
-                    &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[uniform, lights]),
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .bindings(&[uniform, lights, deformed]),
                     None,
                 )
                 .api("camera descriptor layout")?;
@@ -116,7 +124,7 @@ impl Materials {
                 },
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::STORAGE_BUFFER,
-                    descriptor_count: 4,
+                    descriptor_count: 8,
                 },
             ];
             materials.pool = device
@@ -212,6 +220,25 @@ impl Materials {
             );
         }
     }
+    /// Points every camera set's binding 2 at the deformation output.
+    pub fn bind_deformed(&self, output: &Buffer) {
+        let info = [vk::DescriptorBufferInfo::default()
+            .buffer(output.handle)
+            .range(vk::WHOLE_SIZE)];
+        let writes: Vec<_> = self
+            .camera_sets
+            .iter()
+            .flatten()
+            .map(|&set| {
+                vk::WriteDescriptorSet::default()
+                    .dst_set(set)
+                    .dst_binding(2)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&info)
+            })
+            .collect();
+        unsafe { self.gpu.device.update_descriptor_sets(&writes, &[]) };
+    }
     pub fn update_camera(&mut self, eye: usize, background: bool, data: &[u8]) -> Result<()> {
         self.cameras[eye * 2 + usize::from(background)].write(data)
     }
@@ -243,7 +270,7 @@ impl Materials {
             return Err(format!("free retired material descriptors: {error:?}"));
         }
         self.pipelines
-            .retain(|(id, _, _, _), _| registry.definition(*id).is_some());
+            .retain(|(id, ..), _| registry.definition(*id).is_some());
         Ok(())
     }
     pub fn prepare(
@@ -256,6 +283,7 @@ impl Materials {
         background: bool,
         transparent: bool,
         foveated: bool,
+        skinned: bool,
     ) -> Result<bool> {
         let record = registry
             .instance(key.0)
@@ -286,7 +314,7 @@ impl Materials {
         {
             return Err("unsupported custom surface descriptor interface".into());
         }
-        let pipeline_key = (record.definition, background, transparent, foveated);
+        let pipeline_key = (record.definition, background, transparent, foveated, skinned);
         if !self.pipelines.contains_key(&pipeline_key) {
             if self.pipelines.len() >= Self::LIMIT {
                 return Err("mobile custom pipeline capacity (256) exceeded".into());
@@ -301,6 +329,7 @@ impl Materials {
                     samples,
                     background,
                     transparent,
+                    skinned,
                 )?,
             );
         }
@@ -373,6 +402,7 @@ impl Materials {
         background: bool,
         transparent: bool,
         foveated: bool,
+        skinned: bool,
     ) -> Option<(vk::Pipeline, vk::DescriptorSet)> {
         let binding = self.bindings.get(&key)?;
         if binding.definition != registry.instance(key.0)?.definition {
@@ -380,7 +410,7 @@ impl Materials {
         }
         Some((
             self.pipelines
-                .get(&(binding.definition, background, transparent, foveated))?
+                .get(&(binding.definition, background, transparent, foveated, skinned))?
                 .handle,
             binding.set,
         ))

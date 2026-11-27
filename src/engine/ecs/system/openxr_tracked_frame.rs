@@ -9,6 +9,10 @@ impl OpenXRSystem {
     ) {
         self.external_frame = frame;
     }
+    /// Native eye data carried by the host frame, for the eye-tracking system.
+    pub fn native_eyes(&self) -> Option<super::super::external_xr_frame::NativeEyeSample> {
+        self.external_frame.and_then(|frame| frame.eyes)
+    }
     /// Like `tick`, but also queues transform updates for registered ControllerXRComponents.
     ///
     /// Head and controller poses share the sample located by `prepare_frame`.

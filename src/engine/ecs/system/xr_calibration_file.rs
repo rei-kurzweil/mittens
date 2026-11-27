@@ -2,6 +2,10 @@
 use crate::utils::user_config;
 use std::{fs, path::PathBuf};
 
+/// The Android app's override for the platform config base; see
+/// [`user_config::set_config_directory`].
+pub use crate::utils::user_config::set_config_directory;
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Calibration {

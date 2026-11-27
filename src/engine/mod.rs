@@ -1,3 +1,4 @@
+pub mod app_launch;
 pub mod benchmark;
 #[cfg(feature = "desktop")]
 pub mod cli;

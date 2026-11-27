@@ -5,13 +5,15 @@ fn main() {
         shaderc::TargetEnv::Vulkan,
         shaderc::EnvVersion::Vulkan1_0 as u32,
     );
-    for (name, kind) in [
-        ("triangle.vert", shaderc::ShaderKind::Vertex),
-        ("triangle.frag", shaderc::ShaderKind::Fragment),
-        ("surface.vert", shaderc::ShaderKind::Vertex),
+    for (directory, name, kind) in [
+        ("../../shaders", "triangle.vert", shaderc::ShaderKind::Vertex),
+        ("../../shaders", "triangle.frag", shaderc::ShaderKind::Fragment),
+        ("../../shaders", "surface.vert", shaderc::ShaderKind::Vertex),
+        ("../../shaders", "surface-skinned.vert", shaderc::ShaderKind::Vertex),
+        ("../../../assets/shaders", "mesh-deformation.comp", shaderc::ShaderKind::Compute),
     ] {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../shaders")
+            .join(directory)
             .join(name);
         println!("cargo:rerun-if-changed={}", path.display());
         let source = std::fs::read_to_string(path).unwrap();

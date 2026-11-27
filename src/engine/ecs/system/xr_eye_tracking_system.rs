@@ -2,8 +2,9 @@ use crate::engine::udp::{UdpEndpoint, UdpSystem};
 use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
 use crate::engine::ecs::component::{
     EyeTrackingSource, HTCEyeTrackingComponent, MediaPipeEyeTrackingComponent,
-    VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
+    OpenXREyeTrackingComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
 };
+use crate::engine::ecs::system::external_xr_frame::NativeEyeSample;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::utils::math::quat_rotate_vec3;
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,9 @@ pub struct XREyeTrackingSystem {
     vrchat_osc_sources: HashSet<ComponentId>,
     htc_sources: HashSet<ComponentId>,
     mediapipe_sources: HashSet<ComponentId>,
+    native_sources: HashSet<ComponentId>,
+    /// The host's normalized native sample for the current frame, if any.
+    native_eyes: Option<NativeEyeSample>,
     active_udp: Option<UdpSystem>,
     sockets: HashMap<ComponentId, UdpEndpoint>,
     htc_sockets: HashMap<ComponentId, UdpEndpoint>,
@@ -43,6 +47,7 @@ impl XREyeTrackingSystem {
             || self.vrchat_osc_sources.contains(&id)
             || self.htc_sources.contains(&id)
             || self.mediapipe_sources.contains(&id)
+            || self.native_sources.contains(&id)
         {
             return;
         }
@@ -66,6 +71,11 @@ impl XREyeTrackingSystem {
             .is_some()
         {
             self.mediapipe_sources.insert(id);
+        } else if world
+            .get_component_by_id_as::<OpenXREyeTrackingComponent>(id)
+            .is_some()
+        {
+            self.native_sources.insert(id);
         }
     }
 
@@ -74,6 +84,7 @@ impl XREyeTrackingSystem {
         self.vrchat_osc_sources.remove(&id);
         self.htc_sources.remove(&id);
         self.mediapipe_sources.remove(&id);
+        self.native_sources.remove(&id);
         self.sockets.remove(&id);
         self.htc_sockets.remove(&id);
         self.standard_samples.remove(&id);
@@ -103,11 +114,22 @@ impl XREyeTrackingSystem {
                 .get_component_by_id_as::<MediaPipeEyeTrackingComponent>(*id)
                 .is_none()
         }));
+        stale.extend(self.native_sources.iter().copied().filter(|id| {
+            world
+                .get_component_by_id_as::<OpenXREyeTrackingComponent>(*id)
+                .is_none()
+        }));
         stale.sort_unstable();
         stale.dedup();
         for id in stale {
             self.component_removed(id);
         }
+    }
+
+    /// Supply this frame's native sample from the host's XR frame; `None`
+    /// when the host has no native eye provider or no data this frame.
+    pub fn set_native_eyes(&mut self, sample: Option<NativeEyeSample>) {
+        self.native_eyes = sample;
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
@@ -133,6 +155,7 @@ impl XREyeTrackingSystem {
         self.ensure_generic_sources(world);
         self.tick_standard(world, emit, udp);
         self.tick_htc(world, emit, udp);
+        self.tick_native(world);
         self.resolve_generic_trackers(world);
     }
 
@@ -164,6 +187,9 @@ impl XREyeTrackingSystem {
                             EyeTrackingSource::MediaPipe => world
                                 .get_component_by_id_as::<MediaPipeEyeTrackingComponent>(child)
                                 .is_some(),
+                            EyeTrackingSource::NativeOpenXr => world
+                                .get_component_by_id_as::<OpenXREyeTrackingComponent>(child)
+                                .is_some(),
                         });
                 if already_authored {
                     continue;
@@ -179,6 +205,9 @@ impl XREyeTrackingSystem {
                     EyeTrackingSource::Htc => world.add_component(HTCEyeTrackingComponent::on()),
                     EyeTrackingSource::MediaPipe => {
                         world.add_component(MediaPipeEyeTrackingComponent::on())
+                    }
+                    EyeTrackingSource::NativeOpenXr => {
+                        world.add_component(OpenXREyeTrackingComponent::on())
                     }
                 };
                 world
@@ -210,6 +239,9 @@ impl XREyeTrackingSystem {
                             .get_component_by_id_as::<HTCEyeTrackingComponent>(child)
                             .map(|tracker| (tracker.gaze_sample, tracker.closure_sample)),
                         EyeTrackingSource::MediaPipe => None,
+                        EyeTrackingSource::NativeOpenXr => world
+                            .get_component_by_id_as::<OpenXREyeTrackingComponent>(child)
+                            .map(|tracker| (tracker.gaze_sample, tracker.closure_sample)),
                     };
                     let Some((source_gaze, source_closure)) = samples else {
                         continue;
@@ -411,6 +443,35 @@ impl XREyeTrackingSystem {
             }
         }
     }
+    /// Native closure is a live per-frame value like OSC closure: a frame
+    /// without native data clears it so AVC releases the blink override.
+    fn tick_native(&mut self, world: &mut World) {
+        let closure = self
+            .native_eyes
+            .map(|sample| sample.closure)
+            .filter(|closure| closure.iter().any(Option::is_some));
+        let sequence = closure.map(|_| self.next_sequence());
+        for id in self.native_sources.iter().copied() {
+            let Some(component) = world.get_component_by_id_as_mut::<OpenXREyeTrackingComponent>(id)
+            else {
+                continue;
+            };
+            match (closure, sequence) {
+                (Some([left, right]), Some(sequence)) => {
+                    component.closure_sample = EyeClosureSample {
+                        left: left.map(|value| value.clamp(0.0, 1.0)),
+                        right: right.map(|value| value.clamp(0.0, 1.0)),
+                        sequence,
+                    };
+                }
+                _ => {
+                    component.closure_sample.left = None;
+                    component.closure_sample.right = None;
+                }
+            }
+        }
+    }
+
     fn next_sequence(&mut self) -> u64 {
         self.receive_sequence = self.receive_sequence.wrapping_add(1);
         self.receive_sequence
@@ -696,7 +757,12 @@ mod tests {
         system.ensure_generic_sources(&mut world);
 
         let children = world.children_of(selector);
-        assert_eq!(children.len(), 3);
+        assert_eq!(children.len(), 4);
+        assert!(children.iter().any(|child| {
+            world
+                .get_component_by_id_as::<OpenXREyeTrackingComponent>(*child)
+                .is_some()
+        }));
         assert!(children.iter().any(|child| {
             world
                 .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(*child)
@@ -717,10 +783,56 @@ mod tests {
         assert_eq!(system.mediapipe_sources.len(), 1);
 
         system.ensure_generic_sources(&mut world);
-        assert_eq!(world.children_of(selector).len(), 3);
+        assert_eq!(world.children_of(selector).len(), 4);
+        assert_eq!(system.native_sources.len(), 1);
         assert_eq!(system.vrchat_osc_sources.len(), 1);
         assert_eq!(system.htc_sources.len(), 1);
         assert_eq!(system.mediapipe_sources.len(), 1);
+    }
+
+    #[test]
+    fn native_openxr_closure_wins_by_default_and_releases_when_absent() {
+        let mut world = World::default();
+        let selector = world.add_component(XREyeTrackingComponent::on());
+        let mut system = XREyeTrackingSystem::default();
+        system.register_component(&world, selector);
+        let mut queue = CommandQueue::new();
+        let closure = |world: &World| {
+            let tracker = world
+                .get_component_by_id_as::<XREyeTrackingComponent>(selector)
+                .unwrap();
+            (
+                tracker.closure_source,
+                tracker.closure_sample.left,
+                tracker.closure_sample.right,
+            )
+        };
+
+        system.set_native_eyes(Some(NativeEyeSample {
+            closure: [Some(0.25), Some(1.5)],
+        }));
+        system.tick(&mut world, &mut queue);
+        assert_eq!(
+            closure(&world),
+            (Some(EyeTrackingSource::NativeOpenXr), Some(0.25), Some(1.0))
+        );
+
+        // A frame without native data releases the closure instead of
+        // holding the last blink.
+        system.set_native_eyes(None);
+        system.tick(&mut world, &mut queue);
+        assert_eq!(closure(&world), (None, None, None));
+
+        // An explicit priority without "openxr" ignores native data.
+        world
+            .get_component_by_id_as_mut::<XREyeTrackingComponent>(selector)
+            .unwrap()
+            .priority = vec![EyeTrackingSource::VrChatOsc];
+        system.set_native_eyes(Some(NativeEyeSample {
+            closure: [Some(0.5), Some(0.5)],
+        }));
+        system.tick(&mut world, &mut queue);
+        assert_eq!(closure(&world), (None, None, None));
     }
 
     #[test]

@@ -3,9 +3,29 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
+static CONFIG_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+
+/// For hosts without a user config directory (the Android app, whose process
+/// has no usable HOME): the absolute directory that replaces the platform
+/// config base. Set once before scenes load; later calls are ignored.
+pub fn set_config_directory(directory: PathBuf) -> Result<(), String> {
+    if !directory.is_absolute() {
+        return Err(format!(
+            "config directory must be absolute: {}",
+            directory.display()
+        ));
+    }
+    let _ = CONFIG_DIRECTORY.set(directory);
+    Ok(())
+}
+
 pub(crate) fn directory() -> Result<PathBuf, String> {
+    if let Some(directory) = CONFIG_DIRECTORY.get() {
+        return Ok(directory.join("mittens"));
+    }
     let env_path = |name| {
         std::env::var_os(name)
             .filter(|value| !value.is_empty())

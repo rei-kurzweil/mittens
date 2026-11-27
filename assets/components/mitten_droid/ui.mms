@@ -111,7 +111,8 @@ export fn shell(title, subtitle, connection, browser, terminal, footer, grabbabl
         T { Style { margin_bottom(1) color([0.20, 0.09, 0.16, 1]) } connection }
         T {
             Style { display("flex") flex_direction("row") column_gap(2.0) }
-            window("TERMINAL", terminal, 63, true, definition, ui_definition, grabbable, collapsible)
+            // `terminal` may be null for a browser-only shell (the Android launcher).
+            if terminal { window("TERMINAL", terminal, 63, true, definition, ui_definition, grabbable, collapsible) }
             window("FILES", browser, 61, false, definition, ui_definition, grabbable, collapsible)
         }
         T { Style { margin_top(1) font_size(0.9) color([0.20, 0.09, 0.16, 1]) } footer }

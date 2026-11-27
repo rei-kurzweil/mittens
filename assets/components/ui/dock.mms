@@ -11,6 +11,8 @@
 //       it, so closing removes it by name as well as through its slot.
 //     position/rotation: the panel's placement in mount space.
 //     build: zero-argument function returning a fresh panel subtree.
+// Optional: material, a custom material retained on the dock's movable root
+//   (the Android renderer needs one on every surface; default is unlit).
 // Clicking an item opens its panel; clicking it again closes it.
 
 import { info_panel } from "./info_panel.mms"
@@ -82,6 +84,7 @@ export fn dock(options) {
         unit_scale = UNIT_SCALE
         title = "Panels"
         toggle_icon_glow_intensity = 0.0
+        material = options["material"]
         content_factory = fn() { return dock_content(options.groups, options.mount) }
     })
     let root = panel.query("#" + options.root_name)
