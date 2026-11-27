@@ -114,8 +114,8 @@ fn make_mitten(prefix, local_player) {
         if local_player && use_xr { Pointer { name = "local_right_pointer" } }
     }
     let external_hands = !local_player || !use_xr
-    let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) { left }
-    let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) { right }
+    let left_driver = XRHand(true, "Left", "GripAim").external(external_hands) { left }
+    let right_driver = XRHand(true, "Right", "GripAim").external(external_hands) { right }
     let root_name = prefix + "_root"
     let avatar = AVC.movement_target("[name='" + root_name + "']") {
         name = prefix + "_avatar"

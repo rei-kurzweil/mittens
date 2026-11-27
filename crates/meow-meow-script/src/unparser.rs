@@ -376,9 +376,13 @@ impl<'a> Printer<'a> {
     }
 
     fn constructor(&mut self, c: &ConstructorCall) {
-        self.out.push('.');
-        self.out.push_str(&c.method.0);
-        self.args(&c.args);
+        if c.method.0 == crate::ast::POSITIONAL_COMPONENT_CONSTRUCTOR {
+            self.args(&c.args);
+        } else {
+            self.out.push('.');
+            self.out.push_str(&c.method.0);
+            self.args(&c.args);
+        }
     }
 
     // ---- literals -------------------------------------------------------

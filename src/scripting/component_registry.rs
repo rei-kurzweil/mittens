@@ -7,6 +7,7 @@ mod renderable_registry;
 #[path = "registries/spring_registry.rs"]
 mod spring_registry;
 use crate::engine::ecs::SignalEmitter;
+use meow_meow_script as mms;
 use crate::engine::ecs::component::AmbientOcclusionComponent;
 use crate::engine::ecs::component::AssetPayloadComponent;
 use crate::engine::ecs::component::TransformCameraSpecificMode;
@@ -1997,7 +1998,7 @@ fn create_component(
             _ => add!(XrComponent::on()),
         },
         "XRHand" | "XrHand" | "VRHand" | "VrHand" => match ctor {
-            Some("new") => {
+            Some(mms::POSITIONAL_COMPONENT_CONSTRUCTOR) => {
                 let enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
                     "Left" => ControllerHand::Left,
@@ -2012,7 +2013,7 @@ fn create_component(
                 };
                 add!(XRHandComponent::new(enabled, hand, pose))
             }
-            _ => Err("XRHand requires .new(enabled, hand, pose)".into()),
+            _ => Err("XRHand requires XRHand(enabled, hand, pose)".into()),
         },
         "TransformOperator" => match ctor {
             Some("parent") => {

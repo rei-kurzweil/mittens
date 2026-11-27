@@ -2,6 +2,7 @@ use crate::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
     ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement, Span,
     Statement, TableFieldValue, TypeExpression, TypeField, UnaryOpKind,
+    POSITIONAL_COMPONENT_CONSTRUCTOR,
 };
 use crate::token::{Token, TokenKind};
 use std::collections::HashSet;
@@ -675,8 +676,9 @@ impl MeowMeowParser {
         let is_builtin_table = matches!(ident.0.as_str(), "Math" | "MusicNote");
         let is_component_type = self.is_component_name(&ident.0);
 
-        // Registered component constructors also accept Type(args), equivalent
-        // to Type.new(args). Ordinary lower-case function calls are unchanged.
+        // Registered component constructors also accept Type(args), usually
+        // equivalent to Type.new(args). XRHand uses a private positional
+        // constructor marker so its public `.new` spelling can be removed.
         if !is_builtin_table
             && is_component_type
             && ident
@@ -688,8 +690,14 @@ impl MeowMeowParser {
             && self.try_consume(&TokenKind::LParen)
         {
             let args = self.parse_call_args()?;
+            let constructor =
+                if matches!(ident.0.as_str(), "XRHand" | "XrHand" | "VRHand" | "VrHand") {
+                    POSITIONAL_COMPONENT_CONSTRUCTOR
+                } else {
+                    "new"
+                };
             let mut constructors = vec![ConstructorCall {
-                method: Ident("new".into()),
+                method: Ident(constructor.into()),
                 args,
             }];
             while self.try_consume(&TokenKind::Dot) {

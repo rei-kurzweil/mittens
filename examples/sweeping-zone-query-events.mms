@@ -314,12 +314,12 @@ if use_openxr {
                         // Live tracking supplies eyelid closure; idle animation
                         // owns pupil direction, as in the main mitten example.
                         XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
-                        XRHand.new(true, "Left", "GripAim").laser() {
+                        XRHand(true, "Left", "GripAim").laser() {
                             T {
                                 RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer { name = "paper_craft_left_hand_pointer" } }
                             }
                         }
-                        XRHand.new(true, "Right", "GripAim").laser() {
+                        XRHand(true, "Right", "GripAim").laser() {
                             T {
                                 RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer { name = "paper_craft_right_hand_pointer" } }
                             }

@@ -1,6 +1,12 @@
 # Deprecate redundant MMS constructors
 
-Status: proposed task. Audit taken 2026-09-26; documentation only so far.
+Status: proposed for the broader cleanup. Audit taken 2026-09-26; XRHand's
+explicitly approved constructor migration is complete.
+
+XRHand's required-data constructor migration is complete (2026-11-27): authored
+MMS uses `XRHand(enabled, hand, pose)`, its serializer emits that form, and the
+engine rejects `XRHand(...)`. Other required-data constructors remain out
+of scope.
 
 ## Goal
 
@@ -29,7 +35,7 @@ A textual search of 149 `*.mms` files under the repository found 203 `Type.new(`
 
 All three also appear in documentation. `Pointer.new()` appears in an older task document, but authored MMS already uses bare `Pointer`; the registry's default branch makes `.new()` redundant there too. `SecondaryMotion.new()` and `ReturnToRestWhenStill.new()` appeared only in the secondary motion constraint draft, and have been removed from its examples. `SecondaryMotion` currently uses the bare spelling; `ReturnToRestWhenStill` is not implemented.
 
-The other 179 `.new(...)` occurrences carry arguments. Frequent cases include `XRHand.new(enabled, hand, pose)` (58), `GLTF.new(uri)` (55), `RestAttachment.new(anchor, target)` (42), and `SpringJoint.new(selector)` (9). These are not empty calls. Review their names and positional ergonomics separately; do not remove a required construction path just to remove the word `new`.
+The other `.new(...)` occurrences carry arguments. Frequent cases include `XRHand(enabled, hand, pose)`, `GLTF.new(uri)`, `RestAttachment.new(anchor, target)`, and `SpringJoint.new(selector)`. The XRHand spelling is now explicitly approved for removal because `new` adds no meaning to its positional arguments. Keep the other required-data constructors unless their APIs are separately approved for migration.
 
 ## Other default-equivalent factories to review
 
@@ -39,7 +45,7 @@ These methods can communicate intent even when redundant. Audit their documented
 
 ## Migration plan
 
-1. Define the style rule: no canonical `Type.new()` with zero arguments when bare `Type` has the same meaning. Keep legacy spelling accepted during migration, then deprecate it with a targeted diagnostic if deprecation diagnostics are available. Do not deprecate Rust `::new()` APIs as part of this MMS task.
+1. Define the style rule: no canonical `Type.new()` with zero arguments when bare `Type` has the same meaning. Keep legacy spelling accepted during migration, then deprecate it with a targeted diagnostic if deprecation diagnostics are available. Do not deprecate Rust `::new()` APIs as part of this MMS task. XRHand is a separate explicit migration: use `XRHand(enabled, hand, pose)` and remove the MMS `.new` spelling after authored content has migrated.
 2. Update `to_mms_ast()` for `MorphTargetMap`, `HumanoidBoneMap`, and `PoseCaptureLibrary` to emit the bare component. Confirm that chained configuration serializes and reparses with equivalent ordering and values.
 3. Update authored presets, examples, generated pose manifests, relevant guides, and tests. The pose library writer currently emits `PoseCaptureLibrary.new()` directly, so updating only the component serializer is insufficient.
 4. Investigate `PoseCaptureLibrary.target_root_ref`: Rust stores it, but the MMS registry currently constructs a placeholder and its serializer emits no target. Preserve or explicitly resolve that state before treating its constructor cleanup as a completed round trip.

@@ -52,12 +52,12 @@ T {
                     }
                 }
                 T.position(0.0, 0.08, 0.12) { CXR { Pointer {} } }
-                XRHand.new(true, "Left", "GripAim").laser() {
+                XRHand(true, "Left", "GripAim").laser() {
                     T {
                         RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer {} }
                     }
                 }
-                XRHand.new(true, "Right", "GripAim").laser() {
+                XRHand(true, "Right", "GripAim").laser() {
                     T {
                         RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer {} }
                     }

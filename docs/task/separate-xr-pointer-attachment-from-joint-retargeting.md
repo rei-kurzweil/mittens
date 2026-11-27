@@ -79,7 +79,7 @@ using immutable rest data. The API should not mention XR, hands, fingers, or las
 The chosen surface keeps the pose-driver transform directly beneath its source:
 
 ```mms
-XRHand.new(true, Left, GripAim).laser() {
+XRHand(true, Left, GripAim).laser() {
   T {
     RestAttachment.new("#J_Bip_L_Hand", "#J_Bip_L_Middle3") {
       Pointer.new()

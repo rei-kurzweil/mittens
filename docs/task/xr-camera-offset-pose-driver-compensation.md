@@ -199,10 +199,10 @@ InputXR.on() {
             }
         }
 
-        XRHand.new(true, "Left", "GripAim").laser() {
+        XRHand(true, "Left", "GripAim").laser() {
             T { Pointer {} }
         }
-        XRHand.new(true, "Right", "GripAim").laser() {
+        XRHand(true, "Right", "GripAim").laser() {
             T { Pointer {} }
         }
     }
@@ -234,7 +234,7 @@ let tool_grip_offset = T.position(0.0, -0.04, 0.12) {
     name = "tool_grip_offset"
 }
 
-XRHand.new(true, "Right", "Grip") {
+XRHand(true, "Right", "Grip") {
     T {
         name = "right_grip_pose"
 
@@ -298,8 +298,8 @@ InputXR.on() {
                 }
             }
 
-            XRHand.new(true, "Left", "Grip") { T {} }
-            XRHand.new(true, "Right", "Grip") { T {} }
+            XRHand(true, "Left", "Grip") { T {} }
+            XRHand(true, "Right", "Grip") { T {} }
         }
     }
 }

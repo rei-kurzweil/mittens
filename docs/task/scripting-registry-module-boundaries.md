@@ -24,6 +24,12 @@ bindings in a future registry split. Keep solved posture readable from the
 component and preserve scoped posture events. Validate getter/event agreement
 and torso mount registration against both standing and crawling avatars.
 
+Keep the XRHand positional constructor and its typed pose methods together in
+the avatar/rigging/tracking family when splitting the oversized registries.
+The constructor spelling migration is scoped and does not require new runtime
+dispatch or per-frame work. Validate MMS construction and serialization,
+rejection of the removed `.new` spelling, and representative XR scene loads.
+
 Status: proposed follow-up. Further splits require an explicit request or approval.
 
 ## Observation

@@ -33,7 +33,7 @@ model.
 `examples/paint-stroke-debug.mms` differs materially from `vtuber-desktop.mms`:
 
 1. It always declares `InputXR.on()` plus left and right
-   `XRHand.new(...).laser()` rigs, even when launched in desktop mode. This is
+   `XRHand(...).laser()` rigs, even when launched in desktop mode. This is
    the first source-level explanation for the stray laser and a performance
    suspect: verify whether it starts, polls, or renders XR work without an
    active OpenXR session.

@@ -38,7 +38,7 @@ fn external_frame_drives_avatar_free_controller_and_locomotion() {
             InputXR.on() {
                 InputXRGamepad { locomotion() speed(1.4) }
                 T { CXR {} }
-                XRHand.new(true, "Left", "Aim") { T { name = "left_driver" Pointer {} } }
+                XRHand(true, "Left", "Aim") { T { name = "left_driver" Pointer {} } }
             }
         } } }
     "##;

@@ -70,7 +70,7 @@ fn click_only_panels_accept_oblique_trigger_presses_without_drag_targets() {
             T.position(1,1.5,-2) { mirror_panel({ name = "test_mirror" width = 1.0 height = 1.0 quality = 512 }) }
             T { InputXR.on() {
                 T { CXR {} }
-                XRHand.new(true,"Left","Aim") { T { Pointer {} } }
+                XRHand(true,"Left","Aim") { T { Pointer {} } }
             } }
             "#,
             "examples/_click_only_panel_test.mms",

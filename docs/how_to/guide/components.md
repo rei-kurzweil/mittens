@@ -750,7 +750,7 @@ CameraXR {}
 Carries controller xr state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Camera/XR systems; registration intents and XR button/axis events are relevant.
 **Available through an alias.** Construct this Rust type as `XRHand`; compatibility aliases are `XrHand`, `VRHand`, and `VrHand`. Sources: [Rust implementation](../../../src/engine/ecs/component/controller_xr.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-XRHand.new(true, "Left", "Aim").laser()
+XRHand(true, "Left", "Aim").laser()
 ```
 
 `.laser()` adds one runtime-only, noninteractive cyan direction laser along local `-Z`.

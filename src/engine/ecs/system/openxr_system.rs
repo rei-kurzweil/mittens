@@ -2352,7 +2352,7 @@ impl OpenXRSystem {
             && Self::transform_child_of(world, component).is_none()
         {
             eprintln!(
-                "[XRHand] {component:?} has no direct Transform child to receive tracking; use XRHand.new(...) {{ T {{ Pointer {{}} }} }}. No avatar is required."
+                "[XRHand] {component:?} has no direct Transform child to receive tracking; use XRHand(...) {{ T {{ Pointer {{}} }} }}. No avatar is required."
             );
         }
     }

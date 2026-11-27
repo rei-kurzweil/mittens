@@ -179,7 +179,7 @@ For the current component set, a usable automatic hand driver means a direct
 
 ```text
 AVC
-  -> XRHand.new(..., Left, ...)
+  -> XRHand(..., Left, ...)
        -> T                         # written by OpenXRSystem
 ```
 

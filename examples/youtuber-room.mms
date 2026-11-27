@@ -495,12 +495,12 @@ if xr_view_enabled {
                             // Live tracking supplies eyelid closure; idle animation
                             // owns pupil direction, as in the main mitten example.
                             XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
-                            XRHand.new(true, "Left", "GripAim").laser() {
+                            XRHand(true, "Left", "GripAim").laser() {
                                 T {
                                     RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer {} }
                                 }
                             }
-                            XRHand.new(true, "Right", "GripAim").laser() {
+                            XRHand(true, "Right", "GripAim").laser() {
                                 T {
                                     RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer {} }
                                 }
@@ -535,8 +535,8 @@ if xr_view_enabled {
             InputXR.on() {
                 InputXRGamepad { locomotion() speed(1.4) }
                 T { CXR { Pointer {} } }
-                XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
-                XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
+                XRHand(true, "Left", "GripAim").laser() { T { Pointer {} } }
+                XRHand(true, "Right", "GripAim").laser() { T { Pointer {} } }
             }
         }
     }

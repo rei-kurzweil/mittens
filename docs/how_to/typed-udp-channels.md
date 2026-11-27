@@ -146,7 +146,7 @@ Removing it restores ordinary local driver/base behavior. GLTF.morph_weight(slot
 reads the effective mapped value for publication; before import it returns zero.
 
 PoseInput marks scripted/replayed/network head targets for local AVC embodiment
-without activating a local input provider. XRHand.new(...).external(true)
+without activating a local input provider. XRHand(...).external(true)
 marks hand targets supplied externally: OpenXR neither polls nor clears them.
 Use XRHand.set_pose_valid(bool) for an externally driven hand; pose_valid()
 reads validity for both hardware and external hands. Remote IK remains local.

@@ -90,7 +90,7 @@ fn controller_grip_holding_ignores_hand_bone_and_aim_follows_grip_and_copies_mms
     let mut scene = Universe::new(World::default());
     scene.load_mms_source_at_path(r#"
         XR.off()
-        let controller=XRHand.new(true,"Right","GripAim") {name="controller"
+        let controller=XRHand(true,"Right","GripAim") {name="controller"
             T {T.position(0,0,3).rotation(0,0,1.57) {name="fake_hand"
                 Pointer.grab_pose("controller_grip").grab_attachment("[name='fake_hand']") {name="pointer"}
             }}

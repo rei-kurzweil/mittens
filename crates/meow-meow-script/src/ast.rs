@@ -17,6 +17,10 @@ impl Span {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
 
+/// Internal constructor marker for a positional `ComponentType(args)` call.
+/// It is not written as a named method in MMS source.
+pub const POSITIONAL_COMPONENT_CONSTRUCTOR: &str = "__positional";
+
 // ---------------------------------------------------------------------------
 // Expressions
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ The pointer ray can still come from a `RestAttachment` on the avatar hand; choos
 a holding pose does not change ray aiming or the avatar IK target.
 
 ```javascript
-XRHand.new(true,"Right","GripAim").laser() {
+XRHand(true,"Right","GripAim").laser() {
     T {
         RestAttachment.new("[name='J_Bip_R_Hand']","[name='J_Bip_R_Middle3']") {
             Pointer.grab_pose("controller_grip") {}

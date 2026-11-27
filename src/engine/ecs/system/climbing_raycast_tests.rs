@@ -20,7 +20,7 @@ impl Fixture {
                 T.position(0,1,-2).scale(0.2,0.2,0.02) {{ Raycastable.enabled() R.cube() {{ name = "ui" }} }}
                 T {{ name = "climber" InputXR.on() {{
                     T {{ CXR {{}} }}
-                    XRHand.new(true,"Left","GripAim") {{ T {{ Pointer {{}} }} }}
+                    XRHand(true,"Left","GripAim") {{ T {{ Pointer {{}} }} }}
                 }} }}
             }}
         "#

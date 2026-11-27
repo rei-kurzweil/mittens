@@ -99,10 +99,10 @@ T {
                                 // HTC supplies closure only; the idle gaze loop owns direction.
                                 XREyeTracking.on().priority(["htc"]).enable_pupil_direction_tracking(false)
                                 T.position(0.0, 0.08, 0.12) { CXR.far(view_far_distance) { name = "ship_mitten_xr_camera" Pointer {} } }
-                                XRHand.new(true, "Left", "GripAim").laser() {
+                                XRHand(true, "Left", "GripAim").laser() {
                                     T { RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer { name = "ship_left_hand_pointer" } } }
                                 }
-                                XRHand.new(true, "Right", "GripAim").laser() {
+                                XRHand(true, "Right", "GripAim").laser() {
                                     T { RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer { name = "ship_right_hand_pointer" } } }
                                 }
                             }
@@ -140,8 +140,8 @@ T {
                 InputXR.on() {
                     InputXRGamepad { name = "ship_xr_locomotion" locomotion() speed(1.5) }
                     T { CXR.far(view_far_distance) { name = "ship_xr_free_camera" Pointer {} } }
-                    XRHand.new(true, "Left", "GripAim").laser() { T { Pointer { name = "ship_left_hand_pointer" } } }
-                    XRHand.new(true, "Right", "GripAim").laser() { T { Pointer { name = "ship_right_hand_pointer" } } }
+                    XRHand(true, "Left", "GripAim").laser() { T { Pointer { name = "ship_left_hand_pointer" } } }
+                    XRHand(true, "Right", "GripAim").laser() { T { Pointer { name = "ship_right_hand_pointer" } } }
                 }
             }
         }
