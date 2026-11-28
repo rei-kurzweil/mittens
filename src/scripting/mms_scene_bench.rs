@@ -62,9 +62,11 @@ fn mms_scene_bench() {
         let mut source = std::fs::read_to_string(path)
             .unwrap()
             .replace("AudioInput {}", "AudioInput { enabled(false) }");
-        if path.ends_with("/interceptor.mms")
-            && std::env::var("MMS_BENCH_INTERCEPTOR_NPCS").as_deref() == Ok("2")
-        {
+        let interceptor_npcs: usize = std::env::var("MMS_BENCH_INTERCEPTOR_NPCS")
+            .ok()
+            .and_then(|count| count.parse().ok())
+            .unwrap_or(0);
+        if path.ends_with("/interceptor.mms") && interceptor_npcs > 0 {
             if std::env::var("MMS_BENCH_INTERCEPTOR_SECONDARY_MOTION").as_deref() == Ok("off") {
                 source.push_str("\nrange_gear.set_secondary_motion(false)\n");
             }
@@ -75,10 +77,10 @@ fn mms_scene_bench() {
                     profile_spawn.elapsed = profile_spawn.elapsed + event.dt_sec
                     if profile_spawn.elapsed >= 1.0 {
                         profile_spawn.done = true
-                        range_gear.spawn_npcs()
+                        range_gear.spawn_npcs(INTERCEPTOR_NPCS)
                     }
                 })
-            "#);
+            "#.replace("INTERCEPTOR_NPCS", &interceptor_npcs.to_string()));
         }
         // Enabled before load so handler registration records labels.
         update_cpu_profile::enable(true);
@@ -101,8 +103,11 @@ fn mms_scene_bench() {
             scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
                 .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")
         }).count();
-        if path.ends_with("/interceptor.mms") && std::env::var("MMS_BENCH_INTERCEPTOR_NPCS").as_deref() == Ok("2") {
-            assert!(mitten_models >= 3, "expected the player and two NPC Mitten models, found {mitten_models}");
+        if path.ends_with("/interceptor.mms") && interceptor_npcs > 0 {
+            assert!(
+                mitten_models >= 1 + interceptor_npcs,
+                "expected the player and {interceptor_npcs} NPC Mitten models, found {mitten_models}"
+            );
         }
 
         let mut update_ms = 0.0;

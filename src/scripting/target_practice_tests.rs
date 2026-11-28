@@ -335,7 +335,7 @@ fn interceptor_pedestal_switches_npc_secondary_motion_without_polling() {
         on(motion_test, "DataEvent", fn(event) {
             if event == "Off" { range_gear.set_secondary_motion(false) }
             if event == "On" { range_gear.set_secondary_motion(true) }
-            if event == "Spawn" { range_gear.spawn_npcs() }
+            if event == "Spawn" { range_gear.spawn_npcs(2) }
         })
         "#,
     );

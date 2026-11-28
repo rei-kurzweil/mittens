@@ -275,8 +275,9 @@ impl CameraReplay {
 }
 
 // Interceptor play: pick up the spawn-side rocket launcher with the right
-// laser, then look around while firing it. The rig is unrotated at spawn, so
-// world-space deltas are also reference-space deltas.
+// laser, then walk about, look around and sway the hand while firing it
+// every 2 s (the launcher restocks itself on a timer). The rig is unrotated
+// at spawn, so world-space deltas are also reference-space deltas.
 pub(super) struct InterceptorPlay {
     pointer: ComponentId,
     grip: ComponentId,
@@ -311,7 +312,12 @@ impl InterceptorPlay {
                 crate::utils::math::quat_from_axis_angle([0., 1., 0.], yaw),
                 crate::utils::math::quat_from_axis_angle([1., 0., 0.], pitch),
             );
-            let offset = crate::utils::math::quat_rotate_vec3(rotation, [0.22, -0.35, -0.40]);
+            // The hand sways a few centimetres around its place in view.
+            let sway = [(t * 1.3).sin() * 0.06, (t * 1.7).sin() * 0.05, (t * 0.9).cos() * 0.04];
+            let offset = crate::utils::math::quat_rotate_vec3(
+                rotation,
+                [0.22 + sway[0], -0.35 + sway[1], -0.40 + sway[2]],
+            );
             let hand = [
                 INTERCEPTOR_HEAD[0] + offset[0],
                 INTERCEPTOR_HEAD[1] + offset[1],
@@ -343,6 +349,12 @@ impl InterceptorPlay {
         external.grip[RIGHT] = Some(hand_pose);
         external.gamepad.active = true;
         external.gamepad.head_pose_rotation = Some(head_rotation);
+        // Walk with the left stick after the grab: slow zero-mean oscillations,
+        // so the player wanders a few metres without leaving the deck.
+        if frame >= INTERCEPTOR_GRAB_FRAME {
+            let t = (frame - INTERCEPTOR_GRAB_FRAME) as f32 / 75.;
+            external.gamepad.hands[0].thumbstick = Some([(t * 0.37).sin() * 0.5, (t * 0.5).sin() * 0.7]);
+        }
         let holding = frame >= INTERCEPTOR_GRAB_FRAME;
         external.input.grip_pressed[RIGHT] = frame == INTERCEPTOR_GRAB_FRAME;
         external.input.grip_down[RIGHT] = holding;

@@ -120,7 +120,11 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     if case == "no_bloom" {
         source = source.replace("let bloom_enabled = true", "let bloom_enabled = false");
     }
-    if room == "interceptor" && std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS").as_deref() == Ok("2") {
+    let interceptor_npcs: usize = std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
+    if room == "interceptor" && interceptor_npcs > 0 {
         if std::env::var("SHIP_PROFILE_INTERCEPTOR_SECONDARY_MOTION").as_deref() == Ok("off") {
             source.push_str("\nrange_gear.set_secondary_motion(false)\n");
         }
@@ -131,10 +135,10 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
                 profile_spawn.elapsed = profile_spawn.elapsed + event.dt_sec
                 if profile_spawn.elapsed >= 1.0 {
                     profile_spawn.done = true
-                    range_gear.spawn_npcs()
+                    range_gear.spawn_npcs(INTERCEPTOR_NPCS)
                 }
             })
-        "#);
+        "#.replace("INTERCEPTOR_NPCS", &interceptor_npcs.to_string()));
     }
     if let Some(enabled) = bloom_setting {
         source.push_str(&format!("\nGraphicsSettings.bloom.toggle({enabled})\n"));
@@ -588,7 +592,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     };
     let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":uploader.renderer.msaa_description(),
         "bloom_setting":bloom_setting,"bloom_active":scene.visuals.effective_post_processing().is_active(),
-        "interceptor_npcs":std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS").ok(),"weapon_held_fraction":weapon_held_fraction,
+        "interceptor_npcs":interceptor_npcs,"weapon_held_fraction":weapon_held_fraction,
         "opaque_policy":std::env::var("SHIP_PROFILE_OPAQUE_POLICY").unwrap_or("buckets".into()),
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],

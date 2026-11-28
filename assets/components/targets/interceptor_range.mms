@@ -15,6 +15,9 @@ import { ship_input_controller } from "../ship_input_controller.mms"
 import { shared_npc } from "../network/npc_replication.mms"
 import { mitten_rocket_supply } from "../characters/mitten_leg_rockets.mms"
 
+// Most NPC Mitten the pedestals can add.
+let NPC_MAX = 12
+
 fn stand(x, y, z, width, height, depth, material) {
     return T.position(x, y, z).scale(width, height, depth) {
         R.cube() { material C.rgba(0.18, 0.17, 0.24, 1.0) }
@@ -60,11 +63,22 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     })
     player.wear_shields(shields.worn)
     let pistol_impacts = shared_impact({ socket = socket name = "interceptor.pistols" apply = apply_machine_pistol_impact })
-    let npcs = {
-        first = { current = null spawns = 0 position = null }
-        second = { current = null spawns = 0 position = null }
-        spawn_seconds = 0.0
+    // Up to NPC_MAX NPCs, added and removed one at a time from the pedestals.
+    // Each slot keeps its network link; requested is the client's own view
+    // of which slots it has asked the host to fill.
+    let npcs = { slots = [] spawn_seconds = 0.0 }
+    for index in range(NPC_MAX) {
+        npcs.slots.push({ index = index + 1 current = null spawns = 0 position = null link = null requested = false })
     }
+    fn npc_count() {
+        let count = 0
+        for slot in npcs.slots {
+            if is_host && slot.current { count = count + 1 }
+            if !is_host && slot.requested { count = count + 1 }
+        }
+        return count
+    }
+    fn add_label() { return "Add Mitten " + npc_count() + "/" + NPC_MAX }
     // Secondary motion (hair, bow) on both NPCs, switched from a pedestal.
     // Applied when toggled and when an NPC or puppet spawns; nothing polls.
     let secondary = { enabled = true }
@@ -76,21 +90,22 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
         return raw - Math.floor(raw)
     }
-    fn perimeter_spawn(index, spawns, other) {
-        let seed = npcs.spawn_seconds * 41.0 + spawns * 19.0 + index * 53.0 + spawn_x * 7.0
-        // The far end of the 28 x 34 m deck from the players' spawn, about
-        // 1.5 m inside the edge, so NPCs cross the map to reach the armory and
-        // the rocket cabinet beside the spawn.
-        let z = -15.5
+    // Rows of four along the far end of the 28 x 34 m deck from the players'
+    // spawn, 6 m apart, each row 3 m further in, so NPCs cross the map to
+    // reach the armory and the rocket cabinet beside the spawn.
+    fn slot_spawn(slot) {
+        let seed = npcs.spawn_seconds * 41.0 + slot.spawns * 19.0 + slot.index * 53.0 + spawn_x * 7.0
+        let k = slot.index - 1
+        let column = k % 4
+        let row = Math.floor(k / 4)
+        let inward = 1.0
         let yaw = Math.pi
         if spawn_z < 0.0 {
-            z = 15.5
+            inward = -1.0
             yaw = 0.0
         }
-        let x = (hash01(seed) * 2.0 - 1.0) * 11.5
-        if other && other.position && Math.abs(x - other.position[0]) < 6.0 {
-            if other.position[0] > 0.0 { x = other.position[0] - 6.0 } else { x = other.position[0] + 6.0 }
-        }
+        let x = -9.0 + 6.0 * column + (hash01(seed) * 2.0 - 1.0) * 1.2
+        let z = -15.5 * inward + 3.0 * row * inward
         return { position = [x, roof_y, z] yaw = yaw }
     }
     fn range_pistol(label) {
@@ -99,10 +114,10 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
             on_hit = fn(hit) {
                 if hit.source_user != null {
-                    if npcs.first.current { npcs.first.current.pistol_hit(hit) }
-                    if npcs.second.current { npcs.second.current.pistol_hit(hit) }
-                    if npcs.first.link { npcs.first.link.pistol_hit(hit) }
-                    if npcs.second.link { npcs.second.link.pistol_hit(hit) }
+                    for slot in npcs.slots {
+                        if slot.current { slot.current.pistol_hit(hit) }
+                        if slot.link { slot.link.pistol_hit(hit) }
+                    }
                 }
             }
         })
@@ -123,11 +138,18 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     let rocket_supply = mitten_rocket_supply([
         { root = ammo_cabinet label = "interceptor_sta_ammo_cabinet" approach = [1.20, roof_y, 5.65] },
     ], paths)
-    // The host owns a shared pair. Spawn them on the hangar's perimeter only
-    // when requested; neither exists in the initial scene.
-    fn spawn_one(state, index, other) {
+    // The host owns every NPC. None exists in the initial scene; each is
+    // spawned on request at its slot's place on the far side of the deck.
+    fn refresh_count_label() {
+        let control = query("#interceptor_spawn_mitten_control")
+        if control {
+            for text in control.query_all("text") { text.set_text(add_label()) }
+        }
+    }
+    fn spawn_one(state) {
         if state.current { return }
-        let placement = perimeter_spawn(index, state.spawns, other)
+        let index = state.index
+        let placement = slot_spawn(state)
         let weapon_name = "interceptor_mitten_" + index + "_pistol"
         if state.spawns > 0 { weapon_name = weapon_name + "_" + state.spawns }
         state.spawns = state.spawns + 1
@@ -153,15 +175,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             let trs = target.root.world_trs()
             state.link.spawned_at(trs.translation, trs.rotation_quat_xyzw)
         }
-    }
-    fn spawn_both() {
-        if !is_host {
-            npcs.first.link.request(true)
-            npcs.second.link.request(true)
-            return
-        }
-        spawn_one(npcs.first, 1, npcs.second)
-        spawn_one(npcs.second, 2, npcs.first)
+        refresh_count_label()
     }
     fn remove_one(state) {
         if !state.current { return }
@@ -169,32 +183,58 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         state.current = null
         state.position = null
         if is_host { state.link.removed() }
+        refresh_count_label()
     }
-    fn remove_both() {
-        if !is_host {
-            npcs.first.link.request(false)
-            npcs.second.link.request(false)
-            return
+    // The pedestals: one more NPC (up to NPC_MAX), or one fewer. A client
+    // asks the host through the slot's link.
+    fn add_npc() {
+        for slot in npcs.slots {
+            if is_host && !slot.current {
+                spawn_one(slot)
+                return
+            }
+            if !is_host && !slot.requested {
+                slot.requested = true
+                slot.link.request(true)
+                refresh_count_label()
+                return
+            }
         }
-        remove_one(npcs.first)
-        remove_one(npcs.second)
     }
-    fn make_npc_link(state, index, other) {
-        let name = "interceptor_mitten_" + index
+    fn remove_npc() {
+        for i in range(NPC_MAX) {
+            let slot = npcs.slots[NPC_MAX - 1 - i]
+            if is_host && slot.current {
+                remove_one(slot)
+                return
+            }
+            if !is_host && slot.requested {
+                slot.requested = false
+                slot.link.request(false)
+                refresh_count_label()
+                return
+            }
+        }
+    }
+    // Scripted: add count NPCs (benchmarks and tests).
+    fn spawn_npcs(count) {
+        for i in range(count) { add_npc() }
+    }
+    fn make_npc_link(state) {
+        let name = "interceptor_mitten_" + state.index
         let link = shared_npc({
             socket = socket name = name host = is_host
             prefix = name avatar = "mitten" position = [spawn_x, roof_y, spawn_z]
             health_view = local.health_view on_damage = sounds.damage
             on_puppet_spawned = fn(puppet_root) { apply_secondary_motion(puppet_root) }
             current = fn() { return state.current }
-            spawn = fn() { spawn_one(state, index, other) }
+            spawn = fn() { spawn_one(state) }
             remove = fn() { remove_one(state) }
         })
         state.link = link
         return link
     }
-    let first_link = make_npc_link(npcs.first, 1, npcs.second)
-    let second_link = make_npc_link(npcs.second, 2, npcs.first)
+    for slot in npcs.slots { make_npc_link(slot) }
     fn secondary_motion_label() {
         if secondary.enabled { return "Secondary: On" }
         return "Secondary: Off"
@@ -202,10 +242,10 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     // Local only: each peer chooses for the NPCs it renders.
     fn set_secondary_motion(enabled) {
         secondary.enabled = enabled
-        if npcs.first.current { apply_secondary_motion(npcs.first.current.root) }
-        if npcs.second.current { apply_secondary_motion(npcs.second.current.root) }
-        apply_secondary_motion(first_link.root)
-        apply_secondary_motion(second_link.root)
+        for slot in npcs.slots {
+            if slot.current { apply_secondary_motion(slot.current.root) }
+            apply_secondary_motion(slot.link.root)
+        }
         let control = query("#interceptor_secondary_motion_control")
         if control {
             for text in control.query_all("text") { text.set_text(secondary_motion_label()) }
@@ -213,13 +253,11 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     fn connect(group, address) {
         pistol_impacts.connect(group, address)
-        first_link.connect(group, address)
-        second_link.connect(group, address)
+        for slot in npcs.slots { slot.link.connect(group, address) }
     }
     fn disconnect() {
         pistol_impacts.disconnect()
-        first_link.disconnect()
-        second_link.disconnect()
+        for slot in npcs.slots { slot.link.disconnect() }
     }
     // Two rocket launchers: one by the spawn, one beside the pistol rack.
     fn make_launcher(label, weapon_id) {
@@ -229,8 +267,9 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             can_fire = fn(user) { return player.alive() }
             on_explosion = fn(point) {
                 sounds.damage(1.0)
-                if npcs.first.current { npcs.first.current.rocket_splash(point) }
-                if npcs.second.current { npcs.second.current.rocket_splash(point) }
+                for slot in npcs.slots {
+                    if slot.current { slot.current.rocket_splash(point) }
+                }
                 player.blast(point)
             }
         })
@@ -243,8 +282,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     let root = T.position(0.0, roof_y, 0.0) {
         name = "interceptor_range"
         sounds.root
-        first_link.root
-        second_link.root
+        for slot in npcs.slots { slot.link.root }
         armory.root
         paths.root
         shields.root
@@ -281,16 +319,17 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
                 T.position((index - 1.0) * 0.7, 1.04, 0.0) { pistols[index] }
             }
         }
-        mitten_pedestal("interceptor_spawn_mitten", "Spawn Two Mitten", spawn_x + 0.48, spawn_z - 1.65,
-            [0.59, 0.77, 0.57, 1.0], material, spawn_both)
-        mitten_pedestal("interceptor_remove_mitten", "Remove Both", spawn_x + 1.19, spawn_z - 1.65,
-            [0.85, 0.50, 0.55, 1.0], material, remove_both)
+        mitten_pedestal("interceptor_spawn_mitten", add_label(), spawn_x + 0.48, spawn_z - 1.65,
+            [0.59, 0.77, 0.57, 1.0], material, add_npc)
+        mitten_pedestal("interceptor_remove_mitten", "Remove Mitten", spawn_x + 1.19, spawn_z - 1.65,
+            [0.85, 0.50, 0.55, 1.0], material, remove_npc)
         mitten_pedestal("interceptor_secondary_motion", secondary_motion_label(), spawn_x + 1.90, spawn_z - 1.65,
             [0.62, 0.66, 0.88, 1.0], material, fn() { set_secondary_motion(!secondary.enabled) })
         let all_pistols = [pistols[0], pistols[1], pistols[2], spawn_left, spawn_right]
         ship_input_controller(false, [launcher.grip, rack_launcher.grip], all_pistols, armory.forward)
     }
     return { root = root launcher = launcher launchers = [launcher, rack_launcher] paths = paths armory = armory
-        shields = shields connect = connect disconnect = disconnect spawn_npcs = spawn_both
+        shields = shields connect = connect disconnect = disconnect spawn_npcs = spawn_npcs
+        add_npc = add_npc remove_npc = remove_npc npc_count = npc_count
         set_secondary_motion = set_secondary_motion }
 }

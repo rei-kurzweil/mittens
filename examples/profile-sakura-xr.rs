@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         profile_spawn.elapsed = profile_spawn.elapsed + event.dt_sec
                         if profile_spawn.elapsed >= 1.0 {
                             profile_spawn.done = true
-                            range_gear.spawn_npcs()
+                            range_gear.spawn_npcs(2)
                         }
                     })
                 "#);

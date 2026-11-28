@@ -23,7 +23,8 @@ MMS_BENCH_SCENES=examples/interceptor.mms MMS_BENCH_PREPARE_RENDER=1 \
 
 The two-NPC run asserts that at least three Mitten models are present. Update
 time and CPU render preparation are separate; the uploader does not use a GPU.
-Set `MMS_BENCH_INTERCEPTOR_SECONDARY_MOTION=off` on a two-NPC run to pause
+`MMS_BENCH_INTERCEPTOR_NPCS` takes any count up to 12. Set
+`MMS_BENCH_INTERCEPTOR_SECONDARY_MOTION=off` on an NPC run to pause
 both NPCs' secondary motion (as the demo's "Secondary" pedestal does) and
 compare with the default, where it runs. The report records the average
 number of paused secondary-motion roots, which should be non-zero only in the
@@ -60,6 +61,18 @@ the paused comparison. Spawn positions and behavior can vary between runs.
 Set `SHIP_PROFILE_WIDTH` and `SHIP_PROFILE_HEIGHT` to the headset's per-eye
 extent. This is an offscreen stereo capture, not an OpenXR compositor run;
 compare its GPU pass timestamps and deformation counters rather than FPS.
+
+## MSAA, bloom and NPC matrix
+
+`tests/profile-interceptor-matrix.sh` runs 18 one-minute offscreen stereo
+captures at 1920x1920 per eye: 0, 1 and 2 NPCs x MSAA off, 2x and 4x x bloom
+off and on. Each run grabs the spawn-side launcher with the right laser,
+then walks, looks around, sways the hand and fires every 2 s
+(`SHIP_PROFILE_MOTION=interceptor_play`); the launcher restocks itself.
+`SHIP_PROFILE_MSAA`, `SHIP_PROFILE_BLOOM` and `SHIP_PROFILE_INTERCEPTOR_NPCS`
+(any count up to 12) select a single run. The table lands in
+`/tmp/interceptor-matrix/results.md` and `results.csv`; a "Launcher held"
+value below 100% means the grab fixture missed.
 
 ## Headset capture
 
