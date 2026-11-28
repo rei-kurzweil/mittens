@@ -16,8 +16,8 @@ def metric(timing, key, stat):
 
 def main(out):
     rows = []
-    for path in sorted(out.glob("npcs*.json")):
-        if path.name.endswith(".frames.json"):
+    for path in sorted(out.glob("*.json")):
+        if path.name.endswith(".frames.json") or path.name.startswith("vantage-"):
             continue
         report = json.loads(path.read_text())
         timing = report["timing"]

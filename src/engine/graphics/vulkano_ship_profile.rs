@@ -34,7 +34,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         "cafeteria" => ([0., 1., 10.], std::f32::consts::PI),
         "orchard" => ([18., 6.2, 7.5], -2.1112158),
         "interceptor" => ([-2.5, 29.6, 7.6], 0f32),
-        _ => return Err("choose bridge, cafeteria, orchard or interceptor".into()),
+        // Any other scene through SHIP_PROFILE_SOURCE, from its own spawn.
+        "scene" => ([0., 0., 0.], 0f32),
+        _ => return Err("choose bridge, cafeteria, orchard, interceptor or scene".into()),
     };
     if motion == "driving" {
         yaw = 0.;
