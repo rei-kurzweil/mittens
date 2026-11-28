@@ -12,10 +12,13 @@ transfer; share the hashing and cache code with it rather than building two.
 
 ## Outcome
 
-Players can use their own avatars, props and emotes in multiplayer. Locally,
-Mittens loads them in place from package folders; nothing is uploaded or
-copied. Over the network, peers exchange only the files the other side lacks,
-identified by content hash, after the receiver confirms.
+What matters is the set of packages **in use** by a running server or client.
+Each peer can state it as "I'm using these packages (by hash); which do you
+lack?". So assets that peers share load through packages even locally: avatars
+first, each as a versioned package, then props and emotes. Over the network,
+peers exchange only the files the other side lacks, identified by content
+hash, after the receiver confirms. A packages panel in the dock browses,
+imports and uninstalls them.
 
 ## Package
 
@@ -25,8 +28,9 @@ There are two practical kinds:
 - **Script only**: an emote, an emote pack, a behaviour.
 - **Script + GLB**: an avatar, a prop, a vehicle.
 
-Authoring form is a folder; transfer and archive form is a `.zip` of the same
-layout (a "Mittens package"). Both load the same way.
+Installed packages are uncompressed folders, so they load and hash in place.
+Compression happens only in transit (and optionally in a `.zip` of the same
+layout for sharing by hand).
 
 ### manifest.mms
 
@@ -72,23 +76,40 @@ when its emote fires. That needs an emote event on the avatar scope (see
 [emotes](emotes-and-emote-wheel.md)), which no doc defines yet. Reacting to
 other players' emotes needs a wider permission.
 
-## Local folders
+## Installed packages and the in-use set
 
-Two dedicated package roots, following the existing `assets/models/local/`
-and `examples/local/` convention:
+Exact folders matter less than the runtime state:
 
-- `assets/packages/`: tracked, for redistributable packages.
-- `assets/packages/local/`: gitignored, for copyrighted, private or
-  personal packages.
+- **Installed**: packages Mittens knows about.
+  - Built-in packages ship with the repo, under a tracked folder.
+  - Imported and received packages live in an installed store under the user
+    data directory (next to `user_config::directory()`), outside git, so
+    copyrighted or private models never end up in a commit.
+  - Each record has: name, version, package hash, source (built-in,
+    imported from a path, or received from a peer) and install time.
+- **In use**: the packages the current session has loaded. A scene, avatar
+  picker or emote wheel asks for a package by name/version or hash. Loading
+  one adds it to the in-use set, and that set is what a peer is told about on
+  join and when it changes.
 
-Received packages are neither. They go in a content-addressed cache under the
-user data directory (next to `user_config::directory()`), bounded in size.
-Files still referenced by the current session are kept. The loader resolves a
-package by name and version from the two roots first, then from the cache.
+Received packages are installed like any other, marked with the peer they
+came from. Files still referenced by the in-use set are never removed.
 
-A package never refers to files outside its own folder or zip: no `..`, no
-absolute paths, no symlinks. That keeps local and transferred packages
-identical.
+A package never refers to files outside its own folder: no `..`, no absolute
+paths, no symlinks. That keeps local and transferred packages identical.
+
+## Packages panel (dock)
+
+- Lists installed packages: name, version, kind, size class, perf class,
+  permissions, source, disk size and whether it's in use.
+- **Import**: paste or type a path. A directory comes first; a `.zip` comes
+  later with the zip slice. The importer validates `manifest.mms` and paths,
+  hashes the files and copies them into the installed store, so later edits
+  to the source folder don't silently change an installed version.
+  Re-importing changed content installs a new version.
+- **Uninstall**: imported and received packages only, never built-ins.
+  Packages in use are rejected with a clear message.
+- **Receive**: incoming offers still go through the transfer panel.
 
 ## Identity and negotiation
 
@@ -109,6 +130,9 @@ identical.
      permissions and perf class. Files already present show "Already have".
   4. Missing files are sent, and each is checked against its hash before
      being written to the cache.
+- On join and whenever the in-use set changes, each peer sends its in-use
+  package hashes. The other side answers with the ones it lacks, and each of
+  those goes through the exchange above.
 - Players refer to avatars and emotes by package hash plus the name inside
   the package, not by a path. This extends the avatar id in the
   [avatar selection spec](../spec/avatar-selection-and-swapping.md).
@@ -148,18 +172,21 @@ identical.
 
 ## Slices
 
-1. Package folder loading from the two roots, with the data-only
-   `manifest.mms` reader and path checks.
+1. Data-only `manifest.mms` reader, path checks, installed store and
+   in-use set. Convert the built-in avatars into versioned packages and load
+   them through it.
 2. File and package hashing with the (path, size, mtime) hash cache. Share it
    with the Android LAN transfer.
 3. Network manifest, missing-hash exchange and verified writes into the
    content cache, over a reliable channel.
 4. Panel driven by real negotiation, with the new fields, honouring
    auto-accept within limits.
-5. Measured perf class, and server limits.
-6. Script permission derivation and server policy, plus the avatar-scope emote
+5. Packages panel in the dock: browse, import a directory by path,
+   uninstall.
+6. Measured perf class, and server limits.
+7. Script permission derivation and server policy, plus the avatar-scope emote
    event.
-7. Zip pack/unpack with the safety checks.
+8. Zip import and export with the safety checks.
 
 ## Validation
 
@@ -170,7 +197,10 @@ identical.
   - a corrupted or substituted file is rejected;
   - manifests with code, imports or escaping paths are rejected;
   - zip bombs and zip-slip entries are rejected;
-  - the gitignored local root is found.
+  - the in-use set is announced on join and on change;
+  - importing copies and hashes the files, and re-importing changed content
+    installs a new version;
+  - uninstalling a package that is in use or built in is rejected.
 - Measure zip size and pack time on real avatars.
 - Headset: a peer's avatar arrives, shows its placeholder, and swaps in on the
   Focus 3 without stalling frames.
