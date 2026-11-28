@@ -370,6 +370,19 @@ impl InterceptorPlay {
         external.gamepad.hands[RIGHT].trigger_value = Some(if firing { 1. } else { 0. });
         scene.systems.xr.set_external_frame(Some(external));
     }
+    /// One line half a second after the grab: where the laser and the grip
+    /// are, so a missed grab can be diagnosed from the log.
+    pub(super) fn report_grab(&self, scene: &Universe, frame: usize) {
+        if frame != INTERCEPTOR_GRAB_FRAME + 38 {
+            return;
+        }
+        eprintln!(
+            "INTERCEPTOR_GRAB pointer={:?} grip={:?} held={}",
+            TransformSystem::world_position(&scene.world, self.pointer),
+            TransformSystem::world_position(&scene.world, self.grip),
+            self.holding(scene)
+        );
+    }
     /// The launcher is in the right hand when its grip sits at the pointer.
     pub(super) fn holding(&self, scene: &Universe) -> bool {
         let grip = TransformSystem::world_position(&scene.world, self.grip);

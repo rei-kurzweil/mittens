@@ -31,11 +31,11 @@ for npcs in $NPCS; do
                 SHIP_PROFILE_MSAA="$msaa" SHIP_PROFILE_BLOOM="$bloom" \
                 SHIP_PROFILE_INTERCEPTOR_NPCS="$npcs" \
                 SHIP_PROFILE_WIDTH="$SIZE" SHIP_PROFILE_HEIGHT="$SIZE" \
-                SHIP_PROFILE_GPU_PASSES=1 SHIP_PROFILE_WARMUP="$WARMUP" SHIP_PROFILE_FRAMES="$FRAMES" \
+                SHIP_PROFILE_GPU_PASSES=1 SHIP_PROFILE_UPDATE_TIMINGS=1 SHIP_PROFILE_WARMUP="$WARMUP" SHIP_PROFILE_FRAMES="$FRAMES" \
                 SHIP_PROFILE_OUTPUT="$OUT/$name.json" \
                 cargo test --release --lib profile_ship_stereo -- --ignored --nocapture \
                 > "$OUT/$name.log" 2>&1 || { echo "   failed, see $OUT/$name.log"; continue; }
-            grep -h "WARNING" "$OUT/$name.log" || true
+            grep -h "WARNING\|INTERCEPTOR_GRAB" "$OUT/$name.log" || true
         done
     done
 done
