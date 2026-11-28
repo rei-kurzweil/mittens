@@ -273,3 +273,112 @@ impl CameraReplay {
         scene.visuals.set_xr_camera(eyes);
     }
 }
+
+// Interceptor play: pick up the spawn-side rocket launcher with the right
+// laser, then look around while firing it. The rig is unrotated at spawn, so
+// world-space deltas are also reference-space deltas.
+pub(super) struct InterceptorPlay {
+    pointer: ComponentId,
+    grip: ComponentId,
+}
+const RIGHT: usize = 1;
+// The laser settles on the grip before the grip button goes down.
+const INTERCEPTOR_GRAB_FRAME: usize = 60;
+const INTERCEPTOR_HEAD: [f32; 3] = [0., 1.65, 0.];
+impl InterceptorPlay {
+    pub(super) fn setup(scene: &Universe) -> Self {
+        Self {
+            pointer: named(scene, "local_right_pointer"),
+            grip: named(scene, "interceptor_sta_launcher_grip"),
+        }
+    }
+    pub(super) fn input(&self, scene: &mut Universe, view: openxr::View, frame: usize) {
+        let (head_rotation, hand, aim_rotation) = if frame < INTERCEPTOR_GRAB_FRAME {
+            let hand = [0.22, 1.30, -0.30];
+            let target = TransformSystem::world_position(&scene.world, self.grip);
+            let origin = TransformSystem::world_position(&scene.world, self.pointer);
+            let aim = match (target, origin) {
+                (Some(t), Some(o)) => look_rotation([t[0] - o[0], t[1] - o[1], t[2] - o[2]]),
+                _ => [0., 0., 0., 1.],
+            };
+            ([0., 0., 0., 1.], hand, aim)
+        } else {
+            // Sweep about ±70° left/right and ±15° up/down, hand following the view.
+            let t = (frame - INTERCEPTOR_GRAB_FRAME) as f32 / 75.;
+            let yaw = (t * 0.45).sin() * 1.2;
+            let pitch = (t * 0.7).sin() * 0.25;
+            let rotation = crate::utils::math::quat_mul(
+                crate::utils::math::quat_from_axis_angle([0., 1., 0.], yaw),
+                crate::utils::math::quat_from_axis_angle([1., 0., 0.], pitch),
+            );
+            let offset = crate::utils::math::quat_rotate_vec3(rotation, [0.22, -0.35, -0.40]);
+            let hand = [
+                INTERCEPTOR_HEAD[0] + offset[0],
+                INTERCEPTOR_HEAD[1] + offset[1],
+                INTERCEPTOR_HEAD[2] + offset[2],
+            ];
+            (rotation, hand, rotation)
+        };
+        let quaternion = |q: [f32; 4]| openxr::Quaternionf {
+            x: q[0],
+            y: q[1],
+            z: q[2],
+            w: q[3],
+        };
+        let mut tracked = view;
+        tracked.pose.orientation = quaternion(head_rotation);
+        let hand_pose = openxr::Posef {
+            orientation: quaternion(aim_rotation),
+            position: openxr::Vector3f {
+                x: hand[0],
+                y: hand[1],
+                z: hand[2],
+            },
+        };
+        let mut external = ExternalXrFrame {
+            views: Some([tracked, tracked]),
+            ..Default::default()
+        };
+        external.aim[RIGHT] = Some(hand_pose);
+        external.grip[RIGHT] = Some(hand_pose);
+        external.gamepad.active = true;
+        external.gamepad.head_pose_rotation = Some(head_rotation);
+        let holding = frame >= INTERCEPTOR_GRAB_FRAME;
+        external.input.grip_pressed[RIGHT] = frame == INTERCEPTOR_GRAB_FRAME;
+        external.input.grip_down[RIGHT] = holding;
+        external.gamepad.hands[RIGHT].grip_pressed = Some((holding, if holding { 1. } else { 0. }));
+        // Fire for 10 frames every 2 s, starting 1 s after the grab.
+        let firing = frame >= INTERCEPTOR_GRAB_FRAME + 75
+            && (frame - INTERCEPTOR_GRAB_FRAME - 75) % 150 < 10;
+        let phase = frame.saturating_sub(INTERCEPTOR_GRAB_FRAME + 75) % 150;
+        external.input.trigger_pressed[RIGHT] = firing && phase == 0;
+        external.input.trigger_down[RIGHT] = firing;
+        external.input.trigger_released[RIGHT] = frame > INTERCEPTOR_GRAB_FRAME + 75 && phase == 10;
+        external.gamepad.hands[RIGHT].trigger_pressed = Some((firing, if firing { 1. } else { 0. }));
+        external.gamepad.hands[RIGHT].trigger_value = Some(if firing { 1. } else { 0. });
+        scene.systems.xr.set_external_frame(Some(external));
+    }
+    /// The launcher is in the right hand when its grip sits at the pointer.
+    pub(super) fn holding(&self, scene: &Universe) -> bool {
+        let grip = TransformSystem::world_position(&scene.world, self.grip);
+        let pointer = TransformSystem::world_position(&scene.world, self.pointer);
+        match (grip, pointer) {
+            (Some(g), Some(p)) => {
+                let d = [g[0] - p[0], g[1] - p[1], g[2] - p[2]];
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() < 0.35
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Rotation turning -Z towards `direction` with no roll.
+fn look_rotation(direction: [f32; 3]) -> [f32; 4] {
+    let horizontal = (direction[0] * direction[0] + direction[2] * direction[2]).sqrt();
+    let yaw = (-direction[0]).atan2(-direction[2]);
+    let pitch = direction[1].atan2(horizontal);
+    crate::utils::math::quat_mul(
+        crate::utils::math::quat_from_axis_angle([0., 1., 0.], yaw),
+        crate::utils::math::quat_from_axis_angle([1., 0., 0.], pitch),
+    )
+}

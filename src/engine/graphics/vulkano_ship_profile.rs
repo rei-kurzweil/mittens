@@ -11,7 +11,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     let motion = std::env::var("SHIP_PROFILE_MOTION").unwrap_or("stationary".into());
     assert!(matches!(
         motion.as_str(),
-        "stationary" | "head" | "walking" | "driving"
+        "stationary" | "head" | "walking" | "driving" | "interceptor_play"
     ));
     let frames: usize = std::env::var("SHIP_PROFILE_FRAMES")
         .unwrap_or("120".into())
@@ -49,11 +49,25 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .parse::<u32>()?,
     ];
     assert!(extent.iter().all(|&value| value > 0));
+    // Sample count is fixed per renderer, so each MSAA mode is its own run.
+    let msaa_mode = match std::env::var("SHIP_PROFILE_MSAA").as_deref() {
+        Err(_) | Ok("4x") => MsaaMode::Msaa4x,
+        Ok("2x") => MsaaMode::Msaa2x,
+        Ok("off") => MsaaMode::Off,
+        Ok(other) => return Err(format!("SHIP_PROFILE_MSAA={other}: choose off, 2x or 4x").into()),
+    };
+    // Overrides the scene's bloom setting (the interceptor starts with it off).
+    let bloom_setting = match std::env::var("SHIP_PROFILE_BLOOM").as_deref() {
+        Err(_) => None,
+        Ok("on") => Some(true),
+        Ok("off") => Some(false),
+        Ok(other) => return Err(format!("SHIP_PROFILE_BLOOM={other}: choose on or off").into()),
+    };
     let context = RendererContext::new(None, None, None)?;
     let mut renderer = VulkanoState::new(
         context.clone(),
         RendererOutput::Xr(Format::B8G8R8A8_UNORM),
-        MsaaMode::Msaa4x,
+        msaa_mode,
     )?;
     let mut scene = Universe::new(Default::default());
     scene.systems.set_vr_perf_enabled(true);
@@ -122,6 +136,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             })
         "#);
     }
+    if let Some(enabled) = bloom_setting {
+        source.push_str(&format!("\nGraphicsSettings.bloom.toggle({enabled})\n"));
+    }
     scene.load_mms_source_at_path(&source, &source_path)?;
     let mut uploader = Uploader {
         renderer: &mut renderer,
@@ -171,6 +188,12 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         assert_eq!(room, "cafeteria");
         assert!(matches!(case.as_str(), "full" | "no_bloom"));
         Some(ship_motion::ShipMotion::setup(&mut scene, &motion)?)
+    } else {
+        None
+    };
+    let interceptor_play = if motion == "interceptor_play" {
+        assert_eq!(room, "interceptor");
+        Some(ship_motion::InterceptorPlay::setup(&scene))
     } else {
         None
     };
@@ -326,6 +349,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         if let Some(pilot) = physical_motion.as_ref() {
             pilot.input(&mut scene, view, frame);
         }
+        if let Some(play) = interceptor_play.as_ref() {
+            play.input(&mut scene, view, frame);
+        }
         if motion == "head" {
             let mut moving = view;
             moving.pose.position.x = (frame as f32 / 75.).sin() * 0.35;
@@ -397,7 +423,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .enumerate()
             .map(|(i, name)| (name, material_after[i].saturating_sub(material_before[i])))
             .collect();
-            rows.push(serde_json::json!({"frame":frame,"paused_motion_roots":paused_motion_roots,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
+            let weapon_held = interceptor_play.as_ref().map(|play| play.holding(&scene));
+            rows.push(serde_json::json!({"frame":frame,"weapon_held":weapon_held,"paused_motion_roots":paused_motion_roots,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
                 "record_submit_ms":record_ms,"wait_ms":wait_ms,"total_ms":start.elapsed().as_secs_f64()*1000.,
                 "gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"draws":p.draws,
                 "cpu_record_stages_ms":p.cpu_stages.milliseconds(),
@@ -421,6 +448,16 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             rows.first().unwrap()["eye0_view"],
             rows.last().unwrap()["eye0_view"],
             "moving-head fixture must change the rendered camera, not only its input pose"
+        );
+    }
+    let weapon_held_fraction = interceptor_play.as_ref().map(|_| {
+        let held = rows.iter().filter(|r| r["weapon_held"].as_bool() == Some(true)).count();
+        held as f64 / rows.len() as f64
+    });
+    if weapon_held_fraction.is_some_and(|fraction| fraction < 0.9) {
+        eprintln!(
+            "WARNING: the launcher was held in only {:.0}% of sampled frames; the grab fixture missed",
+            weapon_held_fraction.unwrap() * 100.
         );
     }
     let mut timing = serde_json::Map::new();
@@ -549,7 +586,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-    let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
+    let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":uploader.renderer.msaa_description(),
+        "bloom_setting":bloom_setting,"bloom_active":scene.visuals.effective_post_processing().is_active(),
+        "interceptor_npcs":std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS").ok(),"weapon_held_fraction":weapon_held_fraction,
         "opaque_policy":std::env::var("SHIP_PROFILE_OPAQUE_POLICY").unwrap_or("buckets".into()),
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
