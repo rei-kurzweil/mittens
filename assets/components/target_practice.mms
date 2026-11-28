@@ -9,6 +9,7 @@ import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_gri
 import { seated_lower_body_pose } from "./poses/mitten/floor-seated.pose.mms"
 import { lie_down, get_up } from "./characters/downed.mms"
 import { secondary_motion_visibility } from "./characters/secondary_motion_visibility.mms"
+import { mitten_leg_rockets } from "./characters/mitten_leg_rockets.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -48,6 +49,16 @@ let BOARD_DISTANCE = 1.4
 // How close an unarmed NPC gets to the player before taking their weapon.
 let TAKE_REACH = 0.9
 let RUN_SPEED = 2.28
+// With a rocket on each leg: running speed factor, and the flight taken
+// when attacked (climb, hover, descend; then a cooldown).
+let ROCKET_SPEED_SCALE = 1.6
+let FLIGHT_HEIGHT = 3.0
+let FLIGHT_CLIMB_SPEED = 3.5
+let FLIGHT_DESCENT_SPEED = 1.8
+let FLIGHT_HOVER_SECONDS = 3.0
+let FLIGHT_COOLDOWN_SECONDS = 6.0
+// Seconds between looks for a cabinet when leg slots are empty.
+let RESUPPLY_RETRY_SECONDS = 2.0
 
 // Rotate v by the unit quaternion q (xyzw).
 fn rotate(q, v) {
@@ -173,6 +184,10 @@ export fn practice_health(bar, center, options) {
 //               With none to collect it rides its vehicle until one turns up, or
 //               without a vehicle walks up to the player and takes theirs.
 //   retreat(here, player) optional route to cover after a shield or body hit.
+//   rocket_supply an optional mitten_rocket_supply. With empty thigh slots the
+//               NPC leaves its patrol (not cover or rearming) for the nearest
+//               cabinet with rounds. A round on each leg runs faster and flies
+//               up when attacked.
 //   on_player_hit(points)  called for each shot that lands on the player
 //   on_down()    called each time the NPC goes down
 //   on_lie_down(kind) called once the downed body lies "back" or "side"
@@ -215,17 +230,20 @@ export fn practice_target(options) {
     let vehicle = options["vehicle"]
     let driver = null
     if vehicle && vehicle["truck"] && player { driver = mitten_driver(vehicle, player) }
-    let activity = { tick = null moving_to_destination = false attacking_target = false }
+    let activity = { tick = null moving_to_destination = false attacking_target = false flying = false }
+    fn any_activity() { return activity.moving_to_destination || activity.attacking_target || activity.flying }
     fn set_activity(name, active) {
         if activity[name] == active { return }
-        let was_active = activity.moving_to_destination || activity.attacking_target
+        let was_active = any_activity()
         activity[name] = active
-        let is_active = activity.moving_to_destination || activity.attacking_target
+        let is_active = any_activity()
         if was_active != is_active { activity.tick.bypass(!is_active) }
     }
     // chase: unarmed with nothing to collect and no vehicle, so going for the
     // player's weapon (route then leads to the player).
     let rearm = { phase = null waypoint = 0 route = null pickup = null chase = false }
+    // A walk to a cabinet for leg rockets (see rocket_supply).
+    let resupply = { route = null waypoint = 0 cabinet = null retry = 0.0 }
     let retreat = options["retreat"]
     let patrol_options = options["patrol"]
     let patrol = { route = null waypoint = 0 corner = 0 engaged = false retry = 0.0 }
@@ -245,7 +263,7 @@ export fn practice_target(options) {
     // world heading of the last aim, for the shot check; frame is the NPC's
     // root frame once built, whose parent may turn.
     let state = { shield = null time = 0.0 yaw = options.yaw aim_yaw = options.yaw pitch = 0.0 steps = 0
-        walk_x = 0.0 walk_z = 0.0 frame = null seated = false waiting_for_seat = false }
+        walk_x = 0.0 walk_z = 0.0 frame = null seated = false waiting_for_seat = false speed_scale = 1.0 }
     fn drop_shield() {
         if state.shield { state.shield.remove_subtree() }
         state.shield = null
@@ -258,7 +276,7 @@ export fn practice_target(options) {
         state.shield = shield
     }
     let hooks = { death = null respawn = null set_chassis = null remove_ground = null eject = null approach = null
-        refresh_motion = null resume_motion = null attacked = null }
+        refresh_motion = null resume_motion = null attacked = null evade = null resupply = null fly = null }
     // Each fall alternates lying on the back and curling on the side. The
     // body lies down a moment after going down, once a vehicle has let go.
     let fall = { count = 0 kind = null }
@@ -292,6 +310,8 @@ export fn practice_target(options) {
     wear_shield()
 
     fn seek_cover() {
+        // Every hit lands here: a chance to fly up first.
+        if hooks.evade { hooks.evade() }
         if !retreat || !player || !health.alive() || rearm.phase || cover.route || cover.cooldown { return }
         let shield = 0.0
         if state.shield { shield = state.shield.integrity() }
@@ -563,7 +583,7 @@ export fn practice_target(options) {
         let dz = destination[2] - here[2]
         let distance = Math.sqrt(dx * dx + dz * dz)
         if distance < 0.08 { return true }
-        let step = Math.clamp(RUN_SPEED * dt / distance, 0.0, 1.0)
+        let step = Math.clamp(RUN_SPEED * state.speed_scale * dt / distance, 0.0, 1.0)
         face(Math.atan2(-dx, -dz) - frame_yaw())
         npc.root.set_translation([here[0] + dx * step, here[1], here[2] + dz * step], "world")
         return false
@@ -672,7 +692,7 @@ export fn practice_target(options) {
     }
 
     fn refresh_motion() {
-        let traveling = cover.route || rearm.pickup || rearm.phase == "return" || rearm.chase
+        let traveling = cover.route || rearm.pickup || rearm.phase == "return" || rearm.chase || resupply.route
         traveling = traveling || patrol_options
         traveling = traveling || (vehicle && !state.seated && !state.waiting_for_seat)
         let turning = driver && state.seated && driver.turning()
@@ -680,6 +700,109 @@ export fn practice_target(options) {
         set_activity("moving_to_destination", health.alive() && (traveling || turning || wandering))
     }
     hooks.refresh_motion = refresh_motion
+
+    // Leg rockets: a round on each thigh from the supply, then faster running
+    // and a short flight when attacked. Rockets burn "thrust" while enabled
+    // and "hover" in the air.
+    let rocket_supply = options["rocket_supply"]
+    if rocket_supply {
+        let legs = mitten_leg_rockets(npc.model)
+        let flight = { phase = null altitude = 0.0 hover = 0.0 ready = true }
+        let flight_cooldown = after_seconds(events, FLIGHT_COOLDOWN_SECONDS, "FlightReady")
+        frame.attach(flight_cooldown)
+        fn update_rockets() {
+            let enabled = health.alive() && legs.enabled()
+            state.speed_scale = 1.0
+            let mode = null
+            if enabled {
+                state.speed_scale = ROCKET_SPEED_SCALE
+                mode = "thrust"
+                if flight.phase { mode = "hover" }
+            }
+            legs.set_mode(mode)
+        }
+        fn set_altitude(value) {
+            flight.altitude = value
+            let t = npc.root.trs().translation
+            npc.root.update_transform([t[0], value, t[2]])
+        }
+        fn end_flight() {
+            flight.phase = null
+            set_altitude(0.0)
+            set_activity("flying", false)
+            flight.ready = false
+            flight_cooldown.play()
+        }
+        hooks.evade = fn() {
+            if flight.phase || !flight.ready || state.seated || !health.alive() || !legs.enabled() { return }
+            flight.phase = "up"
+            npc.set_legs_enabled(false)
+            set_activity("flying", true)
+            update_rockets()
+        }
+        hooks.fly = fn(dt) {
+            // A round taken off a leg mid-flight brings the NPC down.
+            if flight.phase != "down" && !legs.enabled() { flight.phase = "down" }
+            if flight.phase == "up" {
+                set_altitude(Math.clamp(flight.altitude + FLIGHT_CLIMB_SPEED * dt, 0.0, FLIGHT_HEIGHT))
+                if flight.altitude >= FLIGHT_HEIGHT {
+                    flight.phase = "hover"
+                    flight.hover = FLIGHT_HOVER_SECONDS
+                }
+            } else if flight.phase == "hover" {
+                flight.hover = flight.hover - dt
+                if flight.hover <= 0.0 { flight.phase = "down" }
+            } else if flight.phase == "down" {
+                set_altitude(Math.clamp(flight.altitude - FLIGHT_DESCENT_SPEED * dt, 0.0, FLIGHT_HEIGHT))
+                if flight.altitude <= 0.0 {
+                    end_flight()
+                    npc.set_legs_enabled(true)
+                    update_rockets()
+                }
+            }
+        }
+        // Called while moving, below cover and rearming and above patrol.
+        // Returns true while walking to a cabinet. Leg slots are checked when
+        // no walk is planned, every RESUPPLY_RETRY_SECONDS.
+        hooks.resupply = fn(dt) {
+            if !resupply.route {
+                if resupply.retry > 0.0 {
+                    resupply.retry = resupply.retry - dt
+                    return false
+                }
+                resupply.retry = RESUPPLY_RETRY_SECONDS
+                if legs.missing() == 0 { return false }
+                let found = rocket_supply.nearest(npc.root.world_trs().translation)
+                if !found { return false }
+                resupply.route = found.route
+                resupply.cabinet = found.cabinet
+                resupply.waypoint = 0
+                patrol.route = null
+            }
+            if follow(resupply, resupply.route, dt) {
+                legs.mount(rocket_supply.take(resupply.cabinet, legs.missing()))
+                resupply.route = null
+                // Look again at once in case the cabinet ran out.
+                resupply.retry = 0.0
+                update_rockets()
+                refresh_motion()
+            }
+            return true
+        }
+        on(events, "DataEvent", fn(event) { if event == "FlightReady" { flight.ready = true } })
+        let previous_death = hooks.death
+        hooks.death = fn() {
+            if previous_death { previous_death() }
+            if flight.phase { end_flight() }
+            resupply.route = null
+            update_rockets()
+        }
+        let previous_respawn = hooks.respawn
+        hooks.respawn = fn() {
+            if previous_respawn { previous_respawn() }
+            update_rockets()
+        }
+    }
 
     fn player_alive() { return !options["player_alive"] || options.player_alive() }
 
@@ -837,6 +960,7 @@ export fn practice_target(options) {
             }
             return
         }
+        if alive && hooks.resupply && !cover.hold && hooks.resupply(dt) { return }
         if alive && patrol_options && !cover.hold {
             let visible = player_alive() && can_attack()
             if visible {
@@ -900,6 +1024,7 @@ export fn practice_target(options) {
     activity.tick = on(world, "FrameTick", fn(event) {
         if activity.moving_to_destination { advance_movement(event.dt_sec) }
         if activity.attacking_target { combat.controller.advance(event.dt_sec) }
+        if activity.flying { hooks.fly(event.dt_sec) }
     })
     activity.tick.bypass(true)
     if combat.controller { combat.controller.start() }

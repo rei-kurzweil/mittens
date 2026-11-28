@@ -5,7 +5,8 @@
 Proposed, not implemented. NPC Mitten uses pistols only today: the
 interceptor's `mitten_armory` holds the five pistols, and `mitten_antagonist`
 / `mitten_weapon_slot` expect pistol methods (`fire_start`, `set_mode`,
-`rounds`). NPCs do not fly or carry leg rockets yet.
+`rounds`). Leg rockets and a simple evasive flight are implemented; NPC
+launchers are not.
 
 ## Outcome
 
@@ -36,11 +37,16 @@ hit, death), never polled per frame:
 2. **Goal priority** (highest first; retreating overrides all of them):
    1. retreat to cover (existing);
    2. get a loaded pistol (existing rearm);
-   3. get a launcher if it holds none;
-   4. get rockets: one to load an empty launcher, then leg rockets until
-      both slots are full.
-   A pistol in hand does not stop goals 3 and 4: the NPC still walks to a
-   launcher or rocket when nothing above applies.
+   3. fill both leg rocket slots: one round per leg enables them, for faster
+      running and flight. **Implemented** (`mitten_leg_rockets.mms`): NPCs
+      leave their patrol for the STA cabinet by the players' spawn, run 1.6x
+      faster with both rounds, and fly up about 3 m, hover 3 s and come down
+      when hit (6 s cooldown). Interceptor NPCs now spawn at the far end of
+      the deck from the players;
+   4. get a launcher if it holds none;
+   5. get a rocket to load an empty launcher.
+   A pistol in hand does not stop goals 3 to 5. Leg rockets come before a
+   launcher: two of them mean flight and speed.
 3. **Weapon choice when attacking**: use a loaded launcher at a safe range
    (outside its own inner blast radius of 2 m, with a margin), otherwise the
    pistol.

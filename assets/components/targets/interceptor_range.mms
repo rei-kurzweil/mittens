@@ -13,6 +13,7 @@ import { shared_impact } from "../network/shared_impact.mms"
 import { sta_ammo_cabinet } from "../sta_ammo_cabinet.mms"
 import { ship_input_controller } from "../ship_input_controller.mms"
 import { shared_npc } from "../network/npc_replication.mms"
+import { mitten_rocket_supply } from "../characters/mitten_leg_rockets.mms"
 
 fn stand(x, y, z, width, height, depth, material) {
     return T.position(x, y, z).scale(width, height, depth) {
@@ -77,27 +78,18 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     fn perimeter_spawn(index, spawns, other) {
         let seed = npcs.spawn_seconds * 41.0 + spawns * 19.0 + index * 53.0 + spawn_x * 7.0
-        let side = Math.floor(hash01(seed) * 4.0)
-        let along = hash01(seed + 1.0) * 2.0 - 1.0
-        let x = 0.0
-        let z = 0.0
-        let yaw = 0.0
-        // The hangar deck is 28 x 34 m. Keep the NPC roughly 1.5 m inside
-        // its edge, with a random position along each side.
-        if side == 0 { x = -12.5 z = along * 14.8 yaw = -Math.pi / 2.0 }
-        else if side == 1 { x = 12.5 z = along * 14.8 yaw = Math.pi / 2.0 }
-        else if side == 2 { x = along * 11.5 z = -15.5 yaw = Math.pi }
-        else { x = along * 11.5 z = 15.5 yaw = 0.0 }
-        if other && other.position {
-            let dx = x - other.position[0]
-            let dz = z - other.position[2]
-            if Math.sqrt(dx * dx + dz * dz) < 6.0 {
-                side = (side + 2) % 4
-                if side == 0 { x = -12.5 z = along * 14.8 yaw = -Math.pi / 2.0 }
-                else if side == 1 { x = 12.5 z = along * 14.8 yaw = Math.pi / 2.0 }
-                else if side == 2 { x = along * 11.5 z = -15.5 yaw = Math.pi }
-                else { x = along * 11.5 z = 15.5 yaw = 0.0 }
-            }
+        // The far end of the 28 x 34 m deck from the players' spawn, about
+        // 1.5 m inside the edge, so NPCs cross the map to reach the armory and
+        // the rocket cabinet beside the spawn.
+        let z = -15.5
+        let yaw = Math.pi
+        if spawn_z < 0.0 {
+            z = 15.5
+            yaw = 0.0
+        }
+        let x = (hash01(seed) * 2.0 - 1.0) * 11.5
+        if other && other.position && Math.abs(x - other.position[0]) < 6.0 {
+            if other.position[0] > 0.0 { x = other.position[0] - 6.0 } else { x = other.position[0] + 6.0 }
         }
         return { position = [x, roof_y, z] yaw = yaw }
     }
@@ -125,6 +117,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         { weapons = [spawn_left] approach = [-4.6, roof_y, 4.55] },
         { weapons = [spawn_right] approach = [4.6, roof_y, 4.55] },
     ], paths)
+    // NPCs leave their patrol for this cabinet (beside the player's spawn) to
+    // fill their leg rocket slots. Its open side faces +Z.
+    let ammo_cabinet = sta_ammo_cabinet("interceptor_sta_ammo_cabinet")
+    let rocket_supply = mitten_rocket_supply([
+        { root = ammo_cabinet label = "interceptor_sta_ammo_cabinet" approach = [1.20, roof_y, 5.65] },
+    ], paths)
     // The host owns a shared pair. Spawn them on the hangar's perimeter only
     // when requested; neither exists in the initial scene.
     fn spawn_one(state, index, other) {
@@ -140,7 +138,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             health_view = local.health_view player = local.shield_mount on_damage = sounds.damage
             on_player_hit = fn(points) { player.hit(points) }
             world_damage = true shared_impacts = pistol_impacts weapon_name = weapon_name
-            armory = armory retreat = paths.retreat
+            armory = armory retreat = paths.retreat rocket_supply = rocket_supply
             patrol = { plan = paths.plan points = [[-11.35, roof_y, -13.5], [11.35, roof_y, -13.5],
                 [11.35, roof_y, 13.5], [-11.35, roof_y, 13.5]] }
             on_shot = fn(pose, mode) { state.link.shot(pose, mode) }
@@ -265,7 +263,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             T.position(0.0, 1.04, 0.0) { rack_launcher.root }
         }
         T.position(1.20, 0.0, 4.9) {
-            sta_ammo_cabinet("interceptor_sta_ammo_cabinet")
+            ammo_cabinet
             T.position(0.0, 0.98, -0.18) { Zone.cube([0.48, 0.98, 0.025]) { Collidable.static() {} } }
         }
         T.position(-4.6, 0.0, 5.25) {
