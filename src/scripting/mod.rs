@@ -115,6 +115,9 @@ mod xr_flying_tests;
 mod gravity_mode_tests;
 
 #[cfg(test)]
+mod secondary_motion_pause_tests;
+
+#[cfg(test)]
 mod accordion_tests;
 
 #[cfg(test)]

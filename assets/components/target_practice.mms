@@ -8,6 +8,7 @@ import { mitten_driver } from "./characters/mitten_driver.mms"
 import { mitten_right_wrist_basis, pistol_grip } from "./poses/bisket/pistol_grip.mms"
 import { seated_lower_body_pose } from "./poses/mitten/floor-seated.pose.mms"
 import { lie_down, get_up } from "./characters/downed.mms"
+import { secondary_motion_visibility } from "./characters/secondary_motion_visibility.mms"
 
 // Local, single-player versions of the arena's combat rules
 // (shared_player_health.mms): pistol hits take 1 of 10 points. Rocket
@@ -226,6 +227,8 @@ export fn practice_target(options) {
     // player's weapon (route then leads to the player).
     let rearm = { phase = null waypoint = 0 route = null pickup = null chase = false }
     let retreat = options["retreat"]
+    let patrol_options = options["patrol"]
+    let patrol = { route = null waypoint = 0 corner = 0 engaged = false retry = 0.0 }
     let cover = { route = null waypoint = 0 hold = false cooldown = false }
     let events = T {}
     let retry = null
@@ -255,7 +258,7 @@ export fn practice_target(options) {
         state.shield = shield
     }
     let hooks = { death = null respawn = null set_chassis = null remove_ground = null eject = null approach = null
-        refresh_motion = null resume_motion = null }
+        refresh_motion = null resume_motion = null attacked = null }
     // Each fall alternates lying on the back and curling on the side. The
     // body lies down a moment after going down, once a vehicle has let go.
     let fall = { count = 0 kind = null }
@@ -277,6 +280,9 @@ export fn practice_target(options) {
             lie_timer.pause()
             get_up(npc)
             fall.kind = null
+            patrol.route = null
+            patrol.engaged = false
+            patrol.retry = 0.0
             wear_shield()
             if hooks.respawn { hooks.respawn() }
             hooks.resume_motion()
@@ -306,11 +312,13 @@ export fn practice_target(options) {
             shield.take_damage(10.0)
             if on_damage { on_damage(2.0) }
             seek_cover()
+            if hooks.attacked { hooks.attacked() }
             return
         }
         if hit.renderable.player_hit_zone == npc.hit_zone {
             health.damage(1.0, 1.0)
             seek_cover()
+            if hooks.attacked { hooks.attacked() }
         }
     }
     fn rocket_splash(point) {
@@ -326,7 +334,10 @@ export fn practice_target(options) {
         } else if shield_hit && on_damage {
             on_damage(2.0)
         }
-        if blast.health > 0.0 || shield_hit { seek_cover() }
+        if blast.health > 0.0 || shield_hit {
+            seek_cover()
+            if hooks.attacked { hooks.attacked() }
+        }
     }
     // Damage decided on another machine, such as a peer's shots at a replica
     // of this NPC: shield takes shield_amount while charged (once it has
@@ -345,6 +356,7 @@ export fn practice_target(options) {
         }
         if points > 0.0 { health.damage(points, 1.0) }
         seek_cover()
+        if hooks.attacked { hooks.attacked() }
     }
 
     // Turning: the head target carries the whole rig (body, both arms and
@@ -412,6 +424,9 @@ export fn practice_target(options) {
         emit_data(events, "FindWeapon")
     }
     let sight = { elapsed = 2.0 visible = false }
+    let motion_visibility = options["secondary_motion_observer"]
+    let visibility = null
+    if motion_visibility { visibility = secondary_motion_visibility(npc.model, npc.shield_mount, motion_visibility) }
     let sight_tick = on_global("FrameTick", fn(event) { sight.elapsed = sight.elapsed + event.dt_sec })
     fn can_attack() {
         if !health.alive() || !combat.gun.has_ammo() || rearm.phase { return false }
@@ -439,6 +454,7 @@ export fn practice_target(options) {
             opaque_bucket = "near" ammunition = 128
             on_hit = fn(hit) { if hit.source_user != null { pistol_hit(hit) } }
             world_damage = options["world_damage"]
+            shared_impacts = options["shared_impacts"]
             left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
         })
         if !armory {
@@ -526,6 +542,12 @@ export fn practice_target(options) {
             can_attack = can_attack
             aiming = fn(active) { set_activity("attacking_target", active) }
         })
+        if combat.controller["attacked"] {
+            hooks.attacked = fn() {
+                sight.elapsed = 2.0
+                combat.controller.attacked()
+            }
+        }
         hooks.death = fn() {
             combat.controller.stop()
             cover.route = null
@@ -651,6 +673,7 @@ export fn practice_target(options) {
 
     fn refresh_motion() {
         let traveling = cover.route || rearm.pickup || rearm.phase == "return" || rearm.chase
+        traveling = traveling || patrol_options
         traveling = traveling || (vehicle && !state.seated && !state.waiting_for_seat)
         let turning = driver && state.seated && driver.turning()
         let wandering = physics || (!vehicle && strafe != 0.0)
@@ -814,6 +837,34 @@ export fn practice_target(options) {
             }
             return
         }
+        if alive && patrol_options && !cover.hold {
+            let visible = player_alive() && can_attack()
+            if visible {
+                patrol.route = null
+                if !patrol.engaged && hooks.attacked { hooks.attacked() }
+                patrol.engaged = true
+                return
+            }
+            patrol.engaged = false
+            if !patrol.route {
+                if patrol.retry > 0.0 {
+                    patrol.retry = patrol.retry - dt
+                    return
+                }
+                patrol.route = patrol_options.plan(npc.root.world_trs().translation, patrol_options.points[patrol.corner])
+                patrol.waypoint = 0
+                if !patrol.route {
+                    patrol.corner = (patrol.corner + 1) % len(patrol_options.points)
+                    patrol.retry = 1.0
+                    return
+                }
+            }
+            if follow(patrol, patrol.route, dt) {
+                patrol.route = null
+                patrol.corner = (patrol.corner + 1) % len(patrol_options.points)
+            }
+            return
+        }
         if vehicle && !state.seated && alive { hooks.approach(dt) }
         if driver && state.seated && driver.turning() { check_bearing() }
         if physics {
@@ -855,6 +906,7 @@ export fn practice_target(options) {
     resume_motion()
     return {
         remove = fn() {
+            if visibility { visibility.remove() }
             sight_tick.remove()
             if combat.controller { combat.controller.stop() }
             activity.tick.remove()

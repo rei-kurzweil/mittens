@@ -8,7 +8,8 @@ import { player_down_hooks } from "../characters/downed.mms"
 import { shield_pickups } from "../shield_pickups.mms"
 import { interceptor_path_finding } from "./interceptor_paths.mms"
 import { shared_sta_launcher } from "../weapons/shared_sta_launcher.mms"
-import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
+import { ship_machine_pistol, apply_machine_pistol_impact } from "../weapons/ship_machine_pistol.mms"
+import { shared_impact } from "../network/shared_impact.mms"
 import { sta_ammo_cabinet } from "../sta_ammo_cabinet.mms"
 import { ship_input_controller } from "../ship_input_controller.mms"
 import { shared_npc } from "../network/npc_replication.mms"
@@ -53,11 +54,13 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         }
     })
     player.wear_shields(shields.worn)
+    let pistol_impacts = shared_impact({ socket = socket name = "interceptor.pistols" apply = apply_machine_pistol_impact })
     let npcs = {
         first = { current = null spawns = 0 position = null }
         second = { current = null spawns = 0 position = null }
         spawn_seconds = 0.0
     }
+    let motion_lod = { enabled = true }
     on_global("FrameTick", fn(event) { npcs.spawn_seconds = npcs.spawn_seconds + event.dt_sec })
     fn hash01(value) {
         let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
@@ -91,7 +94,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     fn range_pistol(label) {
         return ship_machine_pistol(label, {
-            opaque_bucket = "near" ammunition = 192 world_damage = false
+            opaque_bucket = "near" ammunition = 192 world_damage = true shared_impacts = pistol_impacts
             left_pointer = "#local_left_pointer" right_pointer = "#local_right_pointer" user = "#local_avatar"
             on_hit = fn(hit) {
                 if hit.source_user != null {
@@ -121,14 +124,19 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         let weapon_name = "interceptor_mitten_" + index + "_pistol"
         if state.spawns > 0 { weapon_name = weapon_name + "_" + state.spawns }
         state.spawns = state.spawns + 1
+        let motion_observer = null
+        if motion_lod.enabled { motion_observer = local.shield_mount }
         let target = practice_target({
             prefix = "interceptor_mitten_" + index avatar = "mitten" use_xr = true use_desktop = false
             position = placement.position yaw = placement.yaw strafe = 0.0
             combat = mitten_antagonist player_alive = player.alive
             health_view = local.health_view player = local.shield_mount on_damage = sounds.damage
             on_player_hit = fn(points) { player.hit(points) }
-            world_damage = false weapon_name = weapon_name
+            world_damage = true shared_impacts = pistol_impacts weapon_name = weapon_name
             armory = armory retreat = paths.retreat
+            secondary_motion_observer = motion_observer
+            patrol = { plan = paths.plan points = [[-11.35, roof_y, -13.5], [11.35, roof_y, -13.5],
+                [11.35, roof_y, 13.5], [-11.35, roof_y, 13.5]] }
             on_shot = fn(pose, mode) { state.link.shot(pose, mode) }
             on_lie_down = fn(kind) { state.link.down(kind) }
             on_respawn = fn() { state.link.respawned() }
@@ -168,10 +176,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     fn make_npc_link(state, index, other) {
         let name = "interceptor_mitten_" + index
+        let observer = local.shield_mount
         let link = shared_npc({
             socket = socket name = name host = is_host
             prefix = name avatar = "mitten" position = [spawn_x, roof_y, spawn_z]
             health_view = local.health_view on_damage = sounds.damage
+            secondary_motion_observer = observer
             current = fn() { return state.current }
             spawn = fn() { spawn_one(state, index, other) }
             remove = fn() { remove_one(state) }
@@ -182,10 +192,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     let first_link = make_npc_link(npcs.first, 1, npcs.second)
     let second_link = make_npc_link(npcs.second, 2, npcs.first)
     fn connect(group, address) {
+        pistol_impacts.connect(group, address)
         first_link.connect(group, address)
         second_link.connect(group, address)
     }
     fn disconnect() {
+        pistol_impacts.disconnect()
         first_link.disconnect()
         second_link.disconnect()
     }
@@ -257,5 +269,6 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         ship_input_controller(false, [launcher.grip, rack_launcher.grip], all_pistols, armory.forward)
     }
     return { root = root launcher = launcher launchers = [launcher, rack_launcher] paths = paths armory = armory
-        shields = shields connect = connect disconnect = disconnect }
+        shields = shields connect = connect disconnect = disconnect spawn_npcs = spawn_both
+        set_motion_visibility = fn(enabled) { motion_lod.enabled = enabled } }
 }

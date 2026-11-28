@@ -127,7 +127,7 @@ export fn mitten_antagonist(options) {
     let state = { phase = "down" aiming = false holding = false singles = 0 last_hit = null }
     let events = T {}
     let first = after_seconds(events, 1.6, "OpeningReady")
-    let singles = Animation.paused().length(2.0 * BEATS_PER_SECOND) {
+    let singles = Animation.paused().length((2.0 / 1.6) * BEATS_PER_SECOND) {
         Keyframe.at(0.0) { emit_data(events, "SingleAim") }
         Keyframe.at(0.4 * BEATS_PER_SECOND) { emit_data(events, "SingleFire") }
         Keyframe.at((0.4 + SEMI_HOLD_SECONDS) * BEATS_PER_SECOND) { emit_data(events, "SingleDone") }
@@ -135,9 +135,10 @@ export fn mitten_antagonist(options) {
     let burst = after_seconds(events, 3.0, "BurstDone")
     let cooldown = after_seconds(events, 5.0, "BurstReady")
     let retry = after_seconds(events, 0.25, "BurstReady")
+    let reaction = after_seconds(events, 0.6, "ReactionReady")
     let timers = T {
         name = options.name + "_combat_timers"
-        events first singles burst cooldown retry
+        events first singles burst cooldown retry reaction
     }
 
     fn allowed() {
@@ -186,7 +187,11 @@ export fn mitten_antagonist(options) {
     }
 
     on(events, "DataEvent", fn(event) {
-        if event == "OpeningReady" && state.phase == "opening" {
+        if event == "ReactionReady" && state.phase == "reaction" {
+            set_aiming(false)
+            state.phase = "single"
+            singles.loop_anim()
+        } else if event == "OpeningReady" && state.phase == "opening" {
             state.phase = "single"
             singles.loop_anim()
         } else if event == "SingleAim" && state.phase == "single" {
@@ -220,6 +225,7 @@ export fn mitten_antagonist(options) {
         burst.pause()
         cooldown.pause()
         retry.pause()
+        reaction.pause()
     }
     fn start() {
         stop()
@@ -238,6 +244,15 @@ export fn mitten_antagonist(options) {
         if mode == "auto" { points = AUTO_POINTS }
         options.on_player_hit(points)
     }
-    return { root = timers advance = advance start = start stop = stop shot = shot
+    fn attacked() {
+        if state.phase == "down" || state.phase == "reaction" || !allowed() { return }
+        stop()
+        state.phase = "reaction"
+        state.singles = 0
+        gun.set_mode("semi")
+        set_aiming(true)
+        reaction.play()
+    }
+    return { root = timers advance = advance start = start stop = stop shot = shot attacked = attacked
         last_hit = fn() { return state.last_hit } }
 }

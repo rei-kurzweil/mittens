@@ -420,6 +420,25 @@ fn steady_state_tick_does_not_retry_binding_or_discover_topology() {
 }
 
 #[test]
+fn per_root_pause_freezes_and_rebases_on_resume() {
+    let mut f = fixture();
+    f.system.register(&f.world, f.root);
+    f.system.tick(&mut f.world, STEP);
+    f.world.get_component_by_id_as_mut::<SecondaryMotionComponent>(f.root).unwrap().paused = true;
+    let ChainStatus::Bound(state) = &mut f.system.chains.get_mut(&f.chain).unwrap().status else { panic!("bound chain") };
+    state.current.fill([100.0, 200.0, 300.0]);
+    let before = state.current.clone();
+    assert!(f.system.tick(&mut f.world, STEP).is_empty());
+    let ChainStatus::Bound(state) = &f.system.chains[&f.chain].status else { panic!("bound chain") };
+    assert_eq!(state.current, before);
+    f.world.get_component_by_id_as_mut::<SecondaryMotionComponent>(f.root).unwrap().paused = false;
+    f.system.tick(&mut f.world, STEP);
+    let ChainStatus::Bound(state) = &f.system.chains[&f.chain].status else { panic!("bound chain") };
+    assert_ne!(state.current, before);
+    assert!(state.current.iter().flatten().all(|v| v.is_finite()));
+}
+
+#[test]
 fn global_pause_restores_once_preserves_authored_flags_and_resumes_from_live_pose() {
     let mut fixture = fixture();
     fixture.system.register(&fixture.world, fixture.root);

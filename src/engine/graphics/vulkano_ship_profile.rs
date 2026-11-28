@@ -33,7 +33,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         "bridge" => ([0., 1., -3.], 0f32),
         "cafeteria" => ([0., 1., 10.], std::f32::consts::PI),
         "orchard" => ([18., 6.2, 7.5], -2.1112158),
-        _ => return Err("choose bridge, cafeteria or orchard".into()),
+        "interceptor" => ([-2.5, 29.6, 7.6], 0f32),
+        _ => return Err("choose bridge, cafeteria, orchard or interceptor".into()),
     };
     if motion == "driving" {
         yaw = 0.;
@@ -104,6 +105,22 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         );
     if case == "no_bloom" {
         source = source.replace("let bloom_enabled = true", "let bloom_enabled = false");
+    }
+    if room == "interceptor" && std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS").as_deref() == Ok("2") {
+        if std::env::var("SHIP_PROFILE_INTERCEPTOR_NO_MOTION_LOD").as_deref() == Ok("1") {
+            source.push_str("\nrange_gear.set_motion_visibility(false)\n");
+        }
+        source.push_str(r#"
+            let profile_spawn = { elapsed = 0.0 done = false }
+            on_global("FrameTick", fn(event) {
+                if profile_spawn.done { return }
+                profile_spawn.elapsed = profile_spawn.elapsed + event.dt_sec
+                if profile_spawn.elapsed >= 1.0 {
+                    profile_spawn.done = true
+                    range_gear.spawn_npcs()
+                }
+            })
+        "#);
     }
     scene.load_mms_source_at_path(&source, &source_path)?;
     let mut uploader = Uploader {
@@ -362,6 +379,10 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         let p = uploader.renderer.profile.as_ref().unwrap();
         let gpu = p.gpu_ms()?;
         if sampling {
+            let paused_motion_roots = scene.world.all_components().filter(|&id| {
+                scene.world.get_component_by_id_as::<crate::engine::ecs::component::SecondaryMotionComponent>(id)
+                    .is_some_and(|motion| motion.paused)
+            }).count();
             let material_after = material_cache_totals(uploader.renderer);
             let material_delta: std::collections::BTreeMap<_, _> = [
                 "immutable_hits",
@@ -376,7 +397,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .enumerate()
             .map(|(i, name)| (name, material_after[i].saturating_sub(material_before[i])))
             .collect();
-            rows.push(serde_json::json!({"frame":frame,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
+            rows.push(serde_json::json!({"frame":frame,"paused_motion_roots":paused_motion_roots,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
                 "record_submit_ms":record_ms,"wait_ms":wait_ms,"total_ms":start.elapsed().as_secs_f64()*1000.,
                 "gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"draws":p.draws,
                 "cpu_record_stages_ms":p.cpu_stages.milliseconds(),

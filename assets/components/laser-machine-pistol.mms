@@ -15,7 +15,7 @@ export fn laser_machine_pistol(options) {
     if options["beats_per_second"] != null { beats_per_second = options.beats_per_second }
     let shot_interval = (2.5 / 75.0) / 1.05
     let burst_interval = 0.45 / 1.05 // 5% faster spacing and repeat cadence
-    let semi_shot_interval = 0.45 / (1.4 * 1.15) // Another 15% faster Semi cadence
+    let semi_shot_interval = 0.45 / (1.4 * 1.15 * 1.5)
     let auto_shot_interval = 1.0 / (8.0 * 1.15) // Another 15% faster Auto cadence
     let device_state = { firing = false cancelled = false trigger_held = false mode = "semi" burst_mode = "semi" bursts_fired = 0 shots_fired = 0 ammunition = null user = null requested_user = null tool = null }
     // A null limit preserves unlimited ammunition for existing callers.

@@ -122,6 +122,7 @@ struct RootRuntime {
 #[derive(Debug, Default)]
 struct ChainRuntime {
     root: Option<ComponentId>,
+    locally_paused: bool,
     joint_config_ids: Vec<ComponentId>,
     resolved_ids: Vec<ComponentId>,
     status: ChainStatus,
@@ -846,12 +847,19 @@ impl SecondaryMotionSystem {
                 state.accumulator = 0.0;
                 continue;
             }
+            if runtime.root.and_then(|root| world.get_component_by_id_as::<SecondaryMotionComponent>(root))
+                .is_some_and(|root| root.paused)
+            {
+                runtime.locally_paused = true;
+                continue;
+            }
             let rest_weight = rest_weights
                 .get(&chain_id)
                 .copied()
                 .unwrap_or(0.0)
                 .clamp(0.0, 1.0);
-            if resuming {
+            let locally_resuming = std::mem::replace(&mut runtime.locally_paused, false);
+            if resuming || locally_resuming {
                 // Rebase tails to the retained live pose after parent motion during
                 // the pause. Discard stale velocity/time without restoring bind rotations.
                 reset_state(world, state);

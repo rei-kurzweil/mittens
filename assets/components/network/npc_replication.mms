@@ -7,6 +7,7 @@ import { player_death } from "../player_death.mms"
 import { ship_machine_pistol } from "../weapons/ship_machine_pistol.mms"
 import { laser } from "../laser.mms"
 import { muzzle_flash } from "../muzzle-flash.mms"
+import { secondary_motion_visibility } from "../characters/secondary_motion_visibility.mms"
 
 // A host-authoritative NPC shared with one peer. The host runs the NPC
 // (practice_target) and the client shows a puppet of it:
@@ -361,7 +362,11 @@ export fn shared_npc(options) {
         if rotation { initial_rotation = rotation }
         player.root.world_trs({ translation = initial_position rotation_quat_xyzw = initial_rotation scale = ONE })
         root.attach(player.root)
-        let puppet = { player = player shield = null alive = false lying = 0 }
+        let visibility = null
+        if options["secondary_motion_observer"] {
+            visibility = secondary_motion_visibility(player.model, player.shield_mount, options.secondary_motion_observer)
+        }
+        let puppet = { player = player shield = null alive = false lying = 0 visibility = visibility }
         set_alive(puppet, true)
         link.puppet = puppet
     }
@@ -369,6 +374,7 @@ export fn shared_npc(options) {
         let puppet = link.puppet
         if !puppet { return }
         link.puppet = null
+        if puppet.visibility { puppet.visibility.remove() }
         puppet.player.dispose()
         puppet.player.root.remove_subtree()
     }

@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const USAGE: &str = "usage: profile-sakura-xr <0|2|twilight|twilight-simpler> <report-directory> [--wait-for-peer] [--warmup SECONDS] [--sample SECONDS] [--startup-timeout SECONDS]";
+const USAGE: &str = "usage: profile-sakura-xr <0|2|twilight|twilight-simpler|interceptor-0|interceptor-2> <report-directory> [--wait-for-peer] [--warmup SECONDS] [--sample SECONDS] [--startup-timeout SECONDS]";
 
 struct CaptureTiming {
     warmup: Duration,
@@ -93,7 +93,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scene.load_mms_source_at_path(&std::fs::read_to_string(&path)?, &path)?;
             config.authored_scene = Some(name);
         }
-        _ => return Err("choose 0, 2, twilight, or twilight-simpler".into()),
+        "interceptor-0" | "interceptor-2" => {
+            let path = "examples/interceptor.mms";
+            let mut source = std::fs::read_to_string(path)?;
+            if mode == "interceptor-2" {
+                source.push_str(r#"
+                    let profile_spawn = { elapsed = 0.0 done = false }
+                    on_global("FrameTick", fn(event) {
+                        if profile_spawn.done { return }
+                        profile_spawn.elapsed = profile_spawn.elapsed + event.dt_sec
+                        if profile_spawn.elapsed >= 1.0 {
+                            profile_spawn.done = true
+                            range_gear.spawn_npcs()
+                        }
+                    })
+                "#);
+            }
+            scene.load_mms_source_at_path(&source, path)?;
+            config.authored_scene = Some(mode.clone());
+        }
+        _ => return Err(USAGE.into()),
     }
     let wait_session = scene.world.all_components().find(|&id| {
         scene

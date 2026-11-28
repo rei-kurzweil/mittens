@@ -810,6 +810,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             component_signature([mms::ValueType::Any, mms::ValueType::F32]),
                         );
                 }
+                "SecondaryMotion" => {
+                    component.alias("secondary_motion");
+                    host_method(component, canonical, "set_paused", mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null));
+                }
                 "SpringBone" => spring_runtime_config::configure(component),
                 "ReturnToRestWhenStill" => {
                     component

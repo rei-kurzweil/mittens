@@ -19,6 +19,7 @@ fn ref_surface(value: &ComponentRef) -> String {
 #[derive(Debug, Clone, Default)]
 pub struct SecondaryMotionComponent {
     component: Option<ComponentId>,
+    pub paused: bool,
 }
 impl SecondaryMotionComponent {
     pub fn new() -> Self {
