@@ -3,14 +3,15 @@
 # directions (SHIP_PROFILE_MOTION=vantage) while NPCs and scene logic run.
 # VANTAGE_FRAMES frames per vantage (the first quarter unsampled): 40 gives
 # 9360 frames per run. One run per NPC count x MSAA mode x bloom mode:
-# MSAA_MODES="off 2x 4x" BLOOM_MODES="off on" sweeps all of them (12 runs).
+# Defaults: 0 and 2 NPCs x MSAA 2x and 4x, bloom off (4 runs). MSAA_MODES and
+# BLOOM_MODES take lists, e.g. BLOOM_MODES="off on".
 # Results: $OUT/vantages.md (colour-coded grid, hot spots) plus JSON and logs.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 NPCS="${NPCS:-0 2}"
-MSAA_MODES="${MSAA_MODES:-4x}"
+MSAA_MODES="${MSAA_MODES:-2x 4x}"
 BLOOM_MODES="${BLOOM_MODES:-off}"
 SIZE="${SIZE:-1920}"
 WARMUP="${WARMUP:-300}"
