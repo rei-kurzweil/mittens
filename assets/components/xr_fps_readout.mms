@@ -3,7 +3,7 @@
 // Mount it inside an existing hud() display so it adds no spring of its own.
 // Position is in metres relative to that display.
 export fn xr_fps_readout(position) {
-    return T.position(position[0], position[1], position[2]).scale(0.025, 0.025, 0.025) {
+    return T.position(position[0], position[1], position[2]).scale(0.0625, 0.0625, 0.0625) {
         name = "xr_fps_readout"
         Raycastable.disabled()
         Selectable.off()
