@@ -103,7 +103,8 @@ fn mitten_enables_frame_callbacks_only_for_active_behaviors() {
     advance(&mut scene, &clock, 185);
     assert!(!has_frame_tick(&scene), "automatic cooldown");
     let first_burst = shots.lock().unwrap().clone();
-    assert_eq!(first_burst.iter().filter(|&&t| t < 10.3).count(), 5);
+    // SINGLES_BEFORE_BURST in target_combat.mms: 5 singles at 3x the rate.
+    assert_eq!(first_burst.iter().filter(|&&t| t < 10.3).count(), 15);
     assert!(first_burst.len() >= 30);
 
     let controls = named(&scene, "fixture_controls");

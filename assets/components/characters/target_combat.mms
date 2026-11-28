@@ -19,6 +19,16 @@ let AUTO_WAIT_SECONDS = 6.0
 let AUTO_POINTS = 0.5
 // laser_machine_pistol's auto cadence.
 let AUTO_SHOT_SECONDS = 1.0 / (8.0 * 1.15)
+// mitten_antagonist's single shots: aim, fire, release, repeating every
+// SINGLE_PERIOD_SECONDS. SINGLE_RATE scales the whole cycle; at 3 a shot
+// leaves every ~0.42 s, above the pistol's semi interval (~0.19 s).
+let SINGLE_RATE = 3.0
+let SINGLE_PERIOD_SECONDS = (2.0 / 1.6) / SINGLE_RATE
+let SINGLE_AIM_SECONDS = 0.4 / SINGLE_RATE
+let SINGLE_HOLD_SECONDS = SEMI_HOLD_SECONDS / SINGLE_RATE
+// Singles before switching to an auto burst; scaled so the semi stretch
+// lasts as long as before.
+let SINGLES_BEFORE_BURST = 5 * SINGLE_RATE
 
 // Animation timers dispatch only at visual time.
 export fn after_seconds(events, seconds, name) {
@@ -127,10 +137,10 @@ export fn mitten_antagonist(options) {
     let state = { phase = "down" aiming = false holding = false singles = 0 last_hit = null }
     let events = T {}
     let first = after_seconds(events, 1.6, "OpeningReady")
-    let singles = Animation.paused().length((2.0 / 1.6) * BEATS_PER_SECOND) {
+    let singles = Animation.paused().length(SINGLE_PERIOD_SECONDS * BEATS_PER_SECOND) {
         Keyframe.at(0.0) { emit_data(events, "SingleAim") }
-        Keyframe.at(0.4 * BEATS_PER_SECOND) { emit_data(events, "SingleFire") }
-        Keyframe.at((0.4 + SEMI_HOLD_SECONDS) * BEATS_PER_SECOND) { emit_data(events, "SingleDone") }
+        Keyframe.at(SINGLE_AIM_SECONDS * BEATS_PER_SECOND) { emit_data(events, "SingleFire") }
+        Keyframe.at((SINGLE_AIM_SECONDS + SINGLE_HOLD_SECONDS) * BEATS_PER_SECOND) { emit_data(events, "SingleDone") }
     }
     let burst = after_seconds(events, 3.0, "BurstDone")
     let cooldown = after_seconds(events, 5.0, "BurstReady")
@@ -202,7 +212,7 @@ export fn mitten_antagonist(options) {
             if ready { pull() }
         } else if event == "SingleDone" && state.phase == "single" {
             release()
-            if state.singles == 5 {
+            if state.singles >= SINGLES_BEFORE_BURST {
                 singles.pause()
                 gun.set_mode("auto")
                 begin_burst()
