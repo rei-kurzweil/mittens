@@ -11,9 +11,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     let motion = std::env::var("SHIP_PROFILE_MOTION").unwrap_or("stationary".into());
     assert!(matches!(
         motion.as_str(),
-        "stationary" | "head" | "walking" | "driving" | "interceptor_play"
+        "stationary" | "head" | "walking" | "driving" | "interceptor_play" | "vantage"
     ));
-    let frames: usize = std::env::var("SHIP_PROFILE_FRAMES")
+    let mut frames: usize = std::env::var("SHIP_PROFILE_FRAMES")
         .unwrap_or("120".into())
         .parse()?;
     let warmup: usize = std::env::var("SHIP_PROFILE_WARMUP")
@@ -201,6 +201,15 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
+    // The sweep sets the sample length: every vantage gets the same frames.
+    let vantage_sweep = if motion == "vantage" {
+        assert_eq!(room, "interceptor");
+        let sweep = ship_motion::VantageSweep::new(28.0 + 1.65)?;
+        frames = sweep.total_frames();
+        Some(sweep)
+    } else {
+        None
+    };
     // Diagnostic gates only: retain scene objects, mounting and native physics.
     let bypassed_callbacks: Vec<u64> = std::env::var("SHIP_PROFILE_BYPASS_CALLBACKS")
         .unwrap_or_default()
@@ -380,6 +389,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         if let Some(replay) = &camera_replay {
             replay.apply(&mut scene, frame, warmup);
         }
+        let vantage = vantage_sweep
+            .as_ref()
+            .map(|sweep| sweep.apply(&mut scene, frame.saturating_sub(warmup)));
         let prepare_ms = prep.elapsed().as_secs_f64() * 1000.;
         let record = Instant::now();
         // Mirror remains frozen as in the actual bridge/cafeteria view.
@@ -429,7 +441,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .map(|(i, name)| (name, material_after[i].saturating_sub(material_before[i])))
             .collect();
             let weapon_held = interceptor_play.as_ref().map(|play| play.holding(&scene));
-            rows.push(serde_json::json!({"frame":frame,"weapon_held":weapon_held,"paused_motion_roots":paused_motion_roots,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
+            rows.push(serde_json::json!({"frame":frame,"vantage":vantage,"weapon_held":weapon_held,"paused_motion_roots":paused_motion_roots,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
                 "record_submit_ms":record_ms,"wait_ms":wait_ms,"total_ms":start.elapsed().as_secs_f64()*1000.,
                 "gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"draws":p.draws,
                 "cpu_record_stages_ms":p.cpu_stages.milliseconds(),

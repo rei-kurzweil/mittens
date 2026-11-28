@@ -253,24 +253,95 @@ impl CameraReplay {
         Ok(Some(Self { path, views }))
     }
     pub(super) fn apply(&self, scene: &mut Universe, frame: usize, warmup: usize) {
-        let view = self.views[frame.saturating_sub(warmup) % self.views.len()];
-        let model = mat4_inverse(view).expect("reference camera invertible");
-        let trs = crate::engine::transform::TransformTrs::from_matrix(model).unwrap();
-        let mut eyes = scene
-            .visuals
-            .visual_camera(crate::engine::graphics::CameraTarget::Xr)
-            .unwrap()
-            .eyes
-            .clone();
-        for eye in &mut eyes {
-            eye.view = view;
-            eye.transform.translation = trs.translation;
-            eye.transform.rotation = trs.rotation_quat_xyzw;
-            eye.transform.scale = trs.scale;
-            eye.transform.model = model;
-            eye.transform.matrix_world = model;
+        set_xr_view(scene, self.views[frame.saturating_sub(warmup) % self.views.len()]);
+    }
+}
+
+/// Overrides both XR eyes with one world-to-view matrix, after prepare.
+fn set_xr_view(scene: &mut Universe, view: [[f32; 4]; 4]) {
+    let model = mat4_inverse(view).expect("reference camera invertible");
+    let trs = crate::engine::transform::TransformTrs::from_matrix(model).unwrap();
+    let mut eyes = scene
+        .visuals
+        .visual_camera(crate::engine::graphics::CameraTarget::Xr)
+        .unwrap()
+        .eyes
+        .clone();
+    for eye in &mut eyes {
+        eye.view = view;
+        eye.transform.translation = trs.translation;
+        eye.transform.rotation = trs.rotation_quat_xyzw;
+        eye.transform.scale = trs.scale;
+        eye.transform.model = model;
+        eye.transform.matrix_world = model;
+    }
+    scene.visuals.set_xr_camera(eyes);
+}
+
+// Render-only vantage sweep over the interceptor deck: the XR camera holds
+// each of 9 sections x 26 directions for `frames_per` frames, the first
+// `settle` of them unsampled. NPCs, input and scene logic run as usual.
+// Sections are a 3 x 3 grid of the 28 x 34 m deck (north is -Z, east +X);
+// directions are the 26 neighbours of a 3 x 3 x 3 cube (x, y, z each -1/0/1).
+pub(super) const VANTAGE_SECTIONS: [(&str, f32, f32); 9] = [
+    ("NW", -9.33, -11.33),
+    ("N", 0., -11.33),
+    ("NE", 9.33, -11.33),
+    ("W", -9.33, 0.),
+    ("C", 0., 0.),
+    ("E", 9.33, 0.),
+    ("SW", -9.33, 11.33),
+    ("S", 0., 11.33),
+    ("SE", 9.33, 11.33),
+];
+pub(super) struct VantageSweep {
+    pub frames_per: usize,
+    pub settle: usize,
+    eye_y: f32,
+    directions: Vec<[i32; 3]>,
+}
+impl VantageSweep {
+    pub(super) fn new(eye_y: f32) -> Result<Self, Box<dyn Error>> {
+        let frames_per: usize = std::env::var("SHIP_PROFILE_VANTAGE_FRAMES")
+            .unwrap_or("40".into())
+            .parse()?;
+        let settle = (frames_per / 4).max(2);
+        assert!(frames_per > settle);
+        let mut directions = Vec::new();
+        for y in [1, 0, -1] {
+            for z in [-1, 0, 1] {
+                for x in [-1, 0, 1] {
+                    if [x, y, z] != [0, 0, 0] {
+                        directions.push([x, y, z]);
+                    }
+                }
+            }
         }
-        scene.visuals.set_xr_camera(eyes);
+        Ok(Self {
+            frames_per,
+            settle,
+            eye_y,
+            directions,
+        })
+    }
+    pub(super) fn total_frames(&self) -> usize {
+        VANTAGE_SECTIONS.len() * self.directions.len() * self.frames_per
+    }
+    /// Points the camera for sweep frame `index` and describes the vantage.
+    pub(super) fn apply(&self, scene: &mut Universe, index: usize) -> serde_json::Value {
+        let vantage = index / self.frames_per;
+        let (name, x, z) = VANTAGE_SECTIONS[vantage / self.directions.len()];
+        let d = self.directions[vantage % self.directions.len()];
+        let rotation = look_rotation([d[0] as f32, d[1] as f32, d[2] as f32]);
+        let model = crate::engine::transform::TransformTrs::new([x, self.eye_y, z], rotation, [1., 1., 1.])
+            .to_matrix()
+            .expect("vantage pose");
+        set_xr_view(scene, mat4_inverse(model).expect("vantage pose invertible"));
+        serde_json::json!({
+            "section": name,
+            "direction": d,
+            "settling": index % self.frames_per < self.settle,
+        })
     }
 }
 

@@ -74,6 +74,29 @@ then walks, looks around, sways the hand and fires every 2 s
 `/tmp/interceptor-matrix/results.md` and `results.csv`; a "Launcher held"
 value below 100% means the grab fixture missed.
 
+### First matrix run (2026-11-28, GTX 1080, 1920x1920 per eye)
+
+[Raw results](data/interceptor-matrix-2026-11-28-gtx1080.csv). The
+launcher grab missed (held 0–5%), so no rockets were fired
+([fix](../task/sta-launcher-handle-first-grab.md)). The 1- and 2-NPC rows
+match closely; later runs report `npcs_present` to confirm both spawned.
+
+- 0 NPCs: GPU 3.7–5.2 ms, CPU frame 12.6–14.5 ms, update ~4.9 ms.
+- 1–2 NPCs: GPU 5.7–9.1 ms, CPU frame 22.4–27.5 ms, update ~11.4 ms. NPC
+  logic adds ~6.5 ms of update per frame; that, not rendering, is the limit.
+- MSAA off/2x/4x differences are within run-to-run noise.
+- Bloom adds ~1.5–2.6 ms GPU and ~2.5 ms CPU with NPCs.
+
+## Vantage sweep
+
+`tests/profile-interceptor-vantages.sh` holds the XR camera at each of 9
+deck sections (a 3 x 3 grid; north is -Z) x 26 directions (the neighbours of
+a 3 x 3 x 3 cube) for 40 frames while the scene runs, for 0 and 2 NPCs at
+MSAA 4x with bloom off. `vantages.md` maps estimated fps per section, per
+direction and per vantage, colour-coded at 60 and 45 fps, with the slowest
+vantages listed. Estimated fps is 1000 / max(CPU, GPU) headless, so the
+headset will be lower.
+
 ## Headset capture
 
 ```sh
