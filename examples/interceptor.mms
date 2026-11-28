@@ -19,6 +19,7 @@ import { network_settings_panel } from "../assets/components/panels/network_sett
 import { avatar_settings_panel } from "../assets/components/panels/avatar_settings_panel.mms"
 import { mirror_panel } from "../assets/components/panels/mirror_panel.mms"
 import { dock, dock_dropzone } from "../assets/components/ui/dock.mms"
+import { xr_fps_readout } from "../assets/components/xr_fps_readout.mms"
 
 RendererSettings { window_visible(false) }
 XR.on()
@@ -361,6 +362,9 @@ let local = make_rooftop_player({
     show_health = true shield_mount = true
 })
 local.label.set_text(net.local_name())
+// XR FPS beside the health bar in the HUD. Comment out to hide it.
+let health_hud = local.health_view.query("#local_health_hud_display")
+if health_hud { health_hud.attach(xr_fps_readout([0.24, 0.0, 0.0])) }
 local.root.update_transform([spawn_x, roof_y, spawn_z])
 local.locomotion
 // Equip one STA rocket on each thigh to unlock flight.
