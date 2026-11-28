@@ -369,6 +369,7 @@ export fn shared_npc(options) {
         let puppet = { player = player shield = null alive = false lying = 0 visibility = visibility }
         set_alive(puppet, true)
         link.puppet = puppet
+        if options["on_puppet_spawned"] { options.on_puppet_spawned(player.root) }
     }
     fn remove_puppet() {
         let puppet = link.puppet

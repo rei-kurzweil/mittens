@@ -60,7 +60,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         second = { current = null spawns = 0 position = null }
         spawn_seconds = 0.0
     }
-    let motion_lod = { enabled = true }
+    // Secondary motion (hair, bow) on both NPCs, switched from a pedestal.
+    // Applied when toggled and when an NPC or puppet spawns; nothing polls.
+    let secondary = { enabled = true }
+    fn apply_secondary_motion(subtree) {
+        for motion in subtree.query_all("secondary_motion") { motion.set_paused(!secondary.enabled) }
+    }
     on_global("FrameTick", fn(event) { npcs.spawn_seconds = npcs.spawn_seconds + event.dt_sec })
     fn hash01(value) {
         let raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453
@@ -124,8 +129,6 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         let weapon_name = "interceptor_mitten_" + index + "_pistol"
         if state.spawns > 0 { weapon_name = weapon_name + "_" + state.spawns }
         state.spawns = state.spawns + 1
-        let motion_observer = null
-        if motion_lod.enabled { motion_observer = local.shield_mount }
         let target = practice_target({
             prefix = "interceptor_mitten_" + index avatar = "mitten" use_xr = true use_desktop = false
             position = placement.position yaw = placement.yaw strafe = 0.0
@@ -134,7 +137,6 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             on_player_hit = fn(points) { player.hit(points) }
             world_damage = true shared_impacts = pistol_impacts weapon_name = weapon_name
             armory = armory retreat = paths.retreat
-            secondary_motion_observer = motion_observer
             patrol = { plan = paths.plan points = [[-11.35, roof_y, -13.5], [11.35, roof_y, -13.5],
                 [11.35, roof_y, 13.5], [-11.35, roof_y, 13.5]] }
             on_shot = fn(pose, mode) { state.link.shot(pose, mode) }
@@ -143,6 +145,7 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
         })
         target.root
         state.current = target
+        apply_secondary_motion(target.root)
         state.position = placement.position
         if is_host {
             let trs = target.root.world_trs()
@@ -176,12 +179,11 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     fn make_npc_link(state, index, other) {
         let name = "interceptor_mitten_" + index
-        let observer = local.shield_mount
         let link = shared_npc({
             socket = socket name = name host = is_host
             prefix = name avatar = "mitten" position = [spawn_x, roof_y, spawn_z]
             health_view = local.health_view on_damage = sounds.damage
-            secondary_motion_observer = observer
+            on_puppet_spawned = fn(puppet_root) { apply_secondary_motion(puppet_root) }
             current = fn() { return state.current }
             spawn = fn() { spawn_one(state, index, other) }
             remove = fn() { remove_one(state) }
@@ -191,6 +193,22 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
     }
     let first_link = make_npc_link(npcs.first, 1, npcs.second)
     let second_link = make_npc_link(npcs.second, 2, npcs.first)
+    fn secondary_motion_label() {
+        if secondary.enabled { return "Secondary: On" }
+        return "Secondary: Off"
+    }
+    // Local only: each peer chooses for the NPCs it renders.
+    fn set_secondary_motion(enabled) {
+        secondary.enabled = enabled
+        if npcs.first.current { apply_secondary_motion(npcs.first.current.root) }
+        if npcs.second.current { apply_secondary_motion(npcs.second.current.root) }
+        apply_secondary_motion(first_link.root)
+        apply_secondary_motion(second_link.root)
+        let control = query("#interceptor_secondary_motion_control")
+        if control {
+            for text in control.query_all("text") { text.set_text(secondary_motion_label()) }
+        }
+    }
     fn connect(group, address) {
         pistol_impacts.connect(group, address)
         first_link.connect(group, address)
@@ -265,10 +283,12 @@ export fn interceptor_range(local, socket, rank, roof_y, spawn_x, spawn_z, mater
             [0.59, 0.77, 0.57, 1.0], material, spawn_both)
         mitten_pedestal("interceptor_remove_mitten", "Remove Both", spawn_x + 1.19, spawn_z - 1.65,
             [0.85, 0.50, 0.55, 1.0], material, remove_both)
+        mitten_pedestal("interceptor_secondary_motion", secondary_motion_label(), spawn_x + 1.90, spawn_z - 1.65,
+            [0.62, 0.66, 0.88, 1.0], material, fn() { set_secondary_motion(!secondary.enabled) })
         let all_pistols = [pistols[0], pistols[1], pistols[2], spawn_left, spawn_right]
         ship_input_controller(false, [launcher.grip, rack_launcher.grip], all_pistols, armory.forward)
     }
     return { root = root launcher = launcher launchers = [launcher, rack_launcher] paths = paths armory = armory
         shields = shields connect = connect disconnect = disconnect spawn_npcs = spawn_both
-        set_motion_visibility = fn(enabled) { motion_lod.enabled = enabled } }
+        set_secondary_motion = set_secondary_motion }
 }

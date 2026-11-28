@@ -320,3 +320,68 @@ fn truck_bed_demo_drives_the_pickup_with_seated_mitten_aboard() {
         .unwrap();
     assert_eq!(scene.world.parent_of(named(&scene, "npc_frame")), Some(chassis));
 }
+
+#[test]
+fn interceptor_pedestal_switches_npc_secondary_motion_without_polling() {
+    use crate::engine::ecs::component::SecondaryMotionComponent;
+    let path = "examples/interceptor.mms";
+    let mut source = std::fs::read_to_string(path)
+        .unwrap()
+        .replace("AudioInput {}", "AudioInput { enabled(false) }");
+    source.push_str(
+        r#"
+        let motion_test = T { name = "practice_test_events" }
+        motion_test
+        on(motion_test, "DataEvent", fn(event) {
+            if event == "Off" { range_gear.set_secondary_motion(false) }
+            if event == "On" { range_gear.set_secondary_motion(true) }
+            if event == "Spawn" { range_gear.spawn_npcs() }
+        })
+        "#,
+    );
+    let (mut scene, clock) = load(&source, path);
+    fn descendants(world: &World, root: ComponentId, out: &mut Vec<ComponentId>) {
+        for &child in world.children_of(root).iter() {
+            out.push(child);
+            descendants(world, child, out);
+        }
+    }
+    let under = |scene: &Universe, label: &str| {
+        let mut ids = Vec::new();
+        descendants(&scene.world, named(scene, label), &mut ids);
+        ids
+    };
+    let npc_motion = |scene: &Universe| -> Vec<bool> {
+        ["interceptor_mitten_1_frame", "interceptor_mitten_2_frame"]
+            .iter()
+            .flat_map(|frame| under(scene, frame))
+            .filter_map(|id| {
+                scene.world.get_component_by_id_as::<SecondaryMotionComponent>(id).map(|m| m.paused)
+            })
+            .collect()
+    };
+    let label = |scene: &Universe| -> String {
+        under(scene, "interceptor_secondary_motion_control")
+            .into_iter()
+            .find_map(|id| scene.world.get_component_by_id_as::<TextComponent>(id).map(|t| t.text.clone()))
+            .unwrap()
+    };
+    assert_eq!(label(&scene), "Secondary: On");
+
+    // Switched off before the NPCs exist: they spawn already paused.
+    event(&mut scene, "Off");
+    step(&mut scene, &clock, 2);
+    assert_eq!(label(&scene), "Secondary: Off");
+    event(&mut scene, "Spawn");
+    step(&mut scene, &clock, 4);
+    let paused = npc_motion(&scene);
+    assert!(!paused.is_empty(), "both NPCs should carry secondary motion");
+    assert!(paused.iter().all(|&p| p), "{paused:?}");
+
+    // Back on: every NPC chain resumes, and stays resumed with no
+    // visibility polling to pause it again.
+    event(&mut scene, "On");
+    step(&mut scene, &clock, 180);
+    assert!(npc_motion(&scene).iter().all(|&p| !p));
+    assert_eq!(label(&scene), "Secondary: On");
+}

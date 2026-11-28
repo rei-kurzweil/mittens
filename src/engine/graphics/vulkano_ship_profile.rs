@@ -107,8 +107,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         source = source.replace("let bloom_enabled = true", "let bloom_enabled = false");
     }
     if room == "interceptor" && std::env::var("SHIP_PROFILE_INTERCEPTOR_NPCS").as_deref() == Ok("2") {
-        if std::env::var("SHIP_PROFILE_INTERCEPTOR_NO_MOTION_LOD").as_deref() == Ok("1") {
-            source.push_str("\nrange_gear.set_motion_visibility(false)\n");
+        if std::env::var("SHIP_PROFILE_INTERCEPTOR_SECONDARY_MOTION").as_deref() == Ok("off") {
+            source.push_str("\nrange_gear.set_secondary_motion(false)\n");
         }
         source.push_str(r#"
             let profile_spawn = { elapsed = 0.0 done = false }

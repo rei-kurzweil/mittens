@@ -23,10 +23,11 @@ MMS_BENCH_SCENES=examples/interceptor.mms MMS_BENCH_PREPARE_RENDER=1 \
 
 The two-NPC run asserts that at least three Mitten models are present. Update
 time and CPU render preparation are separate; the uploader does not use a GPU.
-Set `MMS_BENCH_INTERCEPTOR_NO_MOTION_LOD=1` on a two-NPC run to disable the
-visibility check and compare with the default. The report records the average
-number of paused secondary-motion roots; zero means the run did not exercise
-an occluded avatar and cannot establish the benefit of this policy.
+Set `MMS_BENCH_INTERCEPTOR_SECONDARY_MOTION=off` on a two-NPC run to pause
+both NPCs' secondary motion (as the demo's "Secondary" pedestal does) and
+compare with the default, where it runs. The report records the average
+number of paused secondary-motion roots, which should be non-zero only in the
+`off` run.
 Callback timings exclude deferred visual-phase callbacks, so they cannot be
 subtracted from all script work. The headless scene has synthetic XR input,
 no headset pacing and no GPU time; it cannot predict headset FPS.
@@ -36,9 +37,9 @@ no headset pacing and no GPU time; it cannot predict headset FPS.
 On a machine with Vulkan hardware, use the same GPU, extent and scene state:
 
 `tests/profile-interceptor-gpu.sh` runs all three cases: zero NPCs, two with
-visibility control disabled, and two with it enabled. Its per-frame JSON
-includes `paused_motion_roots`, so check whether the visible/occluded cases
-actually differ before attributing any timing difference to the policy.
+secondary motion running, and two with it paused. Its per-frame JSON includes
+`paused_motion_roots`; check it before attributing a timing difference to
+pausing.
 
 ```sh
 SHIP_PROFILE_SOURCE=examples/interceptor.mms SHIP_PROFILE_ROOM=interceptor \
@@ -53,8 +54,8 @@ SHIP_PROFILE_SOURCE=examples/interceptor.mms SHIP_PROFILE_ROOM=interceptor \
   cargo test --release --lib profile_ship_stereo -- --ignored --nocapture
 ```
 
-Add `SHIP_PROFILE_INTERCEPTOR_NO_MOTION_LOD=1` to the two-NPC command for the
-full-motion comparison. Spawn positions and behavior can vary between runs.
+Add `SHIP_PROFILE_INTERCEPTOR_SECONDARY_MOTION=off` to the two-NPC command for
+the paused comparison. Spawn positions and behavior can vary between runs.
 
 Set `SHIP_PROFILE_WIDTH` and `SHIP_PROFILE_HEIGHT` to the headset's per-eye
 extent. This is an offscreen stereo capture, not an OpenXR compositor run;
@@ -86,3 +87,8 @@ capture does not demonstrate a speedup: NPC behavior and the amount of
 occlusion can change during sampling. Inspect collision-frame construction,
 constraint work and which chains were paused, and repeat in a controlled
 occlusion scene before deciding whether the policy is worthwhile.
+
+The interceptor demo no longer runs this check: it showed no speedup and added
+callback time. Its NPCs' secondary motion is now switched from a pedestal
+instead. `secondary_motion_visibility` remains available to other scenes
+through the `secondary_motion_observer` option.
