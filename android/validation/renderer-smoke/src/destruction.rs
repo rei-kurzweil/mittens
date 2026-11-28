@@ -117,7 +117,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
         prepare(&mut scene, &mut renderer);
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    renderer.draw(0, &scene.visuals, &cameras).unwrap();
+    renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
     let before = target.pixels();
     assert!(
         before[(48 * 96 + 48) * 4 + 1] > 180,
@@ -136,7 +136,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert_eq!(scene.systems.destroyable.cuts, 1);
-    renderer.draw(0, &scene.visuals, &cameras).unwrap();
+    renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
     let after = target.pixels();
     for eye in 0..2 {
         let center = (eye * 96 * 96 + 48 * 96 + 48) * 4;
@@ -209,7 +209,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             prepare(&mut scene, &mut renderer);
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
         let snapshot = target.pixels();
         let orange = snapshot
             .chunks_exact(4)
@@ -257,7 +257,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
                     "all levels must be visited in order"
                 );
                 levels.push(depth);
-                renderer.draw(0, &scene.visuals, &cameras).unwrap();
+                renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
                 let pixels = target.pixels();
                 bright_pixels += pixels
                     .chunks_exact(4)
@@ -294,7 +294,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             .unwrap()
             .set_bvh_animation_enabled(false);
         prepare(&mut scene, &mut renderer);
-        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
         assert_eq!(
             target.pixels(),
             snapshot,
@@ -310,7 +310,7 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             .unwrap()
             .set_bvh_snapshot_visible(false, vec![]);
         prepare(&mut scene, &mut renderer);
-        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        renderer.draw(0, &mut scene.visuals, &cameras).unwrap();
         assert_eq!(
             target.pixels(),
             after,

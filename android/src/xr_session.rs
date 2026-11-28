@@ -21,6 +21,9 @@ pub(super) struct XrSession {
     renderer: FrameRenderer,
     #[cfg(feature = "mobile-renderer")]
     controllers: crate::xr_controllers::Controllers,
+    /// Native eye tracker; destroyed before the session below.
+    #[cfg(feature = "mobile-renderer")]
+    eyes: Option<crate::xr_eyes::NativeEyes>,
     swapchain: xr::Swapchain<xr::Vulkan>,
     space: xr::Space,
     frames: xr::FrameStream<xr::Vulkan>,
@@ -84,6 +87,7 @@ impl XrSession {
         requirements: xr::vulkan::Requirements,
         report: &mut Report,
         directory: Option<&std::path::Path>,
+        #[cfg(feature = "mobile-renderer")] eye_capabilities: crate::xr_eyes::EyeCapabilities,
     ) -> Result<Self> {
         let gpu = Gpu::new(instance, system, enable2, requirements, report)?;
         #[cfg(feature = "foveation-visualization")]
@@ -113,15 +117,39 @@ impl XrSession {
         report.line("xrCreateSession(Vulkan) SUCCESS");
         #[cfg(feature = "mobile-renderer")]
         let controllers = crate::xr_controllers::Controllers::new(instance, &session, report)?;
+        #[cfg(feature = "mobile-renderer")]
+        let eyes = crate::xr_eyes::NativeEyes::new(instance, &session, eye_capabilities, report);
+        let spaces = session
+            .enumerate_reference_spaces()
+            .api("xrEnumerateReferenceSpaces")?;
+        // Scenes assume y = 0 is the floor. STAGE puts it on the headset's
+        // calibrated floor, matching the desktop engine (SteamVR STAGE).
+        // Without a stage, LOCAL_FLOOR is the runtime's floor estimate below
+        // the starting position. LOCAL has its origin at the starting eye
+        // position, so it is lowered by a nominal standing eye height; the
+        // Humanoid panel's floor correction covers the difference.
+        const NOMINAL_EYE_HEIGHT: f32 = 1.6;
+        let (kind, floor_offset) = if spaces.contains(&xr::ReferenceSpaceType::STAGE) {
+            (xr::ReferenceSpaceType::STAGE, 0.0)
+        } else if spaces.contains(&xr::ReferenceSpaceType::LOCAL_FLOOR) {
+            (xr::ReferenceSpaceType::LOCAL_FLOOR, 0.0)
+        } else {
+            (xr::ReferenceSpaceType::LOCAL, NOMINAL_EYE_HEIGHT)
+        };
         report.line(format!(
-            "reference_spaces={:?}",
-            session
-                .enumerate_reference_spaces()
-                .api("xrEnumerateReferenceSpaces")?
+            "reference_spaces={spaces:?} using={kind:?} floor_offset_m={floor_offset}"
         ));
+        let pose = xr::Posef {
+            position: xr::Vector3f {
+                x: 0.0,
+                y: -floor_offset,
+                z: 0.0,
+            },
+            ..xr::Posef::IDENTITY
+        };
         let space = session
-            .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
-            .api("xrCreateReferenceSpace(LOCAL)")?;
+            .create_reference_space(kind, pose)
+            .api("xrCreateReferenceSpace")?;
         let formats = session
             .enumerate_swapchain_formats()
             .api("xrEnumerateSwapchainFormats")?;
@@ -229,6 +257,8 @@ impl XrSession {
             renderer,
             #[cfg(feature = "mobile-renderer")]
             controllers,
+            #[cfg(feature = "mobile-renderer")]
+            eyes,
             swapchain,
             space,
             frames,
@@ -394,12 +424,17 @@ impl XrSession {
             return Err("xrLocateViews returned an unexpected view count".into());
         }
         #[cfg(feature = "mobile-renderer")]
-        self.renderer.set_external_frame(self.controllers.sample(
-            &self.session,
-            &self.space,
-            time,
-            [views[0], views[1]],
-        ));
+        {
+            let mut frame =
+                self.controllers
+                    .sample(&self.session, &self.space, time, [views[0], views[1]]);
+            frame.eyes = self
+                .eyes
+                .as_mut()
+                .and_then(|eyes| eyes.sample(time, report));
+            self.renderer.set_external_frame(frame);
+            self.renderer.set_menu_down(self.controllers.menu_down());
+        }
         let index = self
             .swapchain
             .acquire_image()

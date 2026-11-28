@@ -6,18 +6,31 @@ use crate::engine::ecs::ComponentId;
 /// The generic `XREyeTracking` selector will use this enum for authored source
 /// priority. `MediaPipe` is reserved now so scenes can describe their intended
 /// ordering before the webcam transport is implemented.
+///
+/// `NativeOpenXr` is the host's own OpenXR session (for example the Android
+/// build's XR_HTC_facial_tracking on a Vive Focus 3). `Htc` is the bespoke
+/// binary UDP receiver, not native HTC tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EyeTrackingSource {
+    NativeOpenXr,
     Htc,
     VrChatOsc,
     MediaPipe,
 }
 
 impl EyeTrackingSource {
-    pub const DEFAULT_PRIORITY: [Self; 3] = [Self::Htc, Self::VrChatOsc, Self::MediaPipe];
+    /// Native data wins when the host provides it; otherwise the first
+    /// transport that is actually delivering samples is used.
+    pub const DEFAULT_PRIORITY: [Self; 4] = [
+        Self::NativeOpenXr,
+        Self::Htc,
+        Self::VrChatOsc,
+        Self::MediaPipe,
+    ];
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
+            "openxr" => Some(Self::NativeOpenXr),
             "htc" => Some(Self::Htc),
             "vrchat_osc" => Some(Self::VrChatOsc),
             "mediapipe" => Some(Self::MediaPipe),
@@ -243,6 +256,7 @@ impl Component for XREyeTrackingComponent {
                 .priority
                 .iter()
                 .map(|source| match source {
+                    EyeTrackingSource::NativeOpenXr => s("openxr"),
                     EyeTrackingSource::Htc => s("htc"),
                     EyeTrackingSource::VrChatOsc => s("vrchat_osc"),
                     EyeTrackingSource::MediaPipe => s("mediapipe"),
@@ -487,6 +501,55 @@ impl Component for HTCEyeTrackingComponent {
     }
 }
 
+/// Eye data from the host's own OpenXR session, delivered on the host's
+/// `ExternalXrFrame` after its backend adapter has normalized it. Today that
+/// is per-eye closure only; gaze stays absent until a native gaze adapter
+/// exists. Created automatically for `XREyeTracking` priority `"openxr"`.
+#[derive(Debug, Clone, Default)]
+pub struct OpenXREyeTrackingComponent {
+    pub(crate) gaze_sample: EyeGazeSample,
+    pub(crate) closure_sample: EyeClosureSample,
+}
+
+impl OpenXREyeTrackingComponent {
+    pub fn on() -> Self {
+        Self::default()
+    }
+}
+
+impl Component for OpenXREyeTrackingComponent {
+    fn name(&self) -> &'static str {
+        "openxr_eye_tracking"
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn set_id(&mut self, _: ComponentId) {}
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterEyeTracking {
+                component_id: component,
+            },
+        );
+    }
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RemoveEyeTracking {
+                component_id: component,
+            },
+        );
+    }
+}
+
 /// Configuration anchor for the future webcam/MediaPipe eye-tracking source.
 ///
 /// It is intentionally constructible before the transport exists so generic
@@ -572,10 +635,15 @@ mod tests {
             EyeTrackingSource::parse("mediapipe"),
             Some(EyeTrackingSource::MediaPipe)
         );
+        assert_eq!(
+            EyeTrackingSource::parse("openxr"),
+            Some(EyeTrackingSource::NativeOpenXr)
+        );
         assert_eq!(EyeTrackingSource::parse("osc"), None);
         assert_eq!(
             EyeTrackingSource::DEFAULT_PRIORITY,
             [
+                EyeTrackingSource::NativeOpenXr,
                 EyeTrackingSource::Htc,
                 EyeTrackingSource::VrChatOsc,
                 EyeTrackingSource::MediaPipe,

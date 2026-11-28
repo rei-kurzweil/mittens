@@ -20,7 +20,9 @@ impl FrameSetup {
     pub fn new(directory: Option<&Path>) -> Result<Self> {
         #[cfg(feature = "mobile-renderer")]
         {
-            let scene = if cfg!(feature = "shell-demo") {
+            let scene = if cfg!(feature = "launcher") {
+                crate::demo_assets::DemoScene::Launcher
+            } else if cfg!(feature = "shell-demo") {
                 crate::demo_assets::DemoScene::Shell
             } else if cfg!(feature = "cube-demo") {
                 crate::demo_assets::DemoScene::Cubes
@@ -75,6 +77,12 @@ impl FrameRenderer {
     ) {
         match self {
             Self::Scene(scene) => scene.set_external_frame(frame),
+        }
+    }
+    #[cfg(feature = "mobile-renderer")]
+    pub fn set_menu_down(&mut self, down: bool) {
+        match self {
+            Self::Scene(scene) => scene.set_menu_down(down),
         }
     }
     pub fn new(

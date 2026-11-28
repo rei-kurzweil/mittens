@@ -13,13 +13,13 @@ BGC.rgba(1.0, 0.80, 0.86, 1.0)
 RendererSettings { preferred_xr_refresh_rate(75) }
 // Runtime capability selection applies this preference; start with Off for A/B.
 GraphicsSettings.foveation.quality("off")
-T.position(-3.2, 1.0, -1.8).scale(0.65, 0.65, 0.65) {
+T.position(-3.2, 2.6, -1.8).scale(0.65, 0.65, 0.65) {
     graphics_settings_panel({ root_name = "headset_graphics_settings" material = shell_ui_material() foveation_only = true })
 }
 sakura_sky(true)
-shell_garden(1.89,-1.6,-2.6,0)
-T.position(-5.5,-1.6,-9) { terraced_garden() }
-T.position(-5.5,-1.6,-10.7) { foveation_checkerboard() }
+shell_garden(1.89,0.0,-2.6,0)
+T.position(-5.5,0.0,-9) { terraced_garden() }
+T.position(-5.5,0.0,-10.7) { foveation_checkerboard() }
 AL.rgb(0.38,0.31,0.39)
 T.position(23,24,-50) { DL.color(1.0,0.88,0.80).intensity(1.4) }
 let pointer_material = ui_unlit_material()
@@ -87,8 +87,8 @@ fn build_terminal() {
         T { Style { height(20) margin_top(0.8) padding(0.8) font_size(1.0) background_color([0.018, 0.016, 0.012, 1]) } source }
     }
 }
-// The Android host uses eye-level LOCAL space, with no floor-height offset.
-T.position(-1.89, 1.0, -2.6).scale(0.030, 0.030, 0.030) {
+// The Android host tracks in STAGE space: y = 0 is the calibrated floor.
+T.position(-1.89, 2.6, -2.6).scale(0.030, 0.030, 0.030) {
     shell("mitten-droid / headset", "Browse your PC scripts from here", T {
         info status
         T { Style { height(1.5) font_size(0.85) } info_text }

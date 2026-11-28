@@ -27,6 +27,23 @@ fn parent_navigation_preserves_root_and_invalidates_entry_ids() {
     assert_eq!(model.path, "examples/mitten-droid");
 }
 #[test]
+fn selection_reports_root_relative_path_for_launching() {
+    let mut model = Model::local(".", "examples/mitten-droid").unwrap();
+    assert_eq!(model.selected_root_path(), "");
+    let hello = model
+        .entries
+        .iter()
+        .find(|e| e.name == "hello.mms")
+        .unwrap()
+        .id
+        .clone();
+    model.activate("open", &hello).unwrap();
+    assert_eq!(model.selected_root_path(), "examples/mitten-droid/hello.mms");
+    // Leaving the directory leaves nothing launchable selected.
+    model.activate("up", "").unwrap();
+    assert_eq!(model.selected_root_path(), "");
+}
+#[test]
 fn remote_listing_has_no_pc_paths_and_actions_reference_displayed_revision() {
     let local = Model::local("examples", "mitten-droid").unwrap();
     let mut remote = Model::default();
@@ -37,6 +54,21 @@ fn remote_listing_has_no_pc_paths_and_actions_reference_displayed_revision() {
     remote.activate("open", &id).unwrap();
     assert!(remote.action.is_some());
     assert!(remote.set_listing(&mms::TransportValue::Null).is_err());
+}
+/// The `button()` root (assets/components/button.mms) whose label is `label`.
+fn labeled_button(scene: &Universe, label: &str) -> ComponentId {
+    let world = &scene.world;
+    world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("button_root"))
+        .find(|&id| {
+            world.children_of(id).iter().any(|&child| {
+                world
+                    .get_component_by_id_as::<TextComponent>(child)
+                    .is_some_and(|text| text.text == label)
+            })
+        })
+        .unwrap_or_else(|| panic!("missing button {label:?}"))
 }
 fn named(scene: &Universe, name: &str) -> ComponentId {
     scene
@@ -296,4 +328,128 @@ fn pointer_selection_uses_selection_component_and_scroll_reuses_the_grid() {
         assert_eq!(b.view.tiles.len(), 20);
     })
     .unwrap();
+}
+#[test]
+fn launcher_launches_the_selected_script_through_the_host() {
+    use crate::engine::app_launch::{self, LaunchRequest};
+    let _lock = app_launch::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    app_launch::set_enabled(true);
+    let _ = app_launch::take();
+    let mut scene = Universe::new(World::default());
+    // Browse the bundled folder so the first tile is a known MMS file.
+    scene
+        .load_mms_source_at_path(
+            &include_str!("../../../android/examples/launcher.mms")
+                .replace("if pushed { start = \"examples\" }", ""),
+            "android/examples/launcher.mms",
+        )
+        .unwrap();
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    for id in scene.world.all_components().filter(|&id| {
+        scene
+            .world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .is_some()
+    }) {
+        assert!(
+            matches!(
+                crate::engine::ecs::system::material_system::MaterialSystem::resolve_surface(
+                    &scene.world,
+                    id
+                ),
+                Some(crate::engine::ecs::system::material_system::SurfaceSource::Material(_))
+            ),
+            "launcher geometry {id:?} must use a generic custom material for Android"
+        );
+    }
+    pointer_select(&mut scene, 0);
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    let launch = labeled_button(&scene, "Launch");
+    scene.systems.rx.push_event(
+        launch,
+        EventSignal::Click {
+            raycaster: launch,
+            renderable: launch,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..3 {
+        scene.update(0.01, &Default::default());
+    }
+    let request = app_launch::take();
+    app_launch::set_enabled(false);
+    assert_eq!(
+        request,
+        Some(LaunchRequest::Scene("android/examples/launcher.mms".into()))
+    );
+}
+
+/// The Launch button must lay out a visible, hittable background quad: on the
+/// headset the button text row rendered but the button did not, and clicks on
+/// it did nothing. Prints the quad's placement next to the status text.
+#[test]
+fn launcher_launch_button_has_a_visible_hittable_quad() {
+    use crate::engine::ecs::component::{RaycastableComponent, TransformComponent};
+    let mut scene = Universe::new(World::default());
+    scene
+        .load_mms_source_at_path(
+            include_str!("../../../android/examples/launcher.mms"),
+            "android/examples/launcher.mms",
+        )
+        .unwrap();
+    for _ in 0..5 {
+        scene.update(0.01, &Default::default());
+    }
+    let world = &scene.world;
+    let launch = labeled_button(&scene, "Launch");
+    let world_matrix = |id| {
+        world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .map(|t| t.transform.matrix_world)
+    };
+    let bg = world
+        .children_of(launch)
+        .iter()
+        .copied()
+        .find(|&child| world.component_label(child) == Some("__bg"))
+        .expect("Launch button has no generated __bg quad");
+    let renderable = world
+        .all_components()
+        .find(|&id| {
+            world.get_component_by_id_as::<RenderableComponent>(id).is_some()
+                && std::iter::successors(Some(id), |&c| world.parent_of(c)).any(|a| a == bg)
+        })
+        .expect("Launch __bg has no renderable");
+    let m = world_matrix(bg).expect("__bg transform");
+    let scale_x = (m[0][0].powi(2) + m[0][1].powi(2) + m[0][2].powi(2)).sqrt();
+    let scale_y = (m[1][0].powi(2) + m[1][1].powi(2) + m[1][2].powi(2)).sqrt();
+    let status = named(&scene, "launcher_status");
+    eprintln!(
+        "launch __bg world translation={:?} size=({scale_x:.4}, {scale_y:.4}); status translation={:?}",
+        [m[3][0], m[3][1], m[3][2]],
+        world_matrix(status).map(|s| [s[3][0], s[3][1], s[3][2]]),
+    );
+    assert!(scale_x > 1e-4 && scale_y > 1e-4, "Launch __bg is degenerate");
+    assert!(
+        matches!(
+            crate::engine::ecs::system::material_system::MaterialSystem::resolve_surface(
+                world, renderable
+            ),
+            Some(crate::engine::ecs::system::material_system::SurfaceSource::Material(_))
+        ),
+        "Launch __bg must resolve a custom material for Android"
+    );
+    assert!(
+        world.children_of(renderable).iter().any(|&child| {
+            world.get_component_by_id_as::<RaycastableComponent>(child).is_some()
+        }),
+        "Launch __bg renderable is not raycastable"
+    );
 }

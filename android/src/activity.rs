@@ -23,6 +23,8 @@ pub(super) fn run(app: AndroidApp) {
     assert_eq!(context.vm(), app.vm_as_ptr());
     assert_eq!(context.context(), app.activity_as_ptr());
     log::info!("android_context ready; activity and JVM match NativeActivity");
+    #[cfg(feature = "launcher")]
+    crate::launcher::set_external_files_dir(app.external_data_path());
     #[cfg(feature = "xr-probe")]
     let mut worker = crate::xr_host::Worker::new(app.internal_data_path());
     #[cfg(not(feature = "xr-probe"))]

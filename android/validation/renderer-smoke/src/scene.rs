@@ -109,7 +109,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     }
     assert_eq!(universe.visuals.instances().len(), 3);
     let cameras = cameras();
-    let stats = renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    let stats = renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
     assert_eq!(stats.pipelines, 1);
     assert_eq!(stats.bindings, 2);
     assert_eq!(stats.meshes, 1);
@@ -182,7 +182,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         })
         .unwrap()
     });
-    renderer.draw(0, &universe.visuals, &back_cameras).unwrap();
+    renderer.draw(0, &mut universe.visuals, &back_cameras).unwrap();
     let back_pixels = target.pixels();
     for eye in 0..2 {
         let center = pixel(&back_pixels, eye, 48, 48);
@@ -227,7 +227,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         Some(id)
     );
     for _ in 0..8 {
-        let next = renderer.draw(0, &universe.visuals, &cameras).unwrap();
+        let next = renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
         assert_eq!(
             (
                 next.pipelines,
@@ -276,7 +276,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         .unwrap();
     assert!(universe.visuals.update_texture(handle, Some(texture)));
     universe.visuals.prepare_draw_cache();
-    renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
     let pixels = target.pixels();
     for eye in 0..2 {
         let center = pixel(&pixels, eye, 48, 48);
@@ -300,7 +300,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
             .update_texture(handle, Some(checker_texture))
     );
     universe.visuals.prepare_draw_cache();
-    renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
     let pixels = target.pixels();
     for eye in 0..2 {
         let center = pixel(&pixels, eye, 48, 48);
@@ -312,7 +312,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     println!("PASS GPU minification samples averaged mip levels");
     assert!(universe.visuals.update_opacity(handle, 0.5));
     universe.visuals.prepare_draw_cache();
-    renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    renderer.draw(0, &mut universe.visuals, &cameras).unwrap();
     let blended = target.pixels();
     for eye in 0..2 {
         let center = pixel(&blended, eye, 48, 48);
@@ -332,9 +332,9 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         )
         .unwrap();
     prepare(&mut legacy, &mut renderer);
-    let error = renderer.draw(0, &legacy.visuals, &cameras).unwrap_err();
+    let error = renderer.draw(0, &mut legacy.visuals, &cameras).unwrap_err();
     assert!(error.contains("custom"), "{error}");
-    renderer.draw(0, &VisualWorld::new(), &cameras).unwrap();
+    renderer.draw(0, &mut VisualWorld::new(), &cameras).unwrap();
     println!(
         "PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, blending, stable caches, legacy rejection; {stats:?}"
     );
@@ -481,7 +481,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         complete,
         "stage did not prepare its sky, materials and lights"
     );
-    let stats = stage_renderer.draw(0, &stage.visuals, &cameras).unwrap_or_else(|e| {
+    let stats = stage_renderer.draw(0, &mut stage.visuals, &cameras).unwrap_or_else(|e| {
         for instance in stage.visuals.instances().iter().filter(|v| v.emissive != 0.0 || v.material_instance.is_none() || v.stencil_ref != 0 || v.is_stencil_clip || v.transparent_cutout) {
             let mut current = Some(instance.component);
             let mut ancestry = Vec::new();
@@ -515,7 +515,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     // Update retained lights directly after engine preparation. Both ambient
     // and direct-light data must visibly affect the actual custom pipelines.
     stage.visuals.set_ambient_light([0.8, 0.0, 0.0]);
-    stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    stage_renderer.draw(0, &mut stage.visuals, &cameras).unwrap();
     let ambient_pixels = target.pixels();
     assert_ne!(
         pixels, ambient_pixels,
@@ -532,7 +532,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
             mittens_engine::engine::graphics::visual_world::VisualLight::default(),
         );
     }
-    stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    stage_renderer.draw(0, &mut stage.visuals, &cameras).unwrap();
     assert_ne!(
         ambient_pixels,
         target.pixels(),
@@ -552,6 +552,6 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     );
     stage.visuals.prepare_draw_cache();
     stage_renderer
-        .draw(0, &stage.visuals, &cameras)
+        .draw(0, &mut stage.visuals, &cameras)
         .expect("draw after clicking editor settings");
 }

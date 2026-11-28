@@ -11,4 +11,17 @@ pub struct ExternalXrFrame {
     pub grip: [Option<xr::Posef>; 2],
     pub input: XrInputState,
     pub gamepad: XrGamepadState,
+    /// Eye data from the host's own OpenXR session, already normalized by the
+    /// host's backend adapter (for example XR_HTC_facial_tracking). `None`
+    /// when no native eye provider is active or it reported no data this frame.
+    pub eyes: Option<NativeEyeSample>,
+}
+
+/// Provider-neutral eye data from a native XR backend. Backends fill only the
+/// fields they actually measure; absent fields stay `None` and never borrow a
+/// value from another backend.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct NativeEyeSample {
+    /// Lid closure per eye, `[left, right]`: 0 = open, 1 = closed.
+    pub closure: [Option<f32>; 2],
 }
