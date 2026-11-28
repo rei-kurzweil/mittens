@@ -1,4 +1,5 @@
-// Small XR frame-rate readout ("XR: 72.0 fps" over the frame time in ms).
+// Small XR frame-rate readout: the smoothed number with a static "fps" label.
+// RendererStats rebuilds only the number's glyphs; the label is built once.
 // Mount it inside an existing hud() display so it adds no spring of its own.
 // Position is in metres relative to that display.
 export fn xr_fps_readout(position) {
@@ -12,6 +13,9 @@ export fn xr_fps_readout(position) {
             smoothing(0.85)
             color([1.0, 1.0, 1.0, 1.0])
             emissive(true)
+        }
+        T.position(2.4, -0.15, 0.0) {
+            Text { "fps" font_size(0.5) C.rgba(1.0, 1.0, 1.0, 1.0) Unlit {} }
         }
     }
 }

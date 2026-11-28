@@ -48,16 +48,9 @@ impl RendererStatsSystem {
                 continue;
             }
 
-            let (fps, dt_ms, label) = match config.target {
-                CameraTarget::Window => {
-                    let dt = visuals.window_frame_dt_sec();
-                    (visuals.window_frame_fps(), dt * 1000.0, "Window")
-                }
-                CameraTarget::Xr => {
-                    let dt = visuals.xr_frame_dt_sec().unwrap_or(0.0);
-                    let fps = visuals.xr_frame_fps().unwrap_or(0.0);
-                    (fps, dt * 1000.0, "XR")
-                }
+            let fps = match config.target {
+                CameraTarget::Window => visuals.window_frame_fps(),
+                CameraTarget::Xr => visuals.xr_frame_fps().unwrap_or(0.0),
             };
 
             let smoothed = {
@@ -69,7 +62,7 @@ impl RendererStatsSystem {
                 stats.smooth_fps(fps)
             };
 
-            let new_text = format_stats_text(label, smoothed, dt_ms);
+            let new_text = format_stats_text(smoothed);
 
             let (text_id, updated_ids) =
                 ensure_stats_text_subtree(world, queue, stats_id, config, subtree_ids);
@@ -150,11 +143,13 @@ impl StatsSubtreeIds {
 
 // Camera target selection is explicit via RendererStatsComponent.target.
 
-fn format_stats_text(label: &str, fps: f32, dt_ms: f32) -> String {
-    if fps > 0.0 && dt_ms > 0.0 {
-        format!("{label}: {fps:.1} fps\n{dt_ms:.1} ms")
+// Only the number: static labels such as "fps" belong in separate text nodes
+// so they are not rebuilt with it.
+fn format_stats_text(fps: f32) -> String {
+    if fps > 0.0 {
+        format!("{fps:.1}")
     } else {
-        format!("{label}:\n(no timing)")
+        "--".to_string()
     }
 }
 
@@ -226,11 +221,8 @@ mod tests {
     use super::format_stats_text;
 
     #[test]
-    fn renderer_stats_text_uses_separate_fps_and_frame_time_lines() {
-        assert_eq!(
-            format_stats_text("Window", 144.0, 6.9),
-            "Window: 144.0 fps\n6.9 ms"
-        );
-        assert_eq!(format_stats_text("XR", 0.0, 0.0), "XR:\n(no timing)");
+    fn renderer_stats_text_is_only_the_fps_number() {
+        assert_eq!(format_stats_text(144.04), "144.0");
+        assert_eq!(format_stats_text(0.0), "--");
     }
 }
