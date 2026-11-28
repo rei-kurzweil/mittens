@@ -2,15 +2,16 @@
 # Interceptor vantage sweep: the XR camera holds each of 9 deck sections x 26
 # directions (SHIP_PROFILE_MOTION=vantage) while NPCs and scene logic run.
 # VANTAGE_FRAMES frames per vantage (the first quarter unsampled): 40 gives
-# 9360 frames per run. One run per NPC count in NPCS.
+# 9360 frames per run. One run per NPC count x MSAA mode x bloom mode:
+# MSAA_MODES="off 2x 4x" BLOOM_MODES="off on" sweeps all of them (12 runs).
 # Results: $OUT/vantages.md (colour-coded grid, hot spots) plus JSON and logs.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 NPCS="${NPCS:-0 2}"
-MSAA="${MSAA:-4x}"
-BLOOM="${BLOOM:-off}"
+MSAA_MODES="${MSAA_MODES:-4x}"
+BLOOM_MODES="${BLOOM_MODES:-off}"
 SIZE="${SIZE:-1920}"
 WARMUP="${WARMUP:-300}"
 VANTAGE_FRAMES="${VANTAGE_FRAMES:-40}"
@@ -20,6 +21,8 @@ mkdir -p "$OUT"
 cargo test --release --lib profile_ship_stereo --no-run
 
 for npcs in $NPCS; do
+  for MSAA in $MSAA_MODES; do
+    for BLOOM in $BLOOM_MODES; do
     name="vantage-npcs${npcs}-msaa${MSAA}-bloom${BLOOM}"
     echo "== $name"
     env SHIP_PROFILE_SOURCE=examples/interceptor.mms SHIP_PROFILE_ROOM=interceptor \
@@ -30,6 +33,8 @@ for npcs in $NPCS; do
         SHIP_PROFILE_OUTPUT="$OUT/$name.json" \
         cargo test --release --lib profile_ship_stereo -- --ignored --nocapture \
         > "$OUT/$name.log" 2>&1 || { echo "   failed, see $OUT/$name.log"; continue; }
+    done
+  done
 done
 
 python3 "$(dirname "$0")/summarize-interceptor-vantages.py" "$OUT"
