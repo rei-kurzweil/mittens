@@ -271,7 +271,12 @@ export fn make_rooftop_player(options) {
     if options["show_health"] == true {
         health = health_bar(Text { "HEALTH" font_size(0.65) C.rgba(1.0, 1.0, 1.0, 1.0) Unlit {} })
         if local_player {
-            health_view = hud(prefix + "_health_hud", [0.0, 0.34, -1.10], T.scale(0.043, 0.043, 0.043) { health })
+            // hud_extra: optional content beside the health bar, in metres.
+            let hud_extra = options["hud_extra"]
+            health_view = hud(prefix + "_health_hud", [0.0, 0.34, -1.10], T {
+                T.scale(0.043, 0.043, 0.043) { health }
+                if hud_extra { hud_extra }
+            })
             // XR renders the tracked target pose. Desktop uses the mapped camera.
             if use_xr { head_display = health_view } else { camera.attach(health_view) }
         } else {

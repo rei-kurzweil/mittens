@@ -360,11 +360,10 @@ let local = make_rooftop_player({
     use_xr = true use_desktop = false camera_far = 240.0 opaque_bucket = "near"
     voice_level = voice_level mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
     show_health = true shield_mount = true
+    // XR FPS beside the health bar. Comment out to hide it.
+    hud_extra = xr_fps_readout([0.24, 0.0, 0.0])
 })
 local.label.set_text(net.local_name())
-// XR FPS beside the health bar in the HUD. Comment out to hide it.
-let health_hud = local.health_view.query("#local_health_hud_display")
-if health_hud { health_hud.attach(xr_fps_readout([0.24, 0.0, 0.0])) }
 local.root.update_transform([spawn_x, roof_y, spawn_z])
 local.locomotion
 // Equip one STA rocket on each thigh to unlock flight.
