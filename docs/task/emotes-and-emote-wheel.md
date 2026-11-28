@@ -74,13 +74,46 @@ EmoteInstance {
 - Six slots as partial annuli around the wheel centre, rainbow by default.
   The slot colour belongs to the wheel; an emote's colour can override it.
   Each slot shows the emote's name; the selected slot is highlighted.
-- Input: the right stick's X axis already turns the rig (`InputXrGamepad`
-  turn mode), so stick movement alone must not open the wheel.
-  1. Hold a button (right stick click or B; to be decided) to open the wheel
-     at the hand. Turning is suspended while it is open.
-  2. Point the stick toward a slot.
-  3. Trigger or grip fires the selected emote; releasing the open button
-     without firing cancels.
+### Input (default: right grip + right stick)
+
+The right stick's X axis already turns the rig (`InputXrGamepad` turn mode),
+so stick movement alone must never open the wheel; a gate button must be
+held too.
+
+1. **Open**: with the gate button held (default right grip), deflect the
+   gate stick (default right stick) past a threshold. The wheel opens at
+   that hand. Order matters: deflecting first and then pressing the gate
+   does not open it, so turning never turns into an emote.
+2. **Select**: the stick direction highlights a slot; back to centre
+   highlights none.
+3. **Fire**: release the gate button with a slot highlighted. Releasing at
+   centre cancels.
+4. While the wheel is open, that stick does not turn or move the rig.
+5. A grip that is already holding an object does not gate the wheel, so
+   grabbing and then moving the stick keeps its current behaviour.
+
+### Settings
+
+Configurable through the existing input settings, not a new binding
+framework:
+
+- `InputSettings.xr.emote_wheel_stick()` / `set_emote_wheel_stick(stick)`:
+  `"right"` (default) or `"left"`.
+- `InputSettings.xr.emote_wheel_gate()` / `set_emote_wheel_gate(button)`:
+  `"grip"` (default), `"trigger"`, `"primary"` (A/X), `"secondary"` (B/Y) or
+  `"stick_click"`, on the same hand as the stick.
+- Stored in `InputSettingsSystem` next to `xr_stick_mode`; changes emit the
+  existing `InputSettingsChanged` event, and the input settings panel
+  (`assets/components/panels/input_settings_panel.mms`) gets a row for each.
+- Reject choices that collide with a fixed binding on that hand, for example
+  the left menu button (home).
+
+Input settings currently last for the scene session only. Saving them is
+shared with `stick_mode` and belongs in the same follow-up.
+
+A general input-binding framework (rebinding any action) is out of scope;
+these two settings should not be shaped to anticipate one.
+
 - Desktop: a key opens the same wheel with mouse selection (to be decided).
 
 ## Emote panel
@@ -100,7 +133,8 @@ EmoteInstance {
 2. `Emote` / `EmoteInstance` components and playback for morph emotes, with
    button-combo mappings.
 3. Pose emotes on the pose-layer work; clip emotes.
-4. Emote wheel (VR) with rainbow defaults and the open/select/fire input.
+4. Emote wheel (VR) with rainbow defaults and the open/select/fire input;
+   `emote_wheel_stick` / `emote_wheel_gate` input settings and panel rows.
 5. Emote panel in the dock: browse, assign to slots, edit mappings, preview.
 6. Gesture mappings once hand gesture recognition exists.
 7. Network replication of active emotes.
@@ -111,7 +145,9 @@ EmoteInstance {
   rejected; instances save and load per avatar; morph listing groups
   multi-primitive labels; emote weights compose with blinks and visemes in
   the chosen order.
-- Wheel input tests: stick movement alone does not open the wheel; turning is
-  suspended while open; cancel fires nothing.
+- Wheel input tests: stick movement alone does not open the wheel; stick
+  before gate does not open it; a grip holding an object does not gate it;
+  turning is suspended while open; releasing at centre fires nothing; the
+  stick and gate settings change which inputs open it.
 - Headset: wheel readable at arm's length on the Focus 3 and desktop XR; an
   emote with a pose does not fight tracked hands unless it overrides them.
