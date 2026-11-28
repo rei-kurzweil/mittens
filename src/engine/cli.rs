@@ -34,6 +34,7 @@ impl CLI {
         for arg in args {
             match arg.as_str() {
                 "--no-msaa" | "--msaa=off" => msaa_mode = Some(MsaaMode::Off),
+                "--msaa2x" | "--msaa=2x" => msaa_mode = Some(MsaaMode::Msaa2x),
                 "--msaa4x" | "--msaa=4x" => msaa_mode = Some(MsaaMode::Msaa4x),
                 _ if arg.starts_with("--") => {
                     eprintln!("Unknown flag: {arg}");

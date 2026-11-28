@@ -809,22 +809,26 @@ mod vulkano_backend {
                 return Err("max_compute_work_group_count[0] is zero".into());
             }
 
-            // Global toggle: either 4x MSAA (if supported) or no multisampling.
-            let msaa_samples = match msaa_mode {
-                MsaaMode::Off => SampleCount::Sample1,
-                MsaaMode::Msaa4x => {
-                    let props = device.physical_device().properties();
-                    let counts = props.framebuffer_color_sample_counts
-                        & props.framebuffer_depth_sample_counts;
-                    if counts.intersects(SampleCounts::SAMPLE_4) {
-                        SampleCount::Sample4
-                    } else {
-                        SampleCount::Sample1
-                    }
+            // Global, fixed at initialization: pipelines bake the sample count.
+            // An unsupported request falls back to no multisampling.
+            let msaa_samples = {
+                let props = device.physical_device().properties();
+                let counts =
+                    props.framebuffer_color_sample_counts & props.framebuffer_depth_sample_counts;
+                let (wanted, flag) = match msaa_mode {
+                    MsaaMode::Off => (SampleCount::Sample1, SampleCounts::SAMPLE_1),
+                    MsaaMode::Msaa2x => (SampleCount::Sample2, SampleCounts::SAMPLE_2),
+                    MsaaMode::Msaa4x => (SampleCount::Sample4, SampleCounts::SAMPLE_4),
+                };
+                if counts.intersects(flag) {
+                    wanted
+                } else {
+                    SampleCount::Sample1
                 }
             };
 
             match msaa_samples {
+                SampleCount::Sample2 => println!("[VulkanoRenderer] MSAA enabled: 2x"),
                 SampleCount::Sample4 => println!("[VulkanoRenderer] MSAA enabled: 4x"),
                 _ => println!("[VulkanoRenderer] MSAA disabled"),
             }
@@ -2292,6 +2296,7 @@ mod vulkano_backend {
 
         pub fn msaa_description(&self) -> &'static str {
             match self.msaa_samples {
+                SampleCount::Sample2 => "2x",
                 SampleCount::Sample4 => "4x",
                 _ => "off",
             }

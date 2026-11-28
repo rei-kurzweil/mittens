@@ -52,6 +52,7 @@ pub use xr_swapchain::XRSwapchain;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MsaaMode {
     Off,
+    Msaa2x,
     Msaa4x,
 }
 
