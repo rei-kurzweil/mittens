@@ -278,27 +278,23 @@ fn set_xr_view(scene: &mut Universe, view: [[f32; 4]; 4]) {
     scene.visuals.set_xr_camera(eyes);
 }
 
-// Render-only vantage sweep over the interceptor deck: the XR camera holds
-// each of 9 sections x 26 directions for `frames_per` frames, the first
-// `settle` of them unsampled. NPCs, input and scene logic run as usual.
-// Sections are a 3 x 3 grid of the 28 x 34 m deck (north is -Z, east +X);
-// directions are the 26 neighbours of a 3 x 3 x 3 cube (x, y, z each -1/0/1).
-pub(super) const VANTAGE_SECTIONS: [(&str, f32, f32); 9] = [
-    ("NW", -9.33, -11.33),
-    ("N", 0., -11.33),
-    ("NE", 9.33, -11.33),
-    ("W", -9.33, 0.),
-    ("C", 0., 0.),
-    ("E", 9.33, 0.),
-    ("SW", -9.33, 11.33),
-    ("S", 0., 11.33),
-    ("SE", 9.33, 11.33),
+// Render-only vantage sweep over the interceptor hangar: the XR camera holds
+// each named vantage for `frames_per` frames, the first `settle` of them
+// unsampled. NPCs, input and scene logic run as usual. North is -Z; the
+// players' spawn (-2.5, 7.6) is just inside the south opening, so "forward"
+// is north into the hangar. Yaw is degrees left of north, pitch degrees up.
+pub(super) const VANTAGES: [(&str, [f32; 2], f32, f32); 6] = [
+    ("spawn forward", [-2.5, 7.6], 0., 0.),
+    ("spawn forward, up 45", [-2.5, 7.6], 0., 45.),
+    ("spawn left 25, up 45", [-2.5, 7.6], 25., 45.),
+    ("spawn right 25, up 45", [-2.5, 7.6], -25., 45.),
+    ("south-west corner forward", [-9.0, 11.0], 0., 0.),
+    ("south-east corner forward", [9.0, 11.0], 0., 0.),
 ];
 pub(super) struct VantageSweep {
     pub frames_per: usize,
     pub settle: usize,
     eye_y: f32,
-    directions: Vec<[i32; 3]>,
 }
 impl VantageSweep {
     pub(super) fn new(eye_y: f32) -> Result<Self, Box<dyn Error>> {
@@ -307,39 +303,31 @@ impl VantageSweep {
             .parse()?;
         let settle = (frames_per / 4).max(2);
         assert!(frames_per > settle);
-        let mut directions = Vec::new();
-        for y in [1, 0, -1] {
-            for z in [-1, 0, 1] {
-                for x in [-1, 0, 1] {
-                    if [x, y, z] != [0, 0, 0] {
-                        directions.push([x, y, z]);
-                    }
-                }
-            }
-        }
         Ok(Self {
             frames_per,
             settle,
             eye_y,
-            directions,
         })
     }
     pub(super) fn total_frames(&self) -> usize {
-        VANTAGE_SECTIONS.len() * self.directions.len() * self.frames_per
+        VANTAGES.len() * self.frames_per
     }
     /// Points the camera for sweep frame `index` and describes the vantage.
     pub(super) fn apply(&self, scene: &mut Universe, index: usize) -> serde_json::Value {
-        let vantage = index / self.frames_per;
-        let (name, x, z) = VANTAGE_SECTIONS[vantage / self.directions.len()];
-        let d = self.directions[vantage % self.directions.len()];
-        let rotation = look_rotation([d[0] as f32, d[1] as f32, d[2] as f32]);
+        let (name, [x, z], yaw, pitch) = VANTAGES[index / self.frames_per];
+        let rotation = crate::utils::math::quat_mul(
+            crate::utils::math::quat_from_axis_angle([0., 1., 0.], yaw.to_radians()),
+            crate::utils::math::quat_from_axis_angle([1., 0., 0.], pitch.to_radians()),
+        );
         let model = crate::engine::transform::TransformTrs::new([x, self.eye_y, z], rotation, [1., 1., 1.])
             .to_matrix()
             .expect("vantage pose");
         set_xr_view(scene, mat4_inverse(model).expect("vantage pose invertible"));
         serde_json::json!({
-            "section": name,
-            "direction": d,
+            "name": name,
+            "position": [x, z],
+            "yaw": yaw,
+            "pitch": pitch,
             "settling": index % self.frames_per < self.settle,
         })
     }

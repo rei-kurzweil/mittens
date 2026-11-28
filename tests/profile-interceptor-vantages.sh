@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Interceptor vantage sweep: the XR camera holds each of 9 deck sections x 26
-# directions (SHIP_PROFILE_MOTION=vantage) while NPCs and scene logic run.
+# Interceptor vantages: the XR camera holds each of 6 views (three from the
+# players' spawn, and forward from the two corners on the spawn's open side;
+# VANTAGES in vulkano_ship_profile_motion.rs) while NPCs and scene logic run.
 # VANTAGE_FRAMES simulated 75 Hz frames per vantage, the first quarter
-# unsampled: 150 holds each view 2 s and samples 1.5 s (35,100 frames per run).
-# One run per NPC count x MSAA mode x bloom mode.
+# unsampled: 150 holds each view 2 s and samples 1.5 s (900 frames per run).
 # Defaults: 0 and 2 NPCs x MSAA 2x and 4x, bloom off (4 runs). MSAA_MODES and
 # BLOOM_MODES take lists, e.g. BLOOM_MODES="off on".
-# Results: $OUT/vantages.md (colour-coded grid, hot spots) plus JSON and logs.
+# Results: $OUT/vantages.md plus JSON and logs.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

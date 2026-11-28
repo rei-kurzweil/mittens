@@ -87,16 +87,16 @@ match closely; later runs report `npcs_present` to confirm both spawned.
 - MSAA off/2x/4x differences are within run-to-run noise.
 - Bloom adds ~1.5–2.6 ms GPU and ~2.5 ms CPU with NPCs.
 
-## Vantage sweep
+## Vantages
 
-`tests/profile-interceptor-vantages.sh` holds the XR camera at each of 9
-deck sections (a 3 x 3 grid; north is -Z) x 26 directions (the neighbours of
-a 3 x 3 x 3 cube) for 2 s each (1.5 s sampled) while the scene runs, for 0
-and 2 NPCs at MSAA 2x and 4x with bloom off (`BLOOM_MODES="off on"` adds
-bloom). `vantages.md` maps estimated fps per section, per
-direction and per vantage, colour-coded at 60 and 45 fps, with the slowest
-vantages listed. Estimated fps is 1000 / max(CPU, GPU) headless, so the
-headset will be lower.
+`tests/profile-interceptor-vantages.sh` holds the XR camera at 6 views for
+2 s each (1.5 s sampled) while the scene runs: from the players' spawn
+looking forward (north, into the hangar), forward and up 45°, left 25° and up
+45°, right 25° and up 45°; and forward from the south-west and south-east
+corners inside the spawn's opening. Defaults are 0 and 2 NPCs at MSAA 2x and
+4x with bloom off (`BLOOM_MODES="off on"` adds bloom). `vantages.md` lists
+estimated fps (1000 / max(CPU, GPU), headless), GPU mean and p95, CPU, draws
+and the limiting side per view.
 
 ## Headset capture
 
