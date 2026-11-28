@@ -14,12 +14,12 @@ Script. With no command-line arguments, it saves a sibling `*-split.blend`
 and a JSON report. Save the source first. Existing output files are rejected
 rather than overwritten. Open the original source again for another run.
 
-The checked trial is in `data/car-8-split/` (local, Git-ignored), with the
+The checked trial is in `assets/data/car-8-split/` (local, Git-ignored), with the
 Blender file, candidate GLB, JSON reports and assembled/exploded PNG previews.
 The original `/home/rei/assets/3D/car-8.blend` is intact. The splitter was then
-rerun from that source into `data/car-8-production-export/`, and its GLB replaced
+rerun from that source into `assets/data/car-8-production-export/`, and its GLB replaced
 `assets/models/car.glb` at the user's request. The previous production asset is
-backed up as `data/car-8-production-export/car-before-split.glb`; `installed.json`
+backed up as `assets/data/car-8-production-export/car-before-split.glb`; `installed.json`
 records the old and new SHA-256 hashes. Production includes all five body pieces
 and the original accessories, with no cutter meshes or hidden unsplit body.
 The shared display-car factory now marks the two validated wing primitives
@@ -90,7 +90,7 @@ the engine's solid-kernel validation.
 ```sh
 blender --background --factory-startup --python-exit-code 1 \
   --python scripts/test_blender_split_vehicle.py
-python3 scripts/inspect_car_geometry.py data/car-8-split/car-8-split.glb
+python3 scripts/inspect_car_geometry.py assets/data/car-8-split/car-8-split.glb
 ```
 
 Four Blender tests cover the five-region split, closed caps and volume

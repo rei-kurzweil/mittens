@@ -81,10 +81,12 @@ other players' emotes needs a wider permission.
 Exact folders matter less than the runtime state:
 
 - **Installed**: packages Mittens knows about.
-  - Built-in packages ship with the repo, under a tracked folder.
-  - Imported and received packages live in an installed store under the user
-    data directory (next to `user_config::directory()`), outside git, so
-    copyrighted or private models never end up in a commit.
+  - `packages/system/`: built-in packages, tracked in git.
+  - `packages/user/`: imported and received packages, gitignored so
+    copyrighted or private models never end up in a commit. Each package
+    is one folder per name and version.
+  - Android and installed builds put the same two roots under the app's
+    data directory instead of the repository.
   - Each record has: name, version, package hash, source (built-in,
     imported from a path, or received from a peer) and install time.
 - **In use**: the packages the current session has loaded. A scene, avatar
@@ -104,7 +106,7 @@ paths, no symlinks. That keeps local and transferred packages identical.
   permissions, source, disk size and whether it's in use.
 - **Import**: paste or type a path. A directory comes first; a `.zip` comes
   later with the zip slice. The importer validates `manifest.mms` and paths,
-  hashes the files and copies them into the installed store, so later edits
+  hashes the files and copies them into `packages/user/`, so later edits
   to the source folder don't silently change an installed version.
   Re-importing changed content installs a new version.
 - **Uninstall**: imported and received packages only, never built-ins.

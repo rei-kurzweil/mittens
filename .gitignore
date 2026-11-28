@@ -7,10 +7,13 @@ vendor-openxr/
 docs/analysis/perf.data*
 docs/.debug/*.log
 
-# World panel save output. The directory itself is tracked via data/.gitkeep
-# so the default `io_working_dir` resolves without manual setup.
-/data/*
-!/data/.gitkeep
+# Local working data (vehicle trials, caches). Not tracked.
+/assets/data/
+
+# Installed user packages (imported or received from peers). Built-in
+# packages live in packages/system and are tracked.
+/packages/user/**
+!/packages/user/.gitkeep
 assets/models/tmp
 
 # Local-only models: keep directory traversal open for Markdown notes, but

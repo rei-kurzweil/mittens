@@ -41,8 +41,8 @@ horizontal tunnelling at high speeds remains an existing solver limitation.
 ## Original unsplit asset: destruction audit
 
 This table records the original asset, now backed up at
-`data/car-8-production-export/car-before-split.glb`. Reproduce with
-`python3 scripts/inspect_car_geometry.py data/car-8-production-export/car-before-split.glb`.
+`assets/data/car-8-production-export/car-before-split.glb`. Reproduce with
+`python3 scripts/inspect_car_geometry.py assets/data/car-8-production-export/car-before-split.glb`.
 Counts use exact
 position welding, matching the solid import boundary, without approximate
 repairs. Every primitive has POSITION, NORMAL and TEXCOORD_0, and all are rigid

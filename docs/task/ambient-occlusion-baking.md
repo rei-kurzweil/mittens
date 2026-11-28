@@ -165,7 +165,7 @@ callback cancels the bake if the renderable is despawned first.
 - Key: hash of vertex positions and normals, indices, the albedo texture
   contents if merging, all AO settings, generator kind and version, and a
   `BAKER_VERSION` constant.
-- Desktop: `data/ao_cache/<key>.mesh` and `<key>.png` (KTX2 later).
+- Desktop: `assets/data/ao_cache/<key>.mesh` and `<key>.png` (KTX2 later).
 - Android: assets first, then app internal storage. Desktop bakes can be
   copied into the Android assets, so Android never needs `xatlas` for shipped
   content.
@@ -225,7 +225,7 @@ Facts from `assets/models/mitten_pickup.glb` and
    query. *Validate:* seat-to-floor, bed-to-wheel-well and the cabin interior
    darken. `AoDebug::Proximity` view. Record bake time for the truck body
    on desktop.
-5. **Disk cache.** Key, `data/ao_cache/`, load-before-bake, worker thread,
+5. **Disk cache.** Key, `assets/data/ao_cache/`, load-before-bake, worker thread,
    cancellation. *Validate:* a second launch uses the cache with no bake;
    changing any setting rebakes.
 6. **Case C and merge modes.** `AoMerge::BaseColor`, and albedo transfer for
