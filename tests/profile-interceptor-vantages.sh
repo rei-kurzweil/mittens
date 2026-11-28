@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Interceptor vantage sweep: the XR camera holds each of 9 deck sections x 26
 # directions (SHIP_PROFILE_MOTION=vantage) while NPCs and scene logic run.
-# VANTAGE_FRAMES frames per vantage (the first quarter unsampled): 40 gives
-# 9360 frames per run. One run per NPC count x MSAA mode x bloom mode:
+# VANTAGE_FRAMES simulated 75 Hz frames per vantage, the first quarter
+# unsampled: 150 holds each view 2 s and samples 1.5 s (35,100 frames per run).
+# One run per NPC count x MSAA mode x bloom mode.
 # Defaults: 0 and 2 NPCs x MSAA 2x and 4x, bloom off (4 runs). MSAA_MODES and
 # BLOOM_MODES take lists, e.g. BLOOM_MODES="off on".
 # Results: $OUT/vantages.md (colour-coded grid, hot spots) plus JSON and logs.
@@ -15,7 +16,7 @@ MSAA_MODES="${MSAA_MODES:-2x 4x}"
 BLOOM_MODES="${BLOOM_MODES:-off}"
 SIZE="${SIZE:-1920}"
 WARMUP="${WARMUP:-300}"
-VANTAGE_FRAMES="${VANTAGE_FRAMES:-40}"
+VANTAGE_FRAMES="${VANTAGE_FRAMES:-150}"
 OUT="${OUT:-/tmp/interceptor-vantages}"
 mkdir -p "$OUT"
 

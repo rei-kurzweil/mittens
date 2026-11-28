@@ -91,8 +91,9 @@ match closely; later runs report `npcs_present` to confirm both spawned.
 
 `tests/profile-interceptor-vantages.sh` holds the XR camera at each of 9
 deck sections (a 3 x 3 grid; north is -Z) x 26 directions (the neighbours of
-a 3 x 3 x 3 cube) for 40 frames while the scene runs, for 0 and 2 NPCs at
-MSAA 4x with bloom off. `vantages.md` maps estimated fps per section, per
+a 3 x 3 x 3 cube) for 2 s each (1.5 s sampled) while the scene runs, for 0
+and 2 NPCs at MSAA 2x and 4x with bloom off (`BLOOM_MODES="off on"` adds
+bloom). `vantages.md` maps estimated fps per section, per
 direction and per vantage, colour-coded at 60 and 45 fps, with the slowest
 vantages listed. Estimated fps is 1000 / max(CPU, GPU) headless, so the
 headset will be lower.

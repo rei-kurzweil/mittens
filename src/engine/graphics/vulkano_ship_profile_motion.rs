@@ -303,7 +303,7 @@ pub(super) struct VantageSweep {
 impl VantageSweep {
     pub(super) fn new(eye_y: f32) -> Result<Self, Box<dyn Error>> {
         let frames_per: usize = std::env::var("SHIP_PROFILE_VANTAGE_FRAMES")
-            .unwrap_or("40".into())
+            .unwrap_or("150".into())
             .parse()?;
         let settle = (frames_per / 4).max(2);
         assert!(frames_per > settle);
