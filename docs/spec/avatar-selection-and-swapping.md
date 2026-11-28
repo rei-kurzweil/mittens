@@ -13,9 +13,11 @@ on every peer. A peer that joins later sees the current choice. Each avatar is
 authored as a **factory function** that builds its own body. A generic builder
 that reads per-model data tables is explicitly not the design.
 
-Out of scope: user-imported models, avatar file transfer between peers,
-per-avatar animation sets, and multi-peer sessions beyond the current one-peer
-session.
+Out of scope: per-avatar animation sets, and multi-peer sessions beyond the
+current one-peer session. User-imported models and avatar transfer between
+peers are in scope through
+[Mittens packages](../task/mittens-packages-and-peer-transfer.md); this spec's
+factory functions are what a package's entry script exports.
 
 ## Current engine facts this design depends on
 
