@@ -122,12 +122,19 @@ pub struct PostProcessingConfig {
 }
 
 impl PostProcessingConfig {
+    /// Zero-intensity bloom (authored, or switched off in graphics settings)
+    /// renders nothing, so it does not keep the offscreen chain and final
+    /// copy alive. Targets and pipelines are created when it is turned on.
     pub fn is_active(&self) -> bool {
-        self.enabled && (self.bloom.is_some() || self.bokeh.is_some())
+        self.enabled && (self.bloom_active() || self.bokeh.is_some())
     }
 
     pub fn needs_depth(&self) -> bool {
-        self.enabled && (self.bloom.is_some() || self.bokeh.is_some())
+        self.is_active()
+    }
+
+    fn bloom_active(&self) -> bool {
+        self.bloom.as_ref().is_some_and(|bloom| bloom.intensity > 0.0)
     }
 
     pub fn bloom_radius_pixels(&self, viewport_width: u32) -> Option<u32> {
@@ -886,5 +893,23 @@ impl PostProcessingRenderer {
         ci.subpass = Some(PipelineSubpassType::BeginRendering(rendering));
 
         Ok(GraphicsPipeline::new(self.device.clone(), None, ci)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_intensity_bloom_does_not_activate_post_processing() {
+        let mut config = PostProcessingConfig {
+            enabled: true,
+            bloom: Some(BloomConfig::default()),
+            ..Default::default()
+        };
+        assert!(config.is_active());
+        config.bloom.as_mut().unwrap().intensity = 0.0;
+        assert!(!config.is_active());
+        assert!(!config.needs_depth());
     }
 }

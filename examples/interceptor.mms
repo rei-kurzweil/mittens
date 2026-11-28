@@ -29,6 +29,9 @@ RenderGraph {
     EmissivePass {}
     Bloom { intensity(0.53) radius_ndc(0.023) emissive_scale(1.0) half_res(true) }
 }
+// Bloom is authored but off by default; turn it on from the graphics panel.
+// While off, frames render straight to the eye images with no post pass.
+GraphicsSettings.bloom.toggle(false)
 
 let glow = emissive_surface()
 let sky = Material(MaterialDefinition(MaterialBase())
