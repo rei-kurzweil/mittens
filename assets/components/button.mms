@@ -7,6 +7,7 @@
 //       background_color = [0.18, 0.48, 0.88, 1.0]
 //       color = [0.98, 0.98, 0.98, 1.0]
 //       compact = true
+//       width = 6.6 height = 1.7   // optional fixed size: a larger click surface
 //   })
 //   T.position(x, y, z) { btn }
 //   on(btn, "Click", fn(e) { ... })
@@ -27,6 +28,8 @@ export fn button(label, options) {
     let padding_x = 0.6
     let padding_y = 0.6
     let text_size = 1.0
+    let fixed_width = null
+    let fixed_height = null
 
     if options {
         if options.background_color {
@@ -40,6 +43,8 @@ export fn button(label, options) {
             padding_y = 0.16
             text_size = 0.60
         }
+        fixed_width = options.width
+        fixed_height = options.height
     }
 
     let root = T {
@@ -53,6 +58,8 @@ export fn button(label, options) {
             vertical_align("middle")
             background_color(bg_rgba)
             color(text_rgba)
+            if fixed_width { width(fixed_width) }
+            if fixed_height { height(fixed_height) }
         }
         Text { label }
     }

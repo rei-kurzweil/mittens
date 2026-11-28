@@ -22,7 +22,11 @@ fn stand(x, y, z, width, height, depth, material) {
 }
 
 fn mitten_pedestal(name, label, x, z, tint, material, action) {
-    let control = button(label, { compact = true background_color = tint color = [0.12, 0.07, 0.15, 1.0] })
+    // Fixed size so short labels still get a pedestal-wide click surface.
+    let control = button(label, {
+        compact = true background_color = tint color = [0.12, 0.07, 0.15, 1.0]
+        width = 6.6 height = 1.7
+    })
     let face = T.position(-0.29, 1.17, 0.23).scale(0.086, 0.086, 0.086) {
         name = name + "_control"
         LayoutRoot { available_width(7.0) available_height(2.0) control }
