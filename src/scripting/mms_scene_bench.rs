@@ -70,7 +70,7 @@ fn mms_scene_bench() {
             if std::env::var("MMS_BENCH_INTERCEPTOR_SECONDARY_MOTION").as_deref() == Ok("off") {
                 source.push_str("\nrange_gear.set_secondary_motion(false)\n");
             }
-            source.push_str(r#"
+            source.push_str(&r#"
                 let profile_spawn = { elapsed = 0.0 done = false }
                 on_global("FrameTick", fn(event) {
                     if profile_spawn.done { return }
